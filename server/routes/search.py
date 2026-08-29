@@ -3,6 +3,7 @@ from functools import partial
 
 from fastapi import APIRouter, Query
 
+from ..cache import cached
 from ..core import get_search_suggestions, search
 from ..sanitizers import sanitize
 from ..state import executor
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/search", tags=["Search"])
     summary="Search YouTube Music",
     response_description="Search results",
 )
+@cached("search", ttl=120)
 async def search_music(
     query: str = Query(..., description="Search query"),
     filter: str | None = Query(
@@ -49,6 +51,7 @@ async def search_music(
     summary="Get Search Suggestions",
     response_description="Search suggestions list",
 )
+@cached("search_suggestions", ttl=600)
 async def search_suggestions(
     query: str = Query(..., description="Search query"),
     detailed_runs: bool = Query(

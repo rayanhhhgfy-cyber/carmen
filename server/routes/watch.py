@@ -3,6 +3,7 @@ from functools import partial
 
 from fastapi import APIRouter, Query
 
+from ..cache import cached
 from ..core import get_watch_playlist
 from ..sanitizers import sanitize
 from ..state import executor
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/watch", tags=["Watch"])
     summary="Get Watch Playlist",
     response_description="Watch playlist with tracks, playlistId, lyrics, related",
 )
+@cached("watch_playlist", ttl=120)
 async def watch_playlist(
     videoId: str | None = Query(
         None, description="Video ID to start the playlist with"

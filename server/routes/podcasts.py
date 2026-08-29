@@ -3,6 +3,7 @@ from functools import partial
 
 from fastapi import APIRouter, Query
 
+from ..cache import cached
 from ..core import get_channel, get_channel_episodes, get_episode, get_podcast
 from ..sanitizers import sanitize
 from ..state import executor
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/podcasts", tags=["Podcasts"])
     summary="Get Podcast Channel",
     response_description="Channel info with episodes and podcasts",
 )
+@cached("podcast_channel", ttl=600)
 async def channel(channelId: str):
     """
     Get info about a podcast channel.
@@ -34,6 +36,7 @@ async def channel(channelId: str):
     summary="Get Channel Episodes",
     response_description="List of all channel episodes",
 )
+@cached("podcast_episodes", ttl=600)
 async def channel_episodes(channelId: str, params: str):
     """
     Get all channel episodes.
@@ -54,6 +57,7 @@ async def channel_episodes(channelId: str, params: str):
     summary="Get Podcast",
     response_description="Podcast metadata and episodes",
 )
+@cached("podcast", ttl=600)
 async def podcast(
     playlistId: str, limit: int = Query(100, description="Number of episodes to return")
 ):
@@ -74,6 +78,7 @@ async def podcast(
     summary="Get Episode",
     response_description="Episode data",
 )
+@cached("podcast_episode", ttl=600)
 async def episode(videoId: str):
     """
     Retrieve episode data for a single episode.

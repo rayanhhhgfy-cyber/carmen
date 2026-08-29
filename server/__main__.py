@@ -4,14 +4,15 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import redis.asyncio as redis
 import uvicorn
 import uvloop
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
+from . import state
 from .core import init_ytm
 from .routes import router
-from . import state
 
 load_dotenv()
 
@@ -26,6 +27,9 @@ async def lifespan(app: FastAPI):
 
     init_ytm(BROWSER_PATH)
     print("YouTube Music's Client Initialized.")
+
+    state.rds = redis.Redis()
+    print("Redis client initialized.")
 
     yield
     print("Shutting down the executor")

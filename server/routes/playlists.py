@@ -3,6 +3,7 @@ from functools import partial
 
 from fastapi import APIRouter, Query
 
+from ..cache import cached
 from ..core import get_playlist
 from ..sanitizers import sanitize
 from ..state import executor
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/playlists", tags=["Playlists"])
     summary="Get Playlist",
     response_description="Playlist metadata and tracks",
 )
+@cached("playlist", ttl=300)
 async def playlist(
     playlistId: str,
     limit: int = Query(100, description="Number of items to return"),

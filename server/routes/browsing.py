@@ -3,6 +3,7 @@ from functools import partial
 
 from fastapi import APIRouter, Query
 
+from ..cache import cached
 from ..core import (
     get_album,
     get_album_browse_id,
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/browsing", tags=["Browsing"])
     summary="Get Home Page",
     response_description="List of music suggestion rows",
 )
+@cached("home", ttl=300)
 async def home(limit: int = 3):
     """
     Get the home page with music suggestions.
@@ -52,6 +54,7 @@ async def home(limit: int = 3):
     summary="Get Taste Profile",
     response_description="Suggested artists from taste profile",
 )
+@cached("tasteprofile", ttl=300)
 async def tasteprofile():
     """
     Fetch suggested artists from taste profile.
@@ -67,6 +70,7 @@ async def tasteprofile():
     summary="Get Mood Categories",
     response_description="List of mood and genre categories",
 )
+@cached("mood_categories", ttl=1800)
 async def mood_categories():
     """
     Fetch "Moods & Genres" categories from YouTube Music.
@@ -82,6 +86,7 @@ async def mood_categories():
     summary="Get Mood Playlists",
     response_description="List of playlists for the given mood",
 )
+@cached("mood_playlists", ttl=600)
 async def mood_playlists(params: str):
     """
     Retrieve playlists for a given "Moods & Genres" category.
@@ -99,6 +104,7 @@ async def mood_playlists(params: str):
     summary="Get Explore Data",
     response_description="Latest explore data including new releases and trending",
 )
+@cached("explore", ttl=300)
 async def explore():
     """
     Get latest explore data.
@@ -114,6 +120,7 @@ async def explore():
     summary="Get Charts",
     response_description="Charts data for the specified country",
 )
+@cached("charts", ttl=600)
 async def charts(country: str = "ZZ"):
     """
     Get latest charts data.
@@ -129,6 +136,7 @@ async def charts(country: str = "ZZ"):
     summary="Get Artist",
     response_description="Artist info with top releases",
 )
+@cached("artist", ttl=600)
 async def artist(channelId: str):
     """
     Get info about an artist and their top releases.
@@ -148,6 +156,7 @@ async def artist(channelId: str):
     summary="Get Artist Albums",
     response_description="List of artist albums",
 )
+@cached("artist_albums", ttl=600)
 async def artist_albums(
     channelId: str, params: str, limit: int = 100, order: str | None = None
 ):
@@ -172,6 +181,7 @@ async def artist_albums(
     summary="Get User",
     response_description="User page info",
 )
+@cached("user", ttl=600)
 async def user(channelId: str):
     """
     Retrieve a user's page (videos or playlists).
@@ -187,6 +197,7 @@ async def user(channelId: str):
     summary="Get User Playlists",
     response_description="List of user playlists",
 )
+@cached("user_playlists", ttl=600)
 async def user_playlists(channelId: str, params: str):
     """
     Retrieve a list of playlists for a given user.
@@ -207,6 +218,7 @@ async def user_playlists(channelId: str, params: str):
     summary="Get User Videos",
     response_description="List of user videos",
 )
+@cached("user_videos", ttl=600)
 async def user_videos(channelId: str, params: str):
     """
     Retrieve a list of videos for a given user.
@@ -227,6 +239,7 @@ async def user_videos(channelId: str, params: str):
     summary="Get Album Browse ID",
     response_description="Album browse ID or null",
 )
+@cached("album_browse_id", ttl=3600)
 async def album_browse_id(audioPlaylistId: str):
     """
     Get an album's browseId from its audioPlaylistId.
@@ -248,6 +261,7 @@ async def album_browse_id(audioPlaylistId: str):
     summary="Get Album",
     response_description="Album info and tracks",
 )
+@cached("album", ttl=600)
 async def album(browseId: str):
     """
     Get information and tracks of an album.
@@ -263,6 +277,7 @@ async def album(browseId: str):
     summary="Get Song",
     response_description="Song metadata and streaming info",
 )
+@cached("song", ttl=300)
 async def song(videoId: str, signatureTimestamp: int | None = None):
     """
     Returns metadata and streaming information about a song or video.
@@ -283,6 +298,7 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
     summary="Get Song Credits",
     response_description="Song credits info",
 )
+@cached("song_credits", ttl=3600)
 async def song_credits(browseId: str):
     """
     Get credits for a song.
@@ -302,6 +318,7 @@ async def song_credits(browseId: str):
     summary="Get Related Songs",
     response_description="Related content for the song",
 )
+@cached("song_related", ttl=600)
 async def song_related(browseId: str):
     """
     Gets related content for a song.
@@ -321,6 +338,7 @@ async def song_related(browseId: str):
     summary="Get Lyrics",
     response_description="Song lyrics or timed lyrics",
 )
+@cached("lyrics", ttl=3600)
 async def lyrics(browseId: str, timestamps: bool = False):
     """
     Returns lyrics of a song/video.
@@ -339,6 +357,7 @@ async def lyrics(browseId: str, timestamps: bool = False):
     summary="Get Base.js URL",
     response_description="URL of the base.js script",
 )
+@cached("basejs_url", ttl=3600)
 async def basejs_url():
     """
     Extract the URL for the base.js script from YouTube Music.
@@ -354,6 +373,7 @@ async def basejs_url():
     summary="Get Signature Timestamp",
     response_description="Signature timestamp integer",
 )
+@cached("signature_timestamp", ttl=3600)
 async def signature_timestamp(url: str | None = None):
     """
     Fetch base.js and parse the signatureTimestamp.
