@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from ..cache import cached
 from ..core import get_watch_playlist
-from ..sanitizers import sanitize
+from ..sanitizers import sanitized
 from ..state import executor
 
 router = APIRouter(prefix="/watch", tags=["Watch"])
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/watch", tags=["Watch"])
     summary="Get Watch Playlist",
     response_description="Watch playlist with tracks, playlistId, lyrics, related",
 )
+@sanitized
 @cached("watch_playlist", ttl=120)
 async def watch_playlist(
     videoId: str | None = Query(
@@ -40,9 +41,7 @@ async def watch_playlist(
     - **shuffle**: randomize track order
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor,
-            partial(get_watch_playlist, videoId, playlistId, limit, radio, shuffle),
-        )
+    return await loop.run_in_executor(
+        executor,
+        partial(get_watch_playlist, videoId, playlistId, limit, radio, shuffle),
     )

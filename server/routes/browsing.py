@@ -1,7 +1,7 @@
 import asyncio
 from functools import partial
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from ..cache import cached
 from ..core import (
@@ -25,7 +25,7 @@ from ..core import (
     get_user_playlists,
     get_user_videos,
 )
-from ..sanitizers import sanitize
+from ..sanitizers import sanitized
 from ..state import executor
 
 router = APIRouter(prefix="/browsing", tags=["Browsing"])
@@ -36,6 +36,7 @@ router = APIRouter(prefix="/browsing", tags=["Browsing"])
     summary="Get Home Page",
     response_description="List of music suggestion rows",
 )
+@sanitized
 @cached("home", ttl=300)
 async def home(limit: int = 3):
     """
@@ -46,7 +47,7 @@ async def home(limit: int = 3):
     - **limit**: number of rows to return per section (default: 3)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_home, limit)))
+    return await loop.run_in_executor(executor, partial(get_home, limit))
 
 
 @router.get(
@@ -54,6 +55,7 @@ async def home(limit: int = 3):
     summary="Get Taste Profile",
     response_description="Suggested artists from taste profile",
 )
+@sanitized
 @cached("tasteprofile", ttl=300)
 async def tasteprofile():
     """
@@ -62,7 +64,7 @@ async def tasteprofile():
     Must be authenticated. Returns artists recommended based on listening history.
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_tasteprofile)))
+    return await loop.run_in_executor(executor, partial(get_tasteprofile))
 
 
 @router.get(
@@ -70,6 +72,7 @@ async def tasteprofile():
     summary="Get Mood Categories",
     response_description="List of mood and genre categories",
 )
+@sanitized
 @cached("mood_categories", ttl=1800)
 async def mood_categories():
     """
@@ -78,7 +81,7 @@ async def mood_categories():
     Returns a list of categories like "Energetic", "Sad", "Workout", etc.
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_mood_categories)))
+    return await loop.run_in_executor(executor, partial(get_mood_categories))
 
 
 @router.get(
@@ -86,6 +89,7 @@ async def mood_categories():
     summary="Get Mood Playlists",
     response_description="List of playlists for the given mood",
 )
+@sanitized
 @cached("mood_playlists", ttl=600)
 async def mood_playlists(params: str):
     """
@@ -94,9 +98,7 @@ async def mood_playlists(params: str):
     - **params**: params obtained from get_mood_categories()
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_mood_playlists, params))
-    )
+    return await loop.run_in_executor(executor, partial(get_mood_playlists, params))
 
 
 @router.get(
@@ -104,6 +106,7 @@ async def mood_playlists(params: str):
     summary="Get Explore Data",
     response_description="Latest explore data including new releases and trending",
 )
+@sanitized
 @cached("explore", ttl=300)
 async def explore():
     """
@@ -112,7 +115,7 @@ async def explore():
     Returns new releases, top songs, moods & genres, trending content, and new videos.
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_explore)))
+    return await loop.run_in_executor(executor, partial(get_explore))
 
 
 @router.get(
@@ -120,6 +123,7 @@ async def explore():
     summary="Get Charts",
     response_description="Charts data for the specified country",
 )
+@sanitized
 @cached("charts", ttl=600)
 async def charts(country: str = "ZZ"):
     """
@@ -128,7 +132,7 @@ async def charts(country: str = "ZZ"):
     - **country**: ISO 3166-1 Alpha-2 country code (default: "ZZ" for global)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_charts, country)))
+    return await loop.run_in_executor(executor, partial(get_charts, country))
 
 
 @router.get(
@@ -136,6 +140,7 @@ async def charts(country: str = "ZZ"):
     summary="Get Artist",
     response_description="Artist info with top releases",
 )
+@sanitized
 @cached("artist", ttl=600)
 async def artist(channelId: str):
     """
@@ -146,9 +151,7 @@ async def artist(channelId: str):
     - **channelId**: YouTube channel ID of the artist
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_artist, channelId))
-    )
+    return await loop.run_in_executor(executor, partial(get_artist, channelId))
 
 
 @router.get(
@@ -156,6 +159,7 @@ async def artist(channelId: str):
     summary="Get Artist Albums",
     response_description="List of artist albums",
 )
+@sanitized
 @cached("artist_albums", ttl=600)
 async def artist_albums(
     channelId: str, params: str, limit: int = 100, order: str | None = None
@@ -169,10 +173,8 @@ async def artist_albums(
     - **order**: "Recency", "Popularity", or "Alphabetical order"
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_artist_albums, channelId, params, limit, order)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_artist_albums, channelId, params, limit, order)
     )
 
 
@@ -181,6 +183,7 @@ async def artist_albums(
     summary="Get User",
     response_description="User page info",
 )
+@sanitized
 @cached("user", ttl=600)
 async def user(channelId: str):
     """
@@ -189,7 +192,7 @@ async def user(channelId: str):
     - **channelId**: YouTube channel ID of the user
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_user, channelId)))
+    return await loop.run_in_executor(executor, partial(get_user, channelId))
 
 
 @router.get(
@@ -197,6 +200,7 @@ async def user(channelId: str):
     summary="Get User Playlists",
     response_description="List of user playlists",
 )
+@sanitized
 @cached("user_playlists", ttl=600)
 async def user_playlists(channelId: str, params: str):
     """
@@ -206,10 +210,8 @@ async def user_playlists(channelId: str, params: str):
     - **params**: params obtained from get_user()
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_user_playlists, channelId, params)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_user_playlists, channelId, params)
     )
 
 
@@ -218,6 +220,7 @@ async def user_playlists(channelId: str, params: str):
     summary="Get User Videos",
     response_description="List of user videos",
 )
+@sanitized
 @cached("user_videos", ttl=600)
 async def user_videos(channelId: str, params: str):
     """
@@ -227,10 +230,8 @@ async def user_videos(channelId: str, params: str):
     - **params**: params obtained from get_user()
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_user_videos, channelId, params)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_user_videos, channelId, params)
     )
 
 
@@ -239,6 +240,7 @@ async def user_videos(channelId: str, params: str):
     summary="Get Album Browse ID",
     response_description="Album browse ID or null",
 )
+@sanitized
 @cached("album_browse_id", ttl=3600)
 async def album_browse_id(audioPlaylistId: str):
     """
@@ -249,10 +251,8 @@ async def album_browse_id(audioPlaylistId: str):
     - **audioPlaylistId**: audio playlist ID of the album
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_album_browse_id, audioPlaylistId)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_album_browse_id, audioPlaylistId)
     )
 
 
@@ -261,6 +261,7 @@ async def album_browse_id(audioPlaylistId: str):
     summary="Get Album",
     response_description="Album info and tracks",
 )
+@sanitized
 @cached("album", ttl=600)
 async def album(browseId: str):
     """
@@ -269,7 +270,7 @@ async def album(browseId: str):
     - **browseId**: browse ID of the album (must start with "MPRE")
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_album, browseId)))
+    return await loop.run_in_executor(executor, partial(get_album, browseId))
 
 
 @router.get(
@@ -277,6 +278,7 @@ async def album(browseId: str):
     summary="Get Song",
     response_description="Song metadata and streaming info",
 )
+@sanitized
 @cached("song", ttl=300)
 async def song(videoId: str, signatureTimestamp: int | None = None):
     """
@@ -286,10 +288,8 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
     - **signatureTimestamp**: timestamp of the base.js player (from get_signatureTimestamp)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_song, videoId, signatureTimestamp)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_song, videoId, signatureTimestamp)
     )
 
 
@@ -298,6 +298,7 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
     summary="Get Song Credits",
     response_description="Song credits info",
 )
+@sanitized
 @cached("song_credits", ttl=3600)
 async def song_credits(browseId: str):
     """
@@ -308,9 +309,7 @@ async def song_credits(browseId: str):
     - **browseId**: browse ID of the song (starts with "MPTC")
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_song_credits, browseId))
-    )
+    return await loop.run_in_executor(executor, partial(get_song_credits, browseId))
 
 
 @router.get(
@@ -318,6 +317,7 @@ async def song_credits(browseId: str):
     summary="Get Related Songs",
     response_description="Related content for the song",
 )
+@sanitized
 @cached("song_related", ttl=600)
 async def song_related(browseId: str):
     """
@@ -328,9 +328,7 @@ async def song_related(browseId: str):
     - **browseId**: browse ID of the song
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_song_related, browseId))
-    )
+    return await loop.run_in_executor(executor, partial(get_song_related, browseId))
 
 
 @router.get(
@@ -338,6 +336,7 @@ async def song_related(browseId: str):
     summary="Get Lyrics",
     response_description="Song lyrics or timed lyrics",
 )
+@sanitized
 @cached("lyrics", ttl=3600)
 async def lyrics(browseId: str, timestamps: bool = False):
     """
@@ -347,8 +346,8 @@ async def lyrics(browseId: str, timestamps: bool = False):
     - **timestamps**: return timed lyrics if available (default: false)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_lyrics, browseId, timestamps))
+    return await loop.run_in_executor(
+        executor, partial(get_lyrics, browseId, timestamps)
     )
 
 
@@ -357,6 +356,7 @@ async def lyrics(browseId: str, timestamps: bool = False):
     summary="Get Base.js URL",
     response_description="URL of the base.js script",
 )
+@sanitized
 @cached("basejs_url", ttl=3600)
 async def basejs_url():
     """
@@ -365,7 +365,7 @@ async def basejs_url():
     Used for obtaining signature timestamps.
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_basejs_url)))
+    return await loop.run_in_executor(executor, partial(get_basejs_url))
 
 
 @router.get(
@@ -373,6 +373,7 @@ async def basejs_url():
     summary="Get Signature Timestamp",
     response_description="Signature timestamp integer",
 )
+@sanitized
 @cached("signature_timestamp", ttl=3600)
 async def signature_timestamp(url: str | None = None):
     """
@@ -383,6 +384,4 @@ async def signature_timestamp(url: str | None = None):
     - **url**: URL of the base.js script (fetched automatically if not provided)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_signatureTimestamp, url))
-    )
+    return await loop.run_in_executor(executor, partial(get_signatureTimestamp, url))

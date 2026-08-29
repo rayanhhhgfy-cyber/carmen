@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from ..cache import cached
 from ..core import get_channel, get_channel_episodes, get_episode, get_podcast
-from ..sanitizers import sanitize
+from ..sanitizers import sanitized
 from ..state import executor
 
 router = APIRouter(prefix="/podcasts", tags=["Podcasts"])
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/podcasts", tags=["Podcasts"])
     summary="Get Podcast Channel",
     response_description="Channel info with episodes and podcasts",
 )
+@sanitized
 @cached("podcast_channel", ttl=600)
 async def channel(channelId: str):
     """
@@ -26,9 +27,7 @@ async def channel(channelId: str):
     - **channelId**: YouTube channel ID of the podcast
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_channel, channelId))
-    )
+    return await loop.run_in_executor(executor, partial(get_channel, channelId))
 
 
 @router.get(
@@ -36,6 +35,7 @@ async def channel(channelId: str):
     summary="Get Channel Episodes",
     response_description="List of all channel episodes",
 )
+@sanitized
 @cached("podcast_episodes", ttl=600)
 async def channel_episodes(channelId: str, params: str):
     """
@@ -45,10 +45,8 @@ async def channel_episodes(channelId: str, params: str):
     - **params**: params obtained from get_channel()
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_channel_episodes, channelId, params)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_channel_episodes, channelId, params)
     )
 
 
@@ -57,6 +55,7 @@ async def channel_episodes(channelId: str, params: str):
     summary="Get Podcast",
     response_description="Podcast metadata and episodes",
 )
+@sanitized
 @cached("podcast", ttl=600)
 async def podcast(
     playlistId: str, limit: int = Query(100, description="Number of episodes to return")
@@ -68,9 +67,7 @@ async def podcast(
     - **limit**: max episodes (default: 100)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(executor, partial(get_podcast, playlistId, limit))
-    )
+    return await loop.run_in_executor(executor, partial(get_podcast, playlistId, limit))
 
 
 @router.get(
@@ -78,6 +75,7 @@ async def podcast(
     summary="Get Episode",
     response_description="Episode data",
 )
+@sanitized
 @cached("podcast_episode", ttl=600)
 async def episode(videoId: str):
     """
@@ -86,4 +84,4 @@ async def episode(videoId: str):
     - **videoId**: video ID or browse ID (MPED..) of the episode
     """
     loop = asyncio.get_running_loop()
-    return sanitize(await loop.run_in_executor(executor, partial(get_episode, videoId)))
+    return await loop.run_in_executor(executor, partial(get_episode, videoId))

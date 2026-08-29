@@ -1,7 +1,6 @@
 import re
-
+from functools import wraps
 from urllib.parse import urlparse
-
 
 # Keys to remove entirely from any dict
 SENSITIVE_KEYS = {
@@ -112,3 +111,14 @@ def sanitize(data):
     if isinstance(data, list):
         return sanitize_list(data)
     return data
+
+
+def sanitized(func):
+    """Decorator that sanitizes the return value of an async function."""
+
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        result = await func(*args, **kwargs)
+        return sanitize(result)
+
+    return wrapper

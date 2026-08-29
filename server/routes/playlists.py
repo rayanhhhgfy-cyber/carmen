@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from ..cache import cached
 from ..core import get_playlist
-from ..sanitizers import sanitize
+from ..sanitizers import sanitized
 from ..state import executor
 
 router = APIRouter(prefix="/playlists", tags=["Playlists"])
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/playlists", tags=["Playlists"])
     summary="Get Playlist",
     response_description="Playlist metadata and tracks",
 )
+@sanitized
 @cached("playlist", ttl=300)
 async def playlist(
     playlistId: str,
@@ -34,9 +35,6 @@ async def playlist(
     - **suggestions_limit**: number of suggestions (default: 0)
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor,
-            partial(get_playlist, playlistId, limit, related, suggestions_limit),
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_playlist, playlistId, limit, related, suggestions_limit)
     )

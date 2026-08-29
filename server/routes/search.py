@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from ..cache import cached
 from ..core import get_search_suggestions, search
-from ..sanitizers import sanitize
+from ..sanitizers import sanitized
 from ..state import executor
 
 router = APIRouter(prefix="/search", tags=["Search"])
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/search", tags=["Search"])
     summary="Search YouTube Music",
     response_description="Search results",
 )
+@sanitized
 @cached("search", ttl=120)
 async def search_music(
     query: str = Query(..., description="Search query"),
@@ -39,10 +40,8 @@ async def search_music(
     - **ignore_spelling**: return exact query results even if misspelled
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(search, query, filter, scope, limit, ignore_spelling)
-        )
+    return await loop.run_in_executor(
+        executor, partial(search, query, filter, scope, limit, ignore_spelling)
     )
 
 
@@ -51,6 +50,7 @@ async def search_music(
     summary="Get Search Suggestions",
     response_description="Search suggestions list",
 )
+@sanitized
 @cached("search_suggestions", ttl=600)
 async def search_suggestions(
     query: str = Query(..., description="Search query"),
@@ -67,8 +67,6 @@ async def search_suggestions(
     - **detailed_runs**: return dicts with text, runs, fromHistory, feedbackToken
     """
     loop = asyncio.get_running_loop()
-    return sanitize(
-        await loop.run_in_executor(
-            executor, partial(get_search_suggestions, query, detailed_runs)
-        )
+    return await loop.run_in_executor(
+        executor, partial(get_search_suggestions, query, detailed_runs)
     )

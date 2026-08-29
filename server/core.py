@@ -1,6 +1,6 @@
-import asyncio
 
 from pathlib import Path
+
 from ytmusicapi import YTMusic
 
 ytm: YTMusic = None
