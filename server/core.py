@@ -1,9 +1,17 @@
-
 from pathlib import Path
 
 from ytmusicapi import YTMusic
 
 ytm: YTMusic = None
+
+options = {
+    "prefer_ffmpeg": False,
+    "geo_bypass": True,
+    "quiet": False,
+    "cookiesfrombrowser": ("firefox", "Default"),
+    "js_runtimes": {"bun": {}},
+    "fixup": "never",
+}
 
 
 def init_ytm(browser: str | Path):
@@ -361,3 +369,6 @@ def get_playlist(
     https://ytmusicapi.readthedocs.io/en/stable/reference/playlists.html#ytmusicapi.YTMusic.get_playlist
     """
     return ytm.get_playlist(playlistId, limit, related, suggestions_limit)
+
+
+# TODO
