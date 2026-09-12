@@ -1,11 +1,10 @@
 import asyncio
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor
+import redis.asyncio as redis
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import redis.asyncio as redis
 import uvicorn
 import uvloop
 from dotenv import load_dotenv
@@ -29,14 +28,11 @@ TG_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state.executor = ThreadPoolExecutor(8)
-    print("Executor initialized.")
-
     init_ytm(BROWSER_PATH)
     print("YouTube Music's Client Initialized.")
 
     state.rds = redis.Redis()
-    print("Redis client initialized.")
+    print("Redis client ready.")
 
     # Telegram client for audio caching
     if TG_API_ID and TG_API_HASH and TG_BOT_TOKEN:

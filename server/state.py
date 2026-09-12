@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from redis.asyncio.client import Redis
 
-executor: ThreadPoolExecutor = None
+executor: ThreadPoolExecutor = ThreadPoolExecutor(8)
 rds: Redis = None
 
 # Pyrogram client (initialized in lifespan)
