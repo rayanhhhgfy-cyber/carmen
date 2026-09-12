@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from ..core import download_audio, get_stream_url, get_stream_url_ttl
-from ..state import executor, rds, tg_client
+from .. import state
 
 router = APIRouter(tags=["Stream"])
 log = logging.getLogger(__name__)
@@ -23,17 +23,17 @@ CHAT_ID = os.environ.get("CHAT_ID")
 
 async def _get_cached_url(vid_id: str) -> str | None:
     """Return a cached stream URL from Redis, or None if missing/expired."""
-    return await rds.get(f"stream_url:{vid_id}")
+    return await state.rds.get(f"stream_url:{vid_id}")
 
 
 async def _cache_url(vid_id: str, url: str, ttl: int):
     """Cache a stream URL in Redis with the given TTL (seconds)."""
-    await rds.set(f"stream_url:{vid_id}", url, ex=ttl)
+    await state.rds.set(f"stream_url:{vid_id}", url, ex=ttl)
 
 
 async def _get_tg_msg_id(vid_id: str) -> int | None:
     """Return the Telegram message ID for a cached audio, or None."""
-    raw = await rds.hget("vids", vid_id)
+    raw = await state.rds.hget("vids", vid_id)
     return int(raw) if raw else None
 
 
@@ -42,25 +42,25 @@ async def _upload_to_tg(vid_id: str, stream_url: str):
     Download the audio and upload it to the Telegram channel.
     Retries on FloodWait by sleeping for the required duration.
     """
-    if not tg_client or not CHAT_ID:
+    if not state.tg_client or not CHAT_ID:
         return
 
     tmp_path: str | None = None
     try:
         loop = asyncio.get_running_loop()
         tmp_path = await loop.run_in_executor(
-            executor, functools.partial(download_audio, vid_id, stream_url)
+            state.executor, functools.partial(download_audio, vid_id, stream_url)
         )
 
         # Retry loop for FloodWait
         while True:
             try:
-                msg = await tg_client.send_document(
+                msg = await state.tg_client.send_document(
                     int(CHAT_ID),
                     tmp_path,
                     file_name=f"{vid_id}.webm",
                 )
-                await rds.hset("vids", vid_id, msg.id)
+                await state.rds.hset("vids", vid_id, msg.id)
                 log.info("Uploaded %s to Telegram (msg %s)", vid_id, msg.id)
                 break
             except Exception as exc:
@@ -102,12 +102,12 @@ async def stream_audio(
     """
     # ── 1. Telegram cache ───────────────────────────────────────────────
     tg_msg_id = await _get_tg_msg_id(vidId)
-    if tg_msg_id and tg_client and CHAT_ID:
+    if tg_msg_id and state.tg_client and CHAT_ID:
         try:
-            message = await tg_client.get_message(int(CHAT_ID), tg_msg_id)
+            message = await state.tg_client.get_message(int(CHAT_ID), tg_msg_id)
 
             async def _tg_stream():
-                async for chunk in tg_client.stream_media(message):
+                async for chunk in state.tg_client.stream_media(message):
                     yield chunk
 
             return StreamingResponse(
@@ -126,7 +126,7 @@ async def stream_audio(
         loop = asyncio.get_running_loop()
         try:
             url = await loop.run_in_executor(
-                executor, functools.partial(get_stream_url, vidId)
+                state.executor, functools.partial(get_stream_url, vidId)
             )
         except FileNotFoundError:
             raise HTTPException(
@@ -155,8 +155,8 @@ async def stream_audio(
                     yield chunk
 
     # ── 5. Background: upload to Telegram (fire-and-forget) ─────────────
-    already_uploading = await rds.hget("vids", vidId) is not None
-    if not already_uploading and tg_client and CHAT_ID:
+    already_uploading = await state.rds.hget("vids", vidId) is not None
+    if not already_uploading and state.tg_client and CHAT_ID:
         asyncio.create_task(_upload_to_tg(vidId, url))
 
     return StreamingResponse(
