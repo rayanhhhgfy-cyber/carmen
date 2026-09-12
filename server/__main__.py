@@ -54,14 +54,14 @@ async def lifespan(app: FastAPI):
     if not cookie_str:
         print("No cookie field found in browser.json")
 
-    with open("cookies.txt", "w+") as out:  # noqa: ASYNC230
+    with open("server/cookies.txt", "w+") as out:  # noqa: ASYNC230
         out.write("# Netscape HTTP Cookie File\n# Generated from browser.json\n\n")
         for cookie in cookie_str.split("; "):
             if "=" in cookie:
                 name, value = cookie.split("=", 1)
                 secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
                 out.write(f".youtube.com\tTRUE\t/\t{secure}\t0\t{name}\t{value}\n")
-    print("Successfully created cookies.txt!")
+    print("Successfully created server/cookies.txt!")
 
     yield
 
