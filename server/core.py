@@ -1,17 +1,9 @@
+import sys
 from pathlib import Path
 
 from ytmusicapi import YTMusic
 
 ytm: YTMusic = None
-
-options = {
-    "prefer_ffmpeg": False,
-    "geo_bypass": True,
-    "quiet": False,
-    "cookiesfrombrowser": ("firefox", "Default"),
-    "js_runtimes": {"bun": {}},
-    "fixup": "never",
-}
 
 
 def init_ytm(browser: str | Path):
@@ -371,4 +363,100 @@ def get_playlist(
     return ytm.get_playlist(playlistId, limit, related, suggestions_limit)
 
 
-# TODO
+# ── Streaming ──────────────────────────────────────────────────────────────
+
+import subprocess
+import tempfile
+import time
+from datetime import datetime
+from urllib.parse import parse_qs, urlparse
+
+
+def get_stream_url(video_id: str) -> str:
+    """
+    Use yt-dlp to resolve a direct streaming URL for a given YouTube Music video ID.
+
+    :param video_id: YouTube video ID
+    :raises subprocess.CalledProcessError: if yt-dlp fails
+    :raises FileNotFoundError: if yt-dlp is not installed
+    """
+    url = f"https://music.youtube.com/watch?v={video_id}"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "--quiet",
+            "--no-warnings",
+            "--js-runtimes",
+            "bun",
+            "-f",
+            "bestaudio",
+            "-g",
+            "-x",
+            url,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    stream_url = result.stdout.strip()
+    if not stream_url:
+        raise ValueError(f"yt-dlp returned no URL for video {video_id}")
+
+    return stream_url
+
+
+def get_stream_url_ttl(stream_url: str) -> int:
+    """
+    Parse the `expire` query param from a googlevideo URL and return the
+    number of seconds until it expires (with a 60-second safety margin).
+    Falls back to 300s (5 min) if parsing fails.
+    """
+    try:
+        parsed = urlparse(stream_url)
+        query_params = parse_qs(parsed.query)
+        expire_ts = query_params.get("expire", [None])[0]
+        if expire_ts:
+            ttl = int(expire_ts) - int(time.time()) - 60
+            return max(ttl, 60)
+    except Exception:
+        pass
+    return 300
+
+
+def download_audio(video_id: str, stream_url: str) -> str:
+    """
+    Download the audio from the resolved URL to a temporary .webm file.
+    Returns the file path. Caller is responsible for cleanup.
+    """
+    tmp = tempfile.NamedTemporaryFile(
+        suffix=".webm", prefix=f"{video_id}_", delete=False
+    )
+    tmp.close()
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "yt_dlp",
+            "--quiet",
+            "--no-warnings",
+            "--js-runtimes",
+            "bun",
+            "-f",
+            "bestaudio",
+            "-x",
+            "--no-part",
+            "-o",
+            tmp.name,
+            stream_url,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    return tmp.name
