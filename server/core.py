@@ -370,6 +370,18 @@ import tempfile
 import time
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
+from yt_dlp import YoutubeDL
+
+streaming_options = {
+    "prefer_ffmpeg": False,
+    "geo_bypass": True,
+    "quiet": False,
+    "cookiesfrombrowser": ("chrome", "Default"),
+    "js_runtimes": {"bun": {}},
+    "fixup": "never",
+    "format": "bestaudio",
+    "no_warnings": True,
+}
 
 
 def get_stream_url(video_id: str) -> str:
@@ -382,33 +394,36 @@ def get_stream_url(video_id: str) -> str:
     """
     url = f"https://music.youtube.com/watch?v={video_id}"
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "--quiet",
-            "--no-warnings",
-            "--js-runtimes",
-            "bun",
-            "--cookies-from-browser",
-            "chrome",
-            "-f",
-            "bestaudio",
-            "-g",
-            "-x",
-            url,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    # result = subprocess.run(
+    #     [
+    #         sys.executable,
+    #         "-m",
+    #         "yt_dlp",
+    #         "--quiet",
+    #         "--no-warnings",
+    #         "--js-runtimes",
+    #         "bun",
+    #         "--cookies-from-browser",
+    #         "chrome",
+    #         "-f",
+    #         "bestaudio",
+    #         "-g",
+    #         "-x",
+    #         url,
+    #     ],
+    #     capture_output=True,
+    #     text=True,
+    #     check=True,
+    # )
 
-    stream_url = result.stdout.strip()
-    if not stream_url:
-        raise ValueError(f"yt-dlp returned no URL for video {video_id}")
+    # stream_url = result.stdout.strip()
+    # if not stream_url:
+    #     raise ValueError(f"yt-dlp returned no URL for video {video_id}")
 
-    return stream_url
+    with YoutubeDL(streaming_options) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+        return info.get("url")
 
 
 def get_stream_url_ttl(stream_url: str) -> int:
@@ -439,28 +454,32 @@ def download_audio(video_id: str, stream_url: str) -> str:
     )
     tmp.close()
 
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "yt_dlp",
-            "--quiet",
-            "--no-warnings",
-            "--js-runtimes",
-            "bun",
-            "--cookies-from-browser",
-            "chrome",
-            "-f",
-            "bestaudio",
-            "-x",
-            "--no-part",
-            "-o",
-            tmp.name,
-            stream_url,
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    # subprocess.run(
+    #     [
+    #         sys.executable,
+    #         "-m",
+    #         "yt_dlp",
+    #         "--quiet",
+    #         "--no-warnings",
+    #         "--js-runtimes",
+    #         "bun",
+    #         "--cookies-from-browser",
+    #         "chrome",
+    #         "-f",
+    #         "bestaudio",
+    #         "-x",
+    #         "--no-part",
+    #         "-o",
+    #         tmp.name,
+    #         stream_url,
+    #     ],
+    #     capture_output=True,
+    #     text=True,
+    #     check=True,
+    # )
+
+    with YoutubeDL({**streaming_options, "outtmpl": tmp.name}) as ydl:
+        info = ydl.extract_info(stream_url, download=True)
+        print(ydl.prepare_filename(info))
 
     return tmp.name
