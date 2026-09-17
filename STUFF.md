@@ -29,7 +29,7 @@ WARNING: [youtube] [jsc:bun] bun version 1.4.2 is not supported! 1.3.14 is the l
 
 ## last command line
 ```
-yt-dlp --cookies cookies.txt --quiet --js-runtimes bun -g -x -f bestaudio "https://music.youtube.com/watch?v=6hCqRb8Dtvo"
+yt-dlp -vU --cookies-from-browser chrome --quiet --extractor-args "youtube:player_client=web_safari,web_embedded" --js-runtimes deno -g -x -f bestaudio "https://music.youtube.com/watch?v=6hCqRb8Dtvo"
 ```
 
 ## get expiration date of url for caching

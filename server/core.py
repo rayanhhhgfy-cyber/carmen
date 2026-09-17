@@ -378,7 +378,7 @@ streaming_options = {
     "quiet": False,
     "cookiesfrombrowser": ("chrome", "Default"),
     "verbose": True,
-    "js_runtimes": {"deno": {}},
+    "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
     "fixup": "never",
     "format": "bestaudio",
     "no_warnings": True,
