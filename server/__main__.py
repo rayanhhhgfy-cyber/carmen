@@ -25,6 +25,9 @@ TG_API_ID = os.environ.get("API_ID")
 TG_API_HASH = os.environ.get("API_HASH")
 TG_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
+for key in ["NODE_CHANNEL_FD", "NODE_OPTIONS"]:
+    os.environ.pop(key, None)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

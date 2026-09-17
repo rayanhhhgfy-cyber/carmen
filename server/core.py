@@ -376,7 +376,7 @@ streaming_options = {
     "quiet": False,
     "cookiesfrombrowser": ("chrome", "Default"),
     "verbose": True,
-    "js_runtimes": {"node": {'path': '/root/Samma3ni/venv/bin/node'}},
+    "js_runtimes": {"deno": {}},
     "format": "bestaudio",
     "no_warnings": False,
     "extractor_args": {"youtube": {"player_client": ["web_safari", "web_embedded"]}},
