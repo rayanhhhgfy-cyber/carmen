@@ -376,12 +376,13 @@ streaming_options = {
     "prefer_ffmpeg": False,
     "geo_bypass": True,
     "quiet": False,
-    "cookiesfrombrowser": ("chrome", "Default"),
+    # "cookiesfrombrowser": ("chrome", "Default"),
+    "cookies": "cookies.txt",
     "js_runtimes": {"deno": {}},
     "fixup": "never",
     "format": "bestaudio",
     "no_warnings": True,
-    "extractor_args": {"youtube": {"player_client": ["ios"]}},
+    "extractor_args": {"youtube": {"player_client": ["default", "web_embedded"]}},
 }
 
 
