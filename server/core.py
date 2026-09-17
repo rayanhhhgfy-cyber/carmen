@@ -381,6 +381,7 @@ streaming_options = {
     "fixup": "never",
     "format": "bestaudio",
     "no_warnings": True,
+    "extractor_args": {"youtube": {"player_client": ["default", "web_embedded"]}},
 }
 
 
