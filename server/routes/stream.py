@@ -139,6 +139,12 @@ async def stream_audio(
                 detail=f"Failed to resolve stream URL: {exc}",
             )
 
+        if not url:
+            raise HTTPException(
+                status_code=502,
+                detail="yt-dlp returned no stream URL",
+            )
+
         ttl = get_stream_url_ttl(url)
         await _cache_url(vidId, url, ttl)
 

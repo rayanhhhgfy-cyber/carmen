@@ -422,6 +422,8 @@ def get_stream_url(video_id: str) -> str:
     with YoutubeDL(streaming_options) as ydl:
         info = ydl.extract_info(url, download=False)
 
+        print(info)
+
         return info.get("url")
 
 
