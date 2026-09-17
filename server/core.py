@@ -373,15 +373,12 @@ from urllib.parse import parse_qs, urlparse
 from yt_dlp import YoutubeDL
 
 streaming_options = {
-    "prefer_ffmpeg": False,
-    "geo_bypass": True,
     "quiet": False,
     "cookiesfrombrowser": ("chrome", "Default"),
     "verbose": True,
-    "js_runtimes": {"deno": {"path": "/root/.deno/bin/deno"}},
-    "fixup": "never",
+    "js_runtimes": {"deno": {}},
     "format": "bestaudio",
-    "no_warnings": True,
+    "no_warnings": False,
     "extractor_args": {"youtube": {"player_client": ["web_safari", "web_embedded"]}},
 }
 
