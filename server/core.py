@@ -377,7 +377,7 @@ streaming_options = {
     "geo_bypass": True,
     "quiet": False,
     # "cookiesfrombrowser": ("chrome", "Default"),
-    "cookies": "cookies.txt",
+    "cookies": "server/cookies.txt",
     "js_runtimes": {"deno": {}},
     "fixup": "never",
     "format": "bestaudio",
