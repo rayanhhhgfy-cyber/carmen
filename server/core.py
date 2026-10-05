@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -13,6 +14,8 @@ from .filters import (
     duration_of,
     parse_duration_seconds,
 )
+
+log = logging.getLogger(__name__)
 
 ytm: YTMusic = None
 
@@ -668,19 +671,101 @@ def _prune_audio_cache():
         pass
 
 
+def _duration_filter(info_dict, incomplete=False):
+    """
+    ``match_filter`` passed to yt-dlp: anything longer than one hour is
+    rejected *before* yt-dlp starts writing bytes to disk.
+
+    Returning a string makes ``process_info`` skip the download while still
+    handing the extracted metadata back to the caller, which then raises
+    :class:`DurationLimitExceeded`.
+    """
+    if incomplete:
+        return None
+    seconds = parse_duration_seconds((info_dict or {}).get("duration"))
+    if seconds and seconds > MAX_DURATION_SECONDS:
+        return f"is longer than one hour ({seconds} seconds)"
+    return None
+
+
+def _watch_url(video_id: str) -> str:
+    return f"https://music.youtube.com/watch?v={video_id}"
+
+
+# Player clients tried in order to fetch the audio.
+#
+# YouTube keeps tightening the default (web) client: stream URLs handed to
+# datacenter IPs are regularly rejected with a 403 by the CDN.  The clients
+# below were picked because they all expose a real audio-only stream (itag
+# 140/m4a) instead of storyboard tiles or muxed video, so a fallback always
+# yields a plain audio file.
+STREAM_CLIENTS: tuple[str | None, ...] = (
+    None,  # yt-dlp's default selection
+    "tv_embedded",
+    "visionos",
+    "chrome",
+    "android_music",
+    "ios_music",
+    "tv_embedded_simply",
+)
+
+
+def _client_options(client: str | None, outtmpl: str) -> dict:
+    """yt-dlp options for one download attempt (single extraction + download)."""
+    options = {
+        **streaming_options,
+        "outtmpl": outtmpl,
+        "match_filter": _duration_filter,
+    }
+    if client:
+        options["extractor_args"] = {"youtube": {"player_client": [client]}}
+    return options
+
+
+def _cleanup_partials(video_id: str):
+    """Remove the half written files left behind by a failed attempt."""
+    for stale in AUDIO_CACHE_DIR.glob(f"{video_id}*.part*"):
+        stale.unlink(missing_ok=True)
+    for stale in AUDIO_CACHE_DIR.glob(f"{video_id}*.ytdl"):
+        stale.unlink(missing_ok=True)
+
+
+_preferred_client: str | None = None
+
+
+def _client_order() -> list:
+    """
+    Player clients to try, most likely to work first.
+
+    The last client that successfully served audio is remembered so the next
+    song does not have to repeat the failing attempt.
+    """
+    with _download_guard:
+        preferred = _preferred_client
+    order = list(STREAM_CLIENTS)
+    if preferred in order:
+        order.remove(preferred)
+        order.insert(0, preferred)
+    return order
+
+
+def _remember_client(client: str | None):
+    """Remember the player client that worked, for the next downloads."""
+    global _preferred_client
+    with _download_guard:
+        _preferred_client = client
+
+
 def get_stream_url(video_id: str) -> str:
     """
     Use yt-dlp to resolve a direct streaming URL for a given YouTube Music video ID.
 
     :param video_id: YouTube video ID
     :raises DurationLimitExceeded: if the track is longer than one hour
-    :raises subprocess.CalledProcessError: if yt-dlp fails
-    :raises FileNotFoundError: if yt-dlp is not installed
+    :raises ValueError: if yt-dlp did not return a URL
     """
-    url = f"https://music.youtube.com/watch?v={video_id}"
-
     with YoutubeDL(streaming_options) as ydl:
-        info = ydl.extract_info(url, download=False)
+        info = ydl.extract_info(_watch_url(video_id), download=False)
 
     seconds = parse_duration_seconds(info.get("duration"))
     if seconds and seconds > MAX_DURATION_SECONDS:
@@ -715,9 +800,14 @@ def download_audio(video_id: str) -> str:
     """
     Download the audio of *video_id* on the server with yt-dlp.
 
-    The stream URL is resolved first (which enforces the one hour duration
-    limit) and the bytes are then written into the on-disk audio cache, so
-    callers always get a local file instead of a remote audio URL.
+    Extraction and download run in a **single** yt-dlp pass over the watch URL
+    so the very same request headers are used to resolve and to fetch the
+    media.  When a player client is rejected by the CDN (the common 403 on
+    datacenter IPs) the next client in :data:`STREAM_CLIENTS` is tried.
+
+    The one hour duration limit is enforced by :func:`_duration_filter` before
+    any byte is written, and the finished file lands in the on-disk audio
+    cache, so callers always get a local file instead of a remote audio URL.
 
     Concurrent calls for the same video share a single download.
 
@@ -737,22 +827,56 @@ def download_audio(video_id: str) -> str:
         if cached:
             return str(cached)
 
-        stream_url = get_stream_url(video_id)
-
         outtmpl = str(AUDIO_CACHE_DIR / f"{video_id}.%(ext)s")
-        with YoutubeDL({**streaming_options, "outtmpl": outtmpl}) as ydl:
-            info = ydl.extract_info(stream_url, download=True)
-            produced = Path(ydl.prepare_filename(info))
+        produced: Path | None = None
+        last_error: Exception | None = None
 
-        if not produced.is_file():
-            matches = sorted(
-                AUDIO_CACHE_DIR.glob(f"{video_id}.*"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
+        for client in _client_order():
+            label = client or "default"
+            try:
+                with YoutubeDL(_client_options(client, outtmpl)) as ydl:
+                    info = ydl.extract_info(_watch_url(video_id), download=True) or {}
+
+                seconds = parse_duration_seconds(info.get("duration"))
+                if seconds and seconds > MAX_DURATION_SECONDS:
+                    # match_filter skipped the download, drop any leftover
+                    for leftover in AUDIO_CACHE_DIR.glob(f"{video_id}.*"):
+                        leftover.unlink(missing_ok=True)
+                    raise DurationLimitExceeded(video_id, seconds)
+
+                candidate = Path(ydl.prepare_filename(info))
+                if not candidate.is_file():
+                    matches = sorted(
+                        AUDIO_CACHE_DIR.glob(f"{video_id}.*"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                    if not matches:
+                        raise ValueError(
+                            f"yt-dlp did not produce an audio file for {video_id}"
+                        )
+                    candidate = matches[0]
+
+                if candidate.is_file() and candidate.stat().st_size:
+                    produced = candidate
+                    _remember_client(client)
+                    break
+            except DurationLimitExceeded:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                _cleanup_partials(video_id)
+                log.warning(
+                    "Audio download for %s failed with the %s client: %s",
+                    video_id,
+                    label,
+                    exc,
+                )
+
+        if produced is None:
+            raise last_error or ValueError(
+                f"yt-dlp did not produce an audio file for {video_id}"
             )
-            if not matches:
-                raise ValueError(f"yt-dlp did not produce an audio file for {video_id}")
-            produced = matches[0]
 
         _prune_audio_cache()
 

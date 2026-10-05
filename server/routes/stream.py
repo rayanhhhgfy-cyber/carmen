@@ -2,6 +2,7 @@ import asyncio
 import functools
 import logging
 import os
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -16,6 +17,9 @@ router = APIRouter(tags=["Stream"])
 log = logging.getLogger(__name__)
 
 CHAT_ID = os.environ.get("CHAT_ID")
+
+# Any URL (googlevideo/videoplayback/...) must never reach the client.
+_URL_PATTERN = re.compile(r"https?://\S+|videoplayback\?\S+", re.IGNORECASE)
 
 MEDIA_TYPES = {
     ".m4a": "audio/mp4",
@@ -64,6 +68,18 @@ async def _upload_to_tg(vid_id: str, path: str):
                 continue
             log.error("Failed to upload %s to Telegram: %s", vid_id, exc)
             break
+
+
+def _safe_detail(exc: Exception) -> str:
+    """
+    Turn a yt-dlp failure into a client facing message.
+
+    The full error is logged server side, but streaming URLs (googlevideo,
+    videoplayback, ...) are stripped from anything sent back to the browser.
+    """
+    text = " ".join(str(exc).split())
+    text = _URL_PATTERN.sub("[streaming url removed]", text).strip()
+    return text[:300] or "unknown error"
 
 
 def _audio_response(path: Path | str, vid_id: str) -> FileResponse:
@@ -129,14 +145,16 @@ async def stream_audio(
             detail="yt-dlp is not installed or not found on PATH",
         ) from exc
     except DownloadError as exc:
+        log.warning("yt-dlp failed for %s: %s", vidId, exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to download audio: {exc}",
+            detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
     except Exception as exc:  # noqa: BLE001
+        log.warning("Audio download failed for %s: %s", vidId, exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to download audio: {exc}",
+            detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
 
     # Background: keep a Telegram copy of the freshly downloaded audio

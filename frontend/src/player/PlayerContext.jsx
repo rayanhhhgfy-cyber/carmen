@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { apiGet, streamUrl } from '../api';
+import { addSuggestions, recordPlay } from '../utils/library';
 import { normalizeList, normalizeTrack } from '../utils/track';
 
 /**
@@ -296,6 +297,19 @@ export function PlayerProvider({ children }) {
     const audio = audioRef.current;
     if (audio) audio.volume = volume;
   }, [volume]);
+
+  // ── Local home library: recent plays + suggested songs ─────────────────
+
+  // Every song that starts playing becomes part of the "recently played" row.
+  useEffect(() => {
+    if (current) recordPlay(current);
+  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The first 10 related songs of the playing track feed the suggestion pool.
+  useEffect(() => {
+    if (!relatedFor || !related.length) return;
+    addSuggestions(related.slice(0, 10));
+  }, [relatedFor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Audio element events ────────────────────────────────────────────────
 
