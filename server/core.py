@@ -377,9 +377,9 @@ streaming_options = {
     "cookiesfrombrowser": ("chrome", "Default"),
     "verbose": True,
     "js_runtimes": {"deno": {}},
-    "format": "bestaudio",
+    "format": "bestaudio[ext=m4a]",
     "no_warnings": False,
-    "extractor_args": {"youtube": {"player_client": ["web_safari", "web_embedded"]}},
+    # "extractor_args": {"youtube": {"player_client": ["web_safari", "web_embedded"]}},
 }
 
 
