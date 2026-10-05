@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Box, alpha, useTheme } from '@mui/material';
 
 import { usePlayer } from '../player/PlayerContext';
-import { pickArtwork } from '../utils/track';
+import { pickArtwork, primaryArtwork } from '../utils/track';
 import { extractColor, loadArtwork } from '../utils/artwork';
 
 /**
@@ -19,7 +19,8 @@ import { extractColor, loadArtwork } from '../utils/artwork';
 export default function AmbientBackground() {
   const player = usePlayer();
   const theme = useTheme();
-  const artwork = pickArtwork(player.meta?.thumbnails, player.current?.artwork);
+  const artwork =
+    primaryArtwork(player.current) || pickArtwork(player.meta?.thumbnails);
 
   const [src, setSrc] = useState(null);
   const [color, setColor] = useState(null);

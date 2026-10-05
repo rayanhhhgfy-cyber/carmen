@@ -6,12 +6,42 @@ import { parseDuration } from './format';
  * normalized shape produced here.
  */
 
+const YTIMG = 'https://i.ytimg.com';
+
+/**
+ * Largest artwork of a song, taken from the ``i.ytimg.com`` CDN (WebP).
+ *
+ * All the song lists — related, queue, suggestions, search — render this URL
+ * instead of the ``yt3.googleusercontent.com`` cover YouTube Music hands out,
+ * because that host answers bursts of artwork requests with ``429``.
+ */
+export function cdnArtwork(videoId) {
+  return typeof videoId === 'string' && videoId
+    ? `${YTIMG}/vi_webp/${videoId}/maxresdefault.webp`
+    : null;
+}
+
+/** The same artwork as a JPEG — what the MP3 cover art embeds. */
+export function cdnArtworkJpg(videoId) {
+  return typeof videoId === 'string' && videoId
+    ? `${YTIMG}/vi/${videoId}/maxresdefault.jpg`
+    : null;
+}
+
+/** Rough pixel count; unknown dimensions fall back to the longest side. */
+function area(thumb) {
+  const width = thumb?.width || 0;
+  const height = thumb?.height || 0;
+  return width * height || thumb?.width || thumb?.height || 0;
+}
+
 /**
  * Pick the largest usable thumbnail URL out of any supported shape.
  *
  * The backend returns every available size of an artwork sorted smallest
- * first — YouTube always appends the biggest one last — so the largest
- * entry wins here.  Plain strings are taken as-is (already resolved URLs).
+ * first — the biggest one is always the **last** entry — and sorts by pixel
+ * area so a square 1280×1280 cover beats a 1280×720 video frame.  Plain
+ * strings are taken as-is (already resolved URLs).
  */
 export function pickArtwork(...candidates) {
   for (const candidate of candidates) {
@@ -19,14 +49,24 @@ export function pickArtwork(...candidates) {
     if (typeof candidate === 'string' && /^https?:/.test(candidate)) return candidate;
     const list = Array.isArray(candidate) ? candidate : candidate.thumbnails;
     if (Array.isArray(list) && list.length) {
-      const sorted = [...list].sort(
-        (a, b) => (b.width || b.height || 0) - (a.width || a.height || 0),
-      );
+      const sorted = [...list].sort((a, b) => area(b) - area(a));
       const url = sorted[0]?.url;
       if (url) return url;
     }
   }
   return null;
+}
+
+/**
+ * Artwork for any item the API can return: songs go through the i.ytimg CDN
+ * (see {@link cdnArtwork}), albums / playlists keep their own square cover.
+ */
+export function primaryArtwork(item) {
+  if (!item || typeof item !== 'object') return null;
+  return (
+    (typeof item.videoId === 'string' && item.videoId && cdnArtwork(item.videoId)) ||
+    pickArtwork(item.artwork, item.thumbnail, item.thumbnails)
+  );
 }
 
 /** "Artists array" | "album string" | "album object" -> display strings. */
@@ -69,8 +109,9 @@ export function normalizeTrack(raw) {
     duration: raw.duration || raw.length || null,
     durationSeconds,
     // `artwork` is accepted as well so re-normalizing an already normalized
-    // track (what the home library persists) never loses the cover.
-    artwork: pickArtwork(raw.artwork, raw.thumbnail, raw.thumbnails),
+    // track (what the home library persists) never loses the cover; songs
+    // always resolve to the i.ytimg CDN artwork.
+    artwork: primaryArtwork(raw),
     year: raw.year || null,
     isExplicit: Boolean(raw.isExplicit),
     playlistId: raw.playlistId || null,

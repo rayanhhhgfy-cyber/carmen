@@ -11,7 +11,7 @@
 import { ID3Writer } from 'browser-id3-writer';
 import { streamUrl } from '../api';
 import { safeFileName } from './format';
-import { pickArtwork } from './track';
+import { cdnArtworkJpg, pickArtwork } from './track';
 
 // ── Observable download store ───────────────────────────────────────────────
 
@@ -164,45 +164,106 @@ async function sleep(ms) {
 }
 
 /**
- * Cover art for the ID3 APIC frame.
+ * Fetch one artwork URL, retrying a `429` / `503` with a short pause.
  *
- * The largest YouTube Music artwork is the last entry of the payload's
- * thumbnail list, so it is tried first; the plain YouTube thumbnail is only
- * a last resort.  A `429` from the image CDN is retried after a short pause.
+ * @returns {Promise<Blob|null>}
+ */
+async function fetchImage(url) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (response.status === 429 || response.status === 503) {
+        await sleep(500 * (attempt + 1));
+        continue;
+      }
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return blob.size > 1024 ? blob : null;
+    } catch {
+      await sleep(300);
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Cut the cover down to a **1:1** square.
+ *
+ * The CDN artwork is a 16:9 video frame while MP3 players expect square
+ * cover art, so the centre of the frame is cropped here in the browser —
+ * the image is never resized or re-encoded by the server.
+ *
+ * @param {Blob} blob original image
+ * @returns {Promise<ArrayBuffer|null>} JPEG bytes, or null when unavailable
+ */
+async function toSquareJpeg(blob) {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const side = Math.min(bitmap.width, bitmap.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = side;
+    canvas.height = side;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    context.drawImage(
+      bitmap,
+      (bitmap.width - side) / 2,
+      (bitmap.height - side) / 2,
+      side,
+      side,
+      0,
+      0,
+      side,
+      side,
+    );
+    if (typeof bitmap.close === 'function') bitmap.close();
+    const jpeg = await new Promise((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.92),
+    );
+    if (!jpeg) return null;
+    const buffer = await jpeg.arrayBuffer();
+    return buffer.byteLength > 1024 ? buffer : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cover art for the ID3 APIC frame — always square.
+ *
+ * The song's own cover comes from the i.ytimg CDN
+ * (`/vi/<id>/maxresdefault.jpg`), then progressively smaller sizes of the
+ * same CDN, and finally whatever the track payload carried.  Each answer is
+ * centre cropped to 1:1 before it is embedded.
  */
 async function fetchArtwork(track, meta) {
   const candidates = [
     ...new Set(
       [
-        pickArtwork(meta?.thumbnails),
-        track.artwork,
-        track.videoId
-          ? `https://i.ytimg.com/vi/${track.videoId}/maxresdefault.jpg`
-          : null,
+        cdnArtworkJpg(track.videoId),
         track.videoId
           ? `https://i.ytimg.com/vi/${track.videoId}/hq720.jpg`
           : null,
+        track.videoId
+          ? `https://i.ytimg.com/vi/${track.videoId}/sddefault.jpg`
+          : null,
+        track.videoId
+          ? `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg`
+          : null,
+        pickArtwork(meta?.thumbnails),
+        track.artwork,
       ].filter(Boolean),
     ),
   ];
 
   for (const url of candidates) {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const response = await fetch(url, { mode: 'cors' });
-        if (response.status === 429 || response.status === 503) {
-          await sleep(500 * (attempt + 1));
-          continue;
-        }
-        if (!response.ok) break;
-        const buffer = await response.arrayBuffer();
-        if (buffer.byteLength > 1024) return buffer;
-        break;
-      } catch {
-        await sleep(300);
-        break;
-      }
-    }
+    const blob = await fetchImage(url);
+    if (!blob) continue;
+    const square = await toSquareJpeg(blob);
+    if (square) return square;
+    const buffer = await blob.arrayBuffer();
+    if (buffer.byteLength > 1024) return buffer;
   }
   return null;
 }

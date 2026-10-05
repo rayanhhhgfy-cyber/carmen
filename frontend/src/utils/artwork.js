@@ -16,6 +16,33 @@
 /** Minimum delay between two artwork requests — the CDN rate limit guard. */
 export const ARTWORK_GAP_MS = 500;
 
+/** Sizes the i.ytimg CDN exposes for a video, largest first. */
+const YTIMG_SIZES = ['maxresdefault', 'hq720', 'sddefault', 'hqdefault'];
+const YTIMG_RE = /^https:\/\/i\.ytimg\.com\/(?:vi_webp|vi)\/([\w-]{11})\/([\w-]+)\.(?:webp|jpg|png)$/;
+
+/**
+ * Smaller alternatives of an i.ytimg artwork, largest first.
+ *
+ * `maxresdefault` does not exist for every upload, so a tile that fails to
+ * paint walks down this list (`maxresdefault.jpg` → `hq720` → `hqdefault`)
+ * instead of leaving an empty box behind.
+ *
+ * @param {string} url artwork URL
+ * @returns {string[]} candidate URLs, never containing *url* itself
+ */
+export function artworkFallbacks(url) {
+  const match = YTIMG_RE.exec(url || '');
+  if (!match) return [];
+  const [, videoId, size] = match;
+  const start = YTIMG_SIZES.indexOf(size);
+  const out = [];
+  for (const candidate of YTIMG_SIZES.slice(start < 0 ? 0 : start)) {
+    out.push(`https://i.ytimg.com/vi/${videoId}/${candidate}.jpg`);
+    out.push(`https://i.ytimg.com/vi_webp/${videoId}/${candidate}.webp`);
+  }
+  return [...new Set(out)].filter((candidate) => candidate !== url);
+}
+
 const RETRY_DELAY_MS = 500;
 const RETRY_BACKOFF_MS = [1500, 4000];
 const MAX_ATTEMPTS = 1 + RETRY_BACKOFF_MS.length;

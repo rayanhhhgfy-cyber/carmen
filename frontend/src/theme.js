@@ -83,6 +83,22 @@ export function buildTheme(mode, accent, fontId = DEFAULT_FONT) {
       button: { fontWeight: 600, textTransform: 'none' },
     },
     components: {
+      /*
+       * A `<button>` does **not** inherit `font-family` or `color` from its
+       * parent — the browser stylesheet paints them with its own defaults.
+       * Every card, list row and tab in this app is a real button, so without
+       * this override the font picked in Settings never showed up on them and
+       * song titles stayed black in dark mode.  Both rules keep a very low
+       * specificity, so component level colours still win.
+       */
+      MuiCssBaseline: {
+        styleOverrides: {
+          'button, input, select, textarea': {
+            fontFamily: 'inherit',
+            color: 'inherit',
+          },
+        },
+      },
       MuiButton: {
         styleOverrides: {
           root: { borderRadius: 999, paddingInline: 18 },

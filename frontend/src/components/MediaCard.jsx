@@ -1,7 +1,7 @@
 import { Box, Chip, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useNavigate } from 'react-router-dom';
-import { pickArtwork } from '../utils/track';
+import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
 
 /**
@@ -36,7 +36,7 @@ export default function MediaCard({ item, onPlaySong, songsContext = null, width
   const isFluid = typeof width !== 'number';
   const boxWidth = isFluid ? width : `${width}px`;
 
-  const artwork = pickArtwork(item.artwork, item.thumbnail, item.thumbnails) || null;
+  const artwork = primaryArtwork(item);
   const title = item.title || 'Untitled';
   const subtitle =
     item.artist ||

@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   AppBar,
@@ -20,9 +20,11 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import LyricsIcon from '@mui/icons-material/Lyrics';
+import QueueMusicIcon from '@mui/icons-material/QueueMusic';
+import ExploreIcon from '@mui/icons-material/Explore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
@@ -49,8 +51,16 @@ const Transition = forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
 });
 
-function PanelTab({ label, ...props }) {
-  return <Tab disableRipple sx={{ minHeight: 44, px: 2.5 }} label={label} {...props} />;
+function IconTab({ icon, label, ...props }) {
+  return (
+    <Tab
+      disableRipple
+      aria-label={label}
+      icon={icon}
+      sx={{ minHeight: 52, minWidth: 0, '& .MuiTab-icon': { fontSize: 22 } }}
+      {...props}
+    />
+  );
 }
 
 /**
@@ -69,9 +79,17 @@ export default function PlayerSheet() {
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   const [tab, setTab] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Mobile only: a tab that was tapped takes over the whole screen with a
+  // compact "now playing" card on top; the down arrow folds it back.
+  const [expanded, setExpanded] = useState(false);
 
   const track = player.current;
   const meta = player.meta;
+  const videoId = track?.videoId;
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [videoId]);
   const duration = player.duration || track?.durationSeconds || 0;
   const progress = duration ? Math.min(player.currentTime, duration) : 0;
   const buffered = duration
@@ -83,13 +101,18 @@ export default function PlayerSheet() {
     [meta],
   );
 
-  const handleClose = () => player.setSheetOpen(false);
+  const handleClose = () => {
+    setExpanded(false);
+    player.setSheetOpen(false);
+  };
 
   if (!track) return null;
 
   // Largest artwork first: the API returns every size sorted smallest to
   // biggest, so the last entry of the list is the biggest one.
-  const artwork = pickArtwork(meta?.thumbnails, track.artwork);
+  // The song's own artwork: the i.ytimg CDN entry (maxresdefault), which is
+  // also the largest item of the merged thumbnail list.
+  const artwork = track.artwork || pickArtwork(meta?.thumbnails);
 
   const infoLine = [
     meta?.album?.name || track.albumName,
@@ -314,17 +337,66 @@ export default function PlayerSheet() {
     </Stack>
   );
 
+  // Lyrics / related / queue as icon only tabs (labels would just repeat
+  // what the panel already shows).  On a phone tapping one opens it full
+  // screen — see `expanded`.
+  const handleTabChange = (_, value) => {
+    setTab(value);
+    if (!isDesktop) setExpanded(true);
+  };
+
   const tabs = (
     <Tabs
       value={tab}
-      onChange={(_, value) => setTab(value)}
+      onChange={handleTabChange}
       variant="fullWidth"
+      aria-label="Player panels"
       sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
     >
-      <PanelTab label="Lyrics" />
-      <PanelTab label="Related" />
-      <PanelTab label="Queue" />
+      <IconTab label="Lyrics" icon={<LyricsIcon />} />
+      <IconTab label="Related" icon={<ExploreIcon />} />
+      <IconTab label="Queue" icon={<QueueMusicIcon />} />
     </Tabs>
+  );
+
+  // Compact "now playing" card shown on top of an expanded phone panel:
+  // artwork, title, artist and the down arrow that folds it back.
+  const nowPlayingCard = (
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1.5}
+      sx={{
+        px: 2,
+        py: 1.25,
+        bgcolor: 'background.paper',
+        borderBottom: 1,
+        borderColor: 'divider',
+        flexShrink: 0,
+      }}
+    >
+      <Artwork
+        src={artwork}
+        alt=""
+        iconSize={22}
+        sx={{ width: 46, height: 46, borderRadius: 1.5, flexShrink: 0 }}
+      />
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="subtitle2" noWrap>
+          {track.title}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+          {track.artist}
+        </Typography>
+      </Box>
+      <IconButton
+        aria-label="Collapse panel"
+        onClick={() => setExpanded(false)}
+        sx={{ border: 1, borderColor: 'divider' }}
+      >
+        <ExpandMoreIcon />
+      </IconButton>
+    </Stack>
   );
 
   const panel = (
@@ -488,31 +560,50 @@ export default function PlayerSheet() {
         }}
       >
         {backdrop}
-        {header}
+        {!expanded && header}
 
-        <Box
-          sx={{
-            position: 'relative',
-            zIndex: 1,
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            px: 3,
-            pt: 1,
-            pb: 2,
-          }}
-        >
-          {artworkBox}
-          {titleBlock}
-          {errorAlert}
-          {details}
-          {progressBar}
-          {transport}
-          {volume}
-          {tabs}
-          {panel}
-        </Box>
+        {expanded ? (
+          /* Lyrics / related / queue take the whole screen with a compact
+             now playing card on top — the down arrow folds it all back. */
+          <Box
+            sx={{
+              position: 'relative',
+              zIndex: 1,
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {nowPlayingCard}
+            {tabs}
+            {panel}
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              position: 'relative',
+              zIndex: 1,
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              px: 3,
+              pt: 1,
+              pb: 2,
+            }}
+          >
+            {artworkBox}
+            {titleBlock}
+            {errorAlert}
+            {details}
+            {progressBar}
+            {transport}
+            {volume}
+            {tabs}
+            {panel}
+          </Box>
+        )}
       </Box>
     </Dialog>
   );
