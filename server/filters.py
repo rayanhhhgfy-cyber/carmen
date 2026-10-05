@@ -91,10 +91,8 @@ def is_music_track(item) -> bool:
         return False  # podcast episode browse id
 
     video_type = item.get("videoType")
-    if isinstance(video_type, str) and (
-        "PODCAST" in video_type or "EPISODE" in video_type
-    ):
-        return False
+    if isinstance(video_type, str):
+        return "PODCAST" not in video_type and "EPISODE" not in video_type
 
     return True
 

@@ -1,10 +1,10 @@
 import asyncio
 import json
 import os
-import redis.asyncio as redis
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import redis.asyncio as redis
 import uvicorn
 import uvloop
 from dotenv import load_dotenv

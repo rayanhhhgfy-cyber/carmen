@@ -150,7 +150,7 @@ async def stream_audio(
             status_code=502,
             detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.warning("Audio download failed for %s: %s", vidId, exc)
         raise HTTPException(
             status_code=502,

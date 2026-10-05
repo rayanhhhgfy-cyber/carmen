@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-import sys
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
@@ -667,7 +666,7 @@ def _prune_audio_cache():
         )
         for stale in files[AUDIO_CACHE_LIMIT:]:
             stale.unlink(missing_ok=True)
-    except OSError:  # noqa: BLE001
+    except OSError:
         pass
 
 
