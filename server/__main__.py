@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Samma3ni API",
+    title="Carmen API",
     description="YouTube Music exploration API powered by ytmusicapi",
     version="1.0.0",
     debug=False,

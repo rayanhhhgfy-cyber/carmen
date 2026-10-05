@@ -43,7 +43,7 @@ export default function SettingsPage() {
         <Box>
           <Typography variant="h5">Settings</Typography>
           <Typography variant="body2" color="text.secondary">
-            Personalize Samma3ni
+            Personalize Carmen
           </Typography>
         </Box>
 

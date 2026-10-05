@@ -73,10 +73,10 @@ function SideNav() {
             fontSize: 15,
           }}
         >
-          S
+          C
         </Box>
         <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Samma3ni
+          Carmen
         </Typography>
       </Toolbar>
       <List sx={{ px: 1.5 }}>
@@ -178,11 +178,11 @@ export default function Layout() {
           <Toolbar sx={{ minHeight: { xs: 56, md: 64 } }}>
             {isDesktop ? (
               <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                {NAV_ITEMS.find((item) => item.path === location.pathname)?.label || 'Samma3ni'}
+                {NAV_ITEMS.find((item) => item.path === location.pathname)?.label || 'Carmen'}
               </Typography>
             ) : (
               <Typography variant="h6" sx={{ fontWeight: 800, flex: 1 }}>
-                Samma3ni
+                Carmen
               </Typography>
             )}
             <Box sx={{ flex: 1 }} />

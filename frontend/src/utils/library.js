@@ -17,8 +17,14 @@ export const RECENT_LIMIT = 10;
 export const SUGGESTION_LIMIT = 100;
 export const SUGGESTION_BATCH = 10;
 
-const RECENT_KEY = 'samma3ni.recent.v1';
-const SUGGESTIONS_KEY = 'samma3ni.suggestions.v1';
+const RECENT_KEY = 'carmen.recent.v1';
+const SUGGESTIONS_KEY = 'carmen.suggestions.v1';
+
+/** Pre-rename keys, still read once so nobody loses their history. */
+const LEGACY_KEYS = {
+  [RECENT_KEY]: 'samma3ni.recent.v1',
+  [SUGGESTIONS_KEY]: 'samma3ni.suggestions.v1',
+};
 
 const listeners = new Set();
 
@@ -26,7 +32,12 @@ let snapshot = null;
 
 function readList(key) {
   try {
-    const raw = window.localStorage.getItem(key);
+    let raw = window.localStorage.getItem(key);
+    if (!raw && LEGACY_KEYS[key]) {
+      // migrate what was stored under the pre-rename key
+      raw = window.localStorage.getItem(LEGACY_KEYS[key]);
+      if (raw) window.localStorage.setItem(key, raw);
+    }
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((entry) => entry && typeof entry.videoId === 'string');

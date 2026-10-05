@@ -16,16 +16,30 @@ import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme } from '../theme';
  */
 const ThemeContext = createContext(null);
 
-const STORAGE_MODE = 'samma3ni:themeMode';
-const STORAGE_ACCENT = 'samma3ni:accent';
-const STORAGE_FONT = 'samma3ni:font';
+const STORAGE_MODE = 'carmen:themeMode';
+const STORAGE_ACCENT = 'carmen:accent';
+const STORAGE_FONT = 'carmen:font';
+
+/** Pre-rename keys, still read once so the saved settings survive. */
+const LEGACY_KEYS = {
+  [STORAGE_MODE]: 'samma3ni:themeMode',
+  [STORAGE_ACCENT]: 'samma3ni:accent',
+  [STORAGE_FONT]: 'samma3ni:font',
+};
 
 function readStorage(key, fallback) {
   try {
-    return window.localStorage.getItem(key) || fallback;
+    const stored = window.localStorage.getItem(key);
+    if (stored) return stored;
+    const legacy = LEGACY_KEYS[key] && window.localStorage.getItem(LEGACY_KEYS[key]);
+    if (legacy) {
+      window.localStorage.setItem(key, legacy);
+      return legacy;
+    }
   } catch {
-    return fallback;
+    /* private mode */
   }
+  return fallback;
 }
 
 function writeStorage(key, value) {
