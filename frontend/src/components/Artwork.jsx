@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '@mui/material';
 import AlbumIcon from '@mui/icons-material/Album';
-import { artworkFallbacks, isArtworkReady, loadArtwork } from '../utils/artwork';
+import {
+  artworkFallbacks,
+  isArtworkReady,
+  loadArtwork,
+  paintedArtwork,
+} from '../utils/artwork';
 
 /**
  * Artwork tile that goes through the throttled loader.
@@ -11,6 +16,10 @@ import { artworkFallbacks, isArtworkReady, loadArtwork } from '../utils/artwork'
  * viewport, then shown as a shimmer while it is fetched and painted only
  * once it sits in the browser cache.  Images that were already fetched during
  * the session appear instantly, wherever they are on the page.
+ *
+ * The bytes also go to a persistent store, so a cover that was ever fetched
+ * paints straight from disk (as a `blob:` URL) on every later visit — no
+ * network request at all, which is what keeps the thumbnails cached.
  *
  * The cover is always square: the source frame is 16:9 (`maxresdefault`), so
  * `object-fit: cover` does the 1:1 cut right here in the browser instead of
@@ -41,12 +50,21 @@ export default function Artwork({
     if (!src) return 'empty';
     return isArtworkReady(src) ? 'ready' : 'queued';
   });
+  // What the `<img>` paints: the cached `blob:` once its bytes exist,
+  // otherwise the plain URL.  Keyed to `active` so a step change never
+  // reuses the previous size's blob.
+  const [paint, setPaint] = useState(() => ({
+    key: src || null,
+    url: paintedArtwork(src),
+  }));
 
   const active = chain[Math.min(step, Math.max(chain.length - 1, 0))] || null;
+  const painted = paint.key === active ? paint.url : null;
 
   // A new artwork restarts the chain at its best size.
   useEffect(() => {
     setStep(0);
+    setPaint({ key: src || null, url: paintedArtwork(src) });
     setStatus(() => {
       if (!src) return 'empty';
       return isArtworkReady(src) ? 'ready' : 'queued';
@@ -89,6 +107,9 @@ export default function Artwork({
       return undefined;
     }
     if (isArtworkReady(active)) {
+      // already in the persistent store from an earlier tile / visit
+      const known = paintedArtwork(active);
+      if (known) setPaint({ key: active, url: known });
       setStatus('ready');
       return undefined;
     }
@@ -101,6 +122,7 @@ export default function Artwork({
     loadArtwork(active).then((url) => {
       if (!alive) return;
       if (url) {
+        setPaint({ key: active, url });
         setStatus('ready');
         return;
       }
@@ -127,7 +149,7 @@ export default function Artwork({
       {status === 'ready' && active ? (
         <Box
           component="img"
-          src={active}
+          src={painted || active}
           alt={alt}
           onError={nextOrGiveUp}
           sx={{

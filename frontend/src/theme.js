@@ -25,22 +25,26 @@ const SYSTEM_FONT =
  * Selectable interface fonts.  `stack` is what ends up in
  * `theme.typography.fontFamily`; every entry falls back to the system stack
  * so glyphs that the web font does not cover never break the layout.
+ *
+ * **Alexandria is the project font** — it ships both the Arabic and the
+ * Latin subset, so the whole interface reads the same in either language and
+ * it is the first entry (and therefore the fallback for unknown ids).
  */
 export const FONTS = [
-  { id: 'system', name: 'System default', stack: SYSTEM_FONT },
-  {
-    id: 'cairo',
-    name: 'Cairo',
-    stack: `"Cairo", ${SYSTEM_FONT}`,
-  },
   {
     id: 'alexandria',
     name: 'Alexandria',
     stack: `"Alexandria", ${SYSTEM_FONT}`,
   },
+  {
+    id: 'cairo',
+    name: 'Cairo',
+    stack: `"Cairo", ${SYSTEM_FONT}`,
+  },
+  { id: 'system', name: 'System default', stack: SYSTEM_FONT },
 ];
 
-export const DEFAULT_FONT = 'system';
+export const DEFAULT_FONT = 'alexandria';
 
 /** Resolve a font id into a CSS font stack (unknown ids fall back to system). */
 export function fontStack(fontId) {

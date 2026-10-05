@@ -18,13 +18,14 @@ const ThemeContext = createContext(null);
 
 const STORAGE_MODE = 'carmen:themeMode';
 const STORAGE_ACCENT = 'carmen:accent';
-const STORAGE_FONT = 'carmen:font';
+// v2 key: Alexandria is the project font for both scripts, so an older
+// `carmen:font` / `samma3ni:font` choice is deliberately not carried over.
+const STORAGE_FONT = 'carmen:font.v2';
 
 /** Pre-rename keys, still read once so the saved settings survive. */
 const LEGACY_KEYS = {
   [STORAGE_MODE]: 'samma3ni:themeMode',
   [STORAGE_ACCENT]: 'samma3ni:accent',
-  [STORAGE_FONT]: 'samma3ni:font',
 };
 
 function readStorage(key, fallback) {

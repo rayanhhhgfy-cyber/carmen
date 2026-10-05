@@ -51,6 +51,14 @@ const Transition = forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
 });
 
+/** Tab order inside the player: 0 lyrics · 1 related · 2 queue. */
+const LYRICS_TAB = 0;
+const RELATED_TAB = 1;
+const QUEUE_TAB = 2;
+
+/** Tab index used when nothing has been chosen yet (matches no tab). */
+const NO_TAB = -1;
+
 function IconTab({ icon, label, ...props }) {
   return (
     <Tab
@@ -77,7 +85,14 @@ export default function PlayerSheet() {
   const theme = useTheme();
   const navigate = useNavigate();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
-  const [tab, setTab] = useState(0);
+  /**
+   * `null` means "no panel chosen yet": a phone then shows the plain player
+   * and opens a panel only when one of the icon tabs is tapped, while the
+   * desktop drawer defaults to **Related** — the panel people open the
+   * player for.
+   */
+  const [tab, setTab] = useState(null);
+  const activeTab = tab ?? (isDesktop ? RELATED_TAB : null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   // Mobile only: a tab that was tapped takes over the whole screen with a
   // compact "now playing" card on top; the down arrow folds it back.
@@ -89,6 +104,7 @@ export default function PlayerSheet() {
 
   useEffect(() => {
     setExpanded(false);
+    setTab(null);
   }, [videoId]);
   const duration = player.duration || track?.durationSeconds || 0;
   const progress = duration ? Math.min(player.currentTime, duration) : 0;
@@ -102,7 +118,9 @@ export default function PlayerSheet() {
   );
 
   const handleClose = () => {
+    // back to the default panel (Related on desktop, nothing on a phone)
     setExpanded(false);
+    setTab(null);
     player.setSheetOpen(false);
   };
 
@@ -196,12 +214,27 @@ export default function PlayerSheet() {
     </Collapse>
   );
 
+  /**
+   * Seek bar: a hairline rail that fattens under the pointer, the buffered
+   * range in a muted tint and a glowing accent track.  The thumb only
+   * appears while the bar is hovered or focused — the modern desktop player
+   * treatment instead of a permanently visible slider dot.
+   */
   const progressBar = (
-    <Box sx={{ mt: 2 }}>
-      <Box sx={{ position: 'relative' }}>
+    <Box sx={{ mt: 2.5 }}>
+      <Box
+        sx={{
+          position: 'relative',
+          '& .seek-rail, & .seek-buffer': { transition: 'height 140ms ease' },
+          '&:hover, &:focus-within': {
+            '& .seek-rail, & .seek-buffer': { height: 6 },
+          },
+        }}
+      >
         {/* empty rail */}
         <Box
           aria-hidden
+          className="seek-rail"
           sx={{
             position: 'absolute',
             left: 0,
@@ -209,7 +242,7 @@ export default function PlayerSheet() {
             top: '50%',
             transform: 'translateY(-50%)',
             height: 4,
-            borderRadius: 2,
+            borderRadius: 3,
             bgcolor: 'action.hover',
             pointerEvents: 'none',
           }}
@@ -217,6 +250,7 @@ export default function PlayerSheet() {
         {/* downloaded / buffered range */}
         <Box
           aria-hidden
+          className="seek-buffer"
           sx={{
             position: 'absolute',
             left: 0,
@@ -224,10 +258,10 @@ export default function PlayerSheet() {
             top: '50%',
             transform: 'translateY(-50%)',
             height: 4,
-            borderRadius: 2,
-            bgcolor: 'rgba(128,128,128,0.55)',
+            borderRadius: 3,
+            bgcolor: (t) => alpha(t.palette.text.primary, 0.16),
             pointerEvents: 'none',
-            transition: 'width 300ms linear',
+            transition: 'width 300ms linear, height 140ms ease',
           }}
         />
         {duration ? (
@@ -241,70 +275,174 @@ export default function PlayerSheet() {
             sx={{
               position: 'relative',
               color: 'primary.main',
-              py: 1,
+              py: 1.25,
               '& .MuiSlider-rail': { bgcolor: 'transparent', opacity: 1 },
-              '& .MuiSlider-track': { border: 0 },
+              '& .MuiSlider-track': {
+                border: 0,
+                height: 4,
+                borderRadius: 3,
+                boxShadow: (t) => `0 0 10px ${alpha(t.palette.primary.main, 0.55)}`,
+              },
+              '& .MuiSlider-thumb': {
+                width: 12,
+                height: 12,
+                bgcolor: 'background.paper',
+                border: (t) => `3px solid ${t.palette.primary.main}`,
+                boxShadow: 'none',
+                opacity: 0,
+                scale: '0.5',
+                transition: 'opacity 140ms ease, scale 140ms ease',
+                '&:hover, &.MuiSlider-active': { opacity: 1, scale: '1' },
+              },
+              '&:hover .MuiSlider-thumb, &:focus-visible .MuiSlider-thumb': {
+                opacity: 1,
+                scale: '1',
+              },
             }}
           />
         ) : (
-          <LinearProgress sx={{ borderRadius: 2, height: 4, bgcolor: 'action.hover' }} />
+          <LinearProgress
+            sx={{ borderRadius: 3, height: 4, bgcolor: 'action.hover' }}
+          />
         )}
       </Box>
-      <Stack direction="row" justifyContent="space-between" sx={{ mt: -0.5 }}>
-        <Typography variant="caption" color="text.secondary">
+      <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.25 }}>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+        >
           {formatTime(player.currentTime)}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ fontVariantNumeric: 'tabular-nums' }}
+        >
           {duration ? formatTime(duration) : '--:--'}
         </Typography>
       </Stack>
     </Box>
   );
 
+  /**
+   * Transport: centred row with even rhythm, side buttons that fill with a
+   * tint when active and a play button that carries the accent as a glow —
+   * the round, softly floating control of a modern player.
+   */
   const transport = (
     <Stack
       direction="row"
       alignItems="center"
-      justifyContent="space-between"
-      sx={{ maxWidth: 400, width: '100%', mx: 'auto', mt: 1 }}
+      justifyContent="center"
+      spacing={{ xs: 0.25, sm: 0.75 }}
+      sx={{ maxWidth: 440, width: '100%', mx: 'auto', mt: 1.5 }}
     >
       <IconButton
         aria-label="Shuffle"
         onClick={player.toggleShuffle}
-        color={player.shuffle ? 'primary' : 'default'}
+        sx={{
+          width: 44,
+          height: 44,
+          color: player.shuffle ? 'primary.main' : 'text.secondary',
+          bgcolor: (t) =>
+            player.shuffle ? alpha(t.palette.primary.main, 0.14) : 'transparent',
+          transition: 'background-color 160ms ease, color 160ms ease',
+          '&:hover': {
+            bgcolor: (t) =>
+              player.shuffle
+                ? alpha(t.palette.primary.main, 0.22)
+                : alpha(t.palette.text.primary, 0.08),
+          },
+        }}
       >
         <ShuffleIcon fontSize="small" />
       </IconButton>
-      <IconButton aria-label="Previous" onClick={player.previous}>
-        <SkipPreviousIcon />
+
+      <IconButton
+        aria-label="Previous"
+        onClick={player.previous}
+        sx={{
+          width: 48,
+          height: 48,
+          color: 'text.primary',
+          transition: 'background-color 160ms ease',
+          '&:hover': { bgcolor: 'action.hover' },
+        }}
+      >
+        <SkipPreviousIcon sx={{ fontSize: 32 }} />
       </IconButton>
+
       <Fab
         color="primary"
         aria-label={player.isPlaying ? 'Pause' : 'Play'}
         onClick={player.togglePlay}
-        sx={{ width: 62, height: 62, boxShadow: 6 }}
+        sx={{
+          width: 66,
+          height: 66,
+          mx: 1,
+          boxShadow: (t) => `0 10px 26px ${alpha(t.palette.primary.main, 0.42)}`,
+          transition:
+            'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 160ms ease',
+          '&:hover': {
+            transform: 'scale(1.06)',
+            boxShadow: (t) => `0 14px 32px ${alpha(t.palette.primary.main, 0.55)}`,
+          },
+        }}
       >
         {player.buffering && !player.isPlaying ? (
           <CircularProgress size={26} color="inherit" />
         ) : player.isPlaying ? (
-          <PauseIcon sx={{ fontSize: 32 }} />
+          <PauseIcon sx={{ fontSize: 34 }} />
         ) : (
-          <PlayArrowIcon sx={{ fontSize: 34 }} />
+          <PlayArrowIcon sx={{ fontSize: 36 }} />
         )}
       </Fab>
-      <IconButton aria-label="Next" onClick={() => player.next()}>
-        <SkipNextIcon />
+
+      <IconButton
+        aria-label="Next"
+        onClick={() => player.next()}
+        sx={{
+          width: 48,
+          height: 48,
+          color: 'text.primary',
+          transition: 'background-color 160ms ease',
+          '&:hover': { bgcolor: 'action.hover' },
+        }}
+      >
+        <SkipNextIcon sx={{ fontSize: 32 }} />
       </IconButton>
+
       <IconButton
         aria-label={`Repeat: ${player.repeat}`}
         onClick={player.cycleRepeat}
-        color={player.repeat === 'off' ? 'default' : 'primary'}
+        sx={{
+          width: 44,
+          height: 44,
+          color: player.repeat === 'off' ? 'text.secondary' : 'primary.main',
+          bgcolor: (t) =>
+            player.repeat === 'off'
+              ? 'transparent'
+              : alpha(t.palette.primary.main, 0.14),
+          transition: 'background-color 160ms ease, color 160ms ease',
+          '&:hover': {
+            bgcolor: (t) =>
+              player.repeat === 'off'
+                ? alpha(t.palette.text.primary, 0.08)
+                : alpha(t.palette.primary.main, 0.22),
+          },
+        }}
       >
-        {player.repeat === 'one' ? <RepeatOneIcon fontSize="small" /> : <RepeatIcon fontSize="small" />}
+        {player.repeat === 'one' ? (
+          <RepeatOneIcon fontSize="small" />
+        ) : (
+          <RepeatIcon fontSize="small" />
+        )}
       </IconButton>
     </Stack>
   );
 
+  /** Volume as a compact pill: mute button, filled track, live percentage. */
   const volume = (
     <Stack
       direction="row"
@@ -312,16 +450,24 @@ export default function PlayerSheet() {
       spacing={1}
       sx={{
         display: { xs: 'none', sm: 'flex' },
-        maxWidth: 300,
-        width: '100%',
+        width: 'fit-content',
+        maxWidth: '100%',
         mx: 'auto',
-        mt: 0.5,
+        mt: 1.75,
+        px: 1.25,
+        py: 0.5,
+        borderRadius: 999,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
       }}
     >
       <IconButton
         size="small"
         aria-label="Mute"
         onClick={() => player.setVolume(player.volume > 0 ? 0 : 1)}
+        sx={{ color: 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
       >
         {player.volume > 0 ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
       </IconButton>
@@ -333,7 +479,34 @@ export default function PlayerSheet() {
         step={0.05}
         onChange={(_, value) => player.setVolume(Number(value))}
         aria-label="Volume"
+        sx={{
+          color: 'primary.main',
+          width: 112,
+          py: 0,
+          '& .MuiSlider-rail': {
+            bgcolor: 'action.hover',
+            opacity: 1,
+            height: 4,
+            borderRadius: 3,
+          },
+          '& .MuiSlider-track': { border: 0, height: 4, borderRadius: 3 },
+          '& .MuiSlider-thumb': {
+            width: 12,
+            height: 12,
+            bgcolor: 'background.paper',
+            border: (t) => `3px solid ${t.palette.primary.main}`,
+            boxShadow: 'none',
+            '&:hover': { boxShadow: 'none' },
+          },
+        }}
       />
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ minWidth: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+      >
+        {Math.round(player.volume * 100)}%
+      </Typography>
     </Stack>
   );
 
@@ -347,7 +520,7 @@ export default function PlayerSheet() {
 
   const tabs = (
     <Tabs
-      value={tab}
+      value={activeTab ?? NO_TAB}
       onChange={handleTabChange}
       variant="fullWidth"
       aria-label="Player panels"
@@ -391,7 +564,10 @@ export default function PlayerSheet() {
       </Box>
       <IconButton
         aria-label="Collapse panel"
-        onClick={() => setExpanded(false)}
+        onClick={() => {
+          setExpanded(false);
+          setTab(null);
+        }}
         sx={{ border: 1, borderColor: 'divider' }}
       >
         <ExpandMoreIcon />
@@ -399,19 +575,22 @@ export default function PlayerSheet() {
     </Stack>
   );
 
-  const panel = (
-    <Box sx={{ flex: 1, minHeight: 240, mt: 1 }}>
-      <Box sx={{ display: tab === 0 ? 'block' : 'none', height: '100%' }}>
-        <LyricsView synced={lyrics.synced} unsynced={lyrics.unsynced} source={lyrics.source} />
+  const panel =
+    activeTab === null ? null : (
+      // every panel stays mounted (hidden) so switching tabs never
+      // re-fetches; a phone that opened no tab renders nothing at all
+      <Box sx={{ flex: 1, minHeight: 240, mt: 1 }}>
+        <Box sx={{ display: activeTab === LYRICS_TAB ? 'block' : 'none', height: '100%' }}>
+          <LyricsView synced={lyrics.synced} unsynced={lyrics.unsynced} source={lyrics.source} />
+        </Box>
+        <Box sx={{ display: activeTab === RELATED_TAB ? 'block' : 'none', height: '100%' }}>
+          <RelatedTab />
+        </Box>
+        <Box sx={{ display: activeTab === QUEUE_TAB ? 'block' : 'none', height: '100%' }}>
+          <QueueTab />
+        </Box>
       </Box>
-      <Box sx={{ display: tab === 1 ? 'block' : 'none', height: '100%' }}>
-        <RelatedTab />
-      </Box>
-      <Box sx={{ display: tab === 2 ? 'block' : 'none', height: '100%' }}>
-        <QueueTab />
-      </Box>
-    </Box>
-  );
+    );
 
   const header = (
     <AppBar
