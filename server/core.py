@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -365,11 +366,10 @@ def get_playlist(
 
 # ── Streaming ──────────────────────────────────────────────────────────────
 
-import subprocess
 import tempfile
 import time
-from datetime import datetime
 from urllib.parse import parse_qs, urlparse
+
 from yt_dlp import YoutubeDL
 
 streaming_options = {
@@ -422,7 +422,9 @@ def get_stream_url(video_id: str) -> str:
     with YoutubeDL(streaming_options) as ydl:
         info = ydl.extract_info(url, download=False)
 
-        print(info)
+        print(info.get("url"))
+        with open(f"{video_id}.json", "w+") as f:
+            f.write(json.dumps(info, indent=2, ensure_ascii=False))
 
         return info.get("url")
 
@@ -440,7 +442,7 @@ def get_stream_url_ttl(stream_url: str) -> int:
         if expire_ts:
             ttl = int(expire_ts) - int(time.time()) - 60
             return max(ttl, 60)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     return 300
 
@@ -450,7 +452,7 @@ def download_audio(video_id: str, stream_url: str) -> str:
     Download the audio from the resolved URL to a temporary .webm file.
     Returns the file path. Caller is responsible for cleanup.
     """
-    tmp = tempfile.NamedTemporaryFile(
+    tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115
         suffix=".webm", prefix=f"{video_id}_", delete=False
     )
     tmp.close()

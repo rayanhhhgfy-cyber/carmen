@@ -8,8 +8,8 @@ import aiohttp
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from ..core import download_audio, get_stream_url, get_stream_url_ttl
 from .. import state
+from ..core import download_audio, get_stream_url, get_stream_url_ttl
 
 router = APIRouter(tags=["Stream"])
 log = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ async def _upload_to_tg(vid_id: str, stream_url: str):
                 await state.rds.hset("vids", vid_id, msg.id)
                 log.info("Uploaded %s to Telegram (msg %s)", vid_id, msg.id)
                 break
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # FloodWaitError has a `value` attribute (seconds to wait)
                 flood_wait = getattr(exc, "value", None)
                 if flood_wait is not None:
@@ -115,7 +115,7 @@ async def stream_audio(
                 media_type="audio/webm",
                 headers={"Cache-Control": "no-cache"},
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             log.warning("Telegram cache miss for %s: %s — falling through", vidId, exc)
 
     # ── 2. Cached URL ──────────────────────────────────────────────────
@@ -133,7 +133,7 @@ async def stream_audio(
                 status_code=500,
                 detail="yt-dlp is not installed or not found on PATH",
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             raise HTTPException(
                 status_code=502,
                 detail=f"Failed to resolve stream URL: {exc}",
@@ -150,15 +150,14 @@ async def stream_audio(
 
     # ── 4. Proxy the googlevideo stream ─────────────────────────────────
     async def _proxy():
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Upstream returned HTTP {resp.status}",
-                    )
-                async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
-                    yield chunk
+        async with aiohttp.ClientSession() as session, session.get(url) as resp:
+            if resp.status != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Upstream returned HTTP {resp.status}",
+                )
+            async for chunk in resp.content.iter_chunked(CHUNK_SIZE):
+                yield chunk
 
     # ── 5. Background: upload to Telegram (fire-and-forget) ─────────────
     already_uploading = await state.rds.hget("vids", vidId) is not None
