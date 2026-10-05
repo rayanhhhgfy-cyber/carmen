@@ -7,6 +7,7 @@ import {
   CircularProgress,
   Collapse,
   Dialog,
+  Drawer,
   Fab,
   IconButton,
   LinearProgress,
@@ -20,6 +21,7 @@ import {
   useTheme,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -36,6 +38,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { usePlayer } from '../player/PlayerContext';
 import { formatTime } from '../utils/format';
+import { pickArtwork } from '../utils/track';
+import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
 import LyricsView from './LyricsView';
 import RelatedTab from './RelatedTab';
@@ -50,14 +54,19 @@ function PanelTab({ label, ...props }) {
 }
 
 /**
- * Full screen player: artwork, touch friendly transport controls, progress,
- * synced lyrics, related songs and the queue.
+ * Full screen player.
+ *
+ * * on phones it slides up as a full screen dialog;
+ * * on desktop it opens as a **drawer docked to the left**, split into two
+ *   columns: the artwork and the transport on the left, and the lyrics /
+ *   related / queue panel on the right — so the related list gets the full
+ *   height of the window instead of the few hundred pixels left over.
  */
 export default function PlayerSheet() {
   const player = usePlayer();
   const theme = useTheme();
   const navigate = useNavigate();
-  const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   const [tab, setTab] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
@@ -65,6 +74,9 @@ export default function PlayerSheet() {
   const meta = player.meta;
   const duration = player.duration || track?.durationSeconds || 0;
   const progress = duration ? Math.min(player.currentTime, duration) : 0;
+  const buffered = duration
+    ? Math.min(Math.max(player.buffered, 0) / duration, 1)
+    : 0;
 
   const lyrics = useMemo(
     () => meta?.lyrics || { synced: null, unsynced: null, source: null },
@@ -75,275 +87,431 @@ export default function PlayerSheet() {
 
   if (!track) return null;
 
-  const artwork = meta?.thumbnails?.[0]?.url || track.artwork;
+  // Largest artwork first: the API returns every size sorted smallest to
+  // biggest, so the last entry of the list is the biggest one.
+  const artwork = pickArtwork(meta?.thumbnails, track.artwork);
+
+  const infoLine = [
+    meta?.album?.name || track.albumName,
+    meta?.year,
+    meta?.genre,
+    track.duration ? formatTime(track.duration) : null,
+  ]
+    .filter(Boolean)
+    .join('  •  ');
+
+  const artworkBox = (
+    <Box
+      sx={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: { xs: 'min(58vw, 260px)', sm: 'min(60vw, 300px)', md: 320 },
+        mx: 'auto',
+      }}
+    >
+      <Artwork
+        src={artwork}
+        alt={track.albumName || track.title}
+        iconSize={72}
+        sx={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 3, boxShadow: 10 }}
+      />
+      {player.buffering && (
+        <CircularProgress
+          size={44}
+          sx={{ position: 'absolute', inset: 0, margin: 'auto', color: 'primary.main' }}
+        />
+      )}
+    </Box>
+  );
+
+  const titleBlock = (
+    <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 2 }}>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography variant="h6" noWrap>
+          {track.title}
+        </Typography>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          noWrap
+          onClick={() => {
+            if (!track.artist) return;
+            player.setSheetOpen(false);
+            navigate(`/search?query=${encodeURIComponent(track.artist)}`);
+          }}
+          sx={{ cursor: track.artist ? 'pointer' : 'default', '&:hover': { color: 'primary.main' } }}
+        >
+          {track.artist}
+        </Typography>
+      </Box>
+      {track.isExplicit && <Chip label="E" size="small" />}
+    </Stack>
+  );
+
+  const errorAlert = player.error ? (
+    <Alert severity="error" onClose={player.dismissError} sx={{ mt: 1.5, py: 0 }}>
+      {player.error}
+    </Alert>
+  ) : null;
+
+  const details = (
+    <Collapse in={detailsOpen} sx={{ mt: 1 }}>
+      <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.8 }}>
+          {infoLine}
+        </Typography>
+        {meta?.description && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-line', maxHeight: 90, overflow: 'hidden' }}
+          >
+            {meta.description}
+          </Typography>
+        )}
+      </Box>
+    </Collapse>
+  );
+
+  const progressBar = (
+    <Box sx={{ mt: 2 }}>
+      <Box sx={{ position: 'relative' }}>
+        {/* empty rail */}
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            height: 4,
+            borderRadius: 2,
+            bgcolor: 'action.hover',
+            pointerEvents: 'none',
+          }}
+        />
+        {/* downloaded / buffered range */}
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            left: 0,
+            width: `${buffered * 100}%`,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            height: 4,
+            borderRadius: 2,
+            bgcolor: 'rgba(128,128,128,0.55)',
+            pointerEvents: 'none',
+            transition: 'width 300ms linear',
+          }}
+        />
+        {duration ? (
+          <Slider
+            size="small"
+            value={progress}
+            max={duration}
+            step={0.5}
+            onChange={(_, value) => player.seek(Number(value))}
+            aria-label="Seek"
+            sx={{
+              position: 'relative',
+              color: 'primary.main',
+              py: 1,
+              '& .MuiSlider-rail': { bgcolor: 'transparent', opacity: 1 },
+              '& .MuiSlider-track': { border: 0 },
+            }}
+          />
+        ) : (
+          <LinearProgress sx={{ borderRadius: 2, height: 4, bgcolor: 'action.hover' }} />
+        )}
+      </Box>
+      <Stack direction="row" justifyContent="space-between" sx={{ mt: -0.5 }}>
+        <Typography variant="caption" color="text.secondary">
+          {formatTime(player.currentTime)}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {duration ? formatTime(duration) : '--:--'}
+        </Typography>
+      </Stack>
+    </Box>
+  );
+
+  const transport = (
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="space-between"
+      sx={{ maxWidth: 400, width: '100%', mx: 'auto', mt: 1 }}
+    >
+      <IconButton
+        aria-label="Shuffle"
+        onClick={player.toggleShuffle}
+        color={player.shuffle ? 'primary' : 'default'}
+      >
+        <ShuffleIcon fontSize="small" />
+      </IconButton>
+      <IconButton aria-label="Previous" onClick={player.previous}>
+        <SkipPreviousIcon />
+      </IconButton>
+      <Fab
+        color="primary"
+        aria-label={player.isPlaying ? 'Pause' : 'Play'}
+        onClick={player.togglePlay}
+        sx={{ width: 62, height: 62, boxShadow: 6 }}
+      >
+        {player.buffering && !player.isPlaying ? (
+          <CircularProgress size={26} color="inherit" />
+        ) : player.isPlaying ? (
+          <PauseIcon sx={{ fontSize: 32 }} />
+        ) : (
+          <PlayArrowIcon sx={{ fontSize: 34 }} />
+        )}
+      </Fab>
+      <IconButton aria-label="Next" onClick={() => player.next()}>
+        <SkipNextIcon />
+      </IconButton>
+      <IconButton
+        aria-label={`Repeat: ${player.repeat}`}
+        onClick={player.cycleRepeat}
+        color={player.repeat === 'off' ? 'default' : 'primary'}
+      >
+        {player.repeat === 'one' ? <RepeatOneIcon fontSize="small" /> : <RepeatIcon fontSize="small" />}
+      </IconButton>
+    </Stack>
+  );
+
+  const volume = (
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1}
+      sx={{
+        display: { xs: 'none', sm: 'flex' },
+        maxWidth: 300,
+        width: '100%',
+        mx: 'auto',
+        mt: 0.5,
+      }}
+    >
+      <IconButton
+        size="small"
+        aria-label="Mute"
+        onClick={() => player.setVolume(player.volume > 0 ? 0 : 1)}
+      >
+        {player.volume > 0 ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
+      </IconButton>
+      <Slider
+        size="small"
+        value={player.volume}
+        min={0}
+        max={1}
+        step={0.05}
+        onChange={(_, value) => player.setVolume(Number(value))}
+        aria-label="Volume"
+      />
+    </Stack>
+  );
+
+  const tabs = (
+    <Tabs
+      value={tab}
+      onChange={(_, value) => setTab(value)}
+      variant="fullWidth"
+      sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+    >
+      <PanelTab label="Lyrics" />
+      <PanelTab label="Related" />
+      <PanelTab label="Queue" />
+    </Tabs>
+  );
+
+  const panel = (
+    <Box sx={{ flex: 1, minHeight: 240, mt: 1 }}>
+      <Box sx={{ display: tab === 0 ? 'block' : 'none', height: '100%' }}>
+        <LyricsView synced={lyrics.synced} unsynced={lyrics.unsynced} source={lyrics.source} />
+      </Box>
+      <Box sx={{ display: tab === 1 ? 'block' : 'none', height: '100%' }}>
+        <RelatedTab />
+      </Box>
+      <Box sx={{ display: tab === 2 ? 'block' : 'none', height: '100%' }}>
+        <QueueTab />
+      </Box>
+    </Box>
+  );
+
+  const header = (
+    <AppBar
+      position="static"
+      elevation={0}
+      color="transparent"
+      sx={{ zIndex: 2, backdropFilter: 'blur(6px)', flexShrink: 0 }}
+    >
+      <Stack direction="row" alignItems="center" sx={{ px: 1, py: 0.5 }}>
+        <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
+          {isDesktop ? <ChevronLeftIcon /> : <ExpandMoreIcon />}
+        </IconButton>
+        <Box sx={{ flex: 1, textAlign: 'center' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 1.2 }}>
+            NOW PLAYING
+          </Typography>
+        </Box>
+        <IconButton
+          aria-label="Track details"
+          color={detailsOpen ? 'primary' : 'default'}
+          onClick={() => setDetailsOpen((value) => !value)}
+        >
+          <InfoOutlinedIcon fontSize="small" />
+        </IconButton>
+        <DownloadButton edge="end" track={track} meta={meta} />
+      </Stack>
+    </AppBar>
+  );
+
+  const backdrop = (
+    <Box
+      aria-hidden
+      sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
+    >
+      {artwork && (
+        <Artwork
+          src={artwork}
+          alt=""
+          icon={null}
+          sx={{ position: 'absolute', top: '-25%', left: '-25%', width: '150%', height: '150%' }}
+          imgSx={{ filter: 'blur(70px) saturate(1.5)', opacity: 0.55 }}
+        />
+      )}
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.5)} 0%, ${alpha(theme.palette.background.default, 0.88)} 45%, ${theme.palette.background.default} 100%)`,
+        }}
+      />
+    </Box>
+  );
+
+  if (isDesktop) {
+    return (
+      <Drawer
+        anchor="left"
+        variant="temporary"
+        open={player.sheetOpen}
+        onClose={handleClose}
+        PaperProps={{
+          sx: {
+            width: { md: 720, lg: 840 },
+            maxWidth: '100vw',
+            boxSizing: 'border-box',
+            bgcolor: 'background.default',
+            borderRight: 1,
+            borderColor: 'divider',
+            overflow: 'hidden',
+          },
+        }}
+      >
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            minHeight: 0,
+          }}
+        >
+          {backdrop}
+          {header}
+
+          <Box
+            sx={{
+              position: 'relative',
+              zIndex: 1,
+              flex: 1,
+              minHeight: 0,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 300px) minmax(0, 1fr)',
+              gap: 3,
+              px: 3,
+              pt: 1,
+              pb: 2,
+            }}
+          >
+            {/* ── Left: artwork + transport ─────────────────────────── */}
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+                overflowY: 'auto',
+                pr: 0.5,
+              }}
+            >
+              {artworkBox}
+              {titleBlock}
+              {errorAlert}
+              {details}
+              {progressBar}
+              {transport}
+              {volume}
+            </Box>
+
+            {/* ── Right: lyrics / related / queue ───────────────────── */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              {tabs}
+              {panel}
+            </Box>
+          </Box>
+        </Box>
+      </Drawer>
+    );
+  }
 
   return (
     <Dialog
-      fullScreen={fullScreen}
+      fullScreen
       open={player.sheetOpen}
       onClose={handleClose}
       TransitionComponent={Transition}
-      fullWidth
-      maxWidth="sm"
       PaperProps={{
-        sx: {
-          maxHeight: fullScreen ? '100%' : '92vh',
-          borderRadius: fullScreen ? 0 : 3,
-          bgcolor: 'background.default',
-          overflow: 'hidden',
-        },
+        sx: { bgcolor: 'background.default', overflow: 'hidden' },
       }}
     >
-      <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', height: fullScreen ? '100vh' : '86vh', maxHeight: '100%' }}>
-        {/* ── Blurred artwork backdrop ─────────────────────────────────── */}
-        <Box aria-hidden sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-          {artwork && (
-            <Box
-              component="img"
-              src={artwork}
-              alt=""
-              sx={{
-                position: 'absolute',
-                top: '-25%',
-                left: '-25%',
-                width: '150%',
-                height: '150%',
-                objectFit: 'cover',
-                filter: 'blur(70px) saturate(1.5)',
-                opacity: 0.55,
-              }}
-            />
-          )}
-          <Box
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.55)} 0%, ${alpha(theme.palette.background.default, 0.9)} 45%, ${theme.palette.background.default} 100%)`,
-            }}
-          />
-        </Box>
+      <Box
+        sx={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+        {backdrop}
+        {header}
 
-        {/* ── Header ───────────────────────────────────────────────────── */}
-        <AppBar
-          position="static"
-          elevation={0}
-          color="transparent"
-          sx={{ zIndex: 2, backdropFilter: 'blur(6px)' }}
+        <Box
+          sx={{
+            position: 'relative',
+            zIndex: 1,
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            px: 3,
+            pt: 1,
+            pb: 2,
+          }}
         >
-          <Stack direction="row" alignItems="center" sx={{ px: 1, py: 0.5 }}>
-            <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
-              {fullScreen ? <ExpandMoreIcon /> : <CloseIcon />}
-            </IconButton>
-            <Box sx={{ flex: 1, textAlign: 'center' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 1.2 }}>
-                NOW PLAYING
-              </Typography>
-            </Box>
-            <IconButton
-              aria-label="Track details"
-              color={detailsOpen ? 'primary' : 'default'}
-              onClick={() => setDetailsOpen((value) => !value)}
-            >
-              <InfoOutlinedIcon fontSize="small" />
-            </IconButton>
-            <DownloadButton edge="end" track={track} meta={meta} />
-          </Stack>
-        </AppBar>
-
-        {/* ── Body ─────────────────────────────────────────────────────── */}
-        <Box sx={{ position: 'relative', zIndex: 1, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', px: 3, pt: 1, pb: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-            <Box sx={{ position: 'relative', width: fullScreen ? 'min(66vw, 300px)' : 260 }}>
-              <Box
-                component="img"
-                src={artwork || undefined}
-                alt={track.albumName || track.title}
-                sx={{
-                  width: '100%',
-                  aspectRatio: '1 / 1',
-                  objectFit: 'cover',
-                  borderRadius: 3,
-                  bgcolor: 'action.hover',
-                  boxShadow: 10,
-                }}
-              />
-              {player.buffering && (
-                <CircularProgress
-                  size={42}
-                  sx={{ position: 'absolute', inset: 0, margin: 'auto', color: 'primary.main' }}
-                />
-              )}
-            </Box>
-          </Box>
-
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 2.5 }}>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="h6" noWrap>
-                {track.title}
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                noWrap
-                onClick={() => {
-                  if (!track.artist) return;
-                  player.setSheetOpen(false);
-                  navigate(`/search?query=${encodeURIComponent(track.artist)}`);
-                }}
-                sx={{ cursor: track.artist ? 'pointer' : 'default', '&:hover': { color: 'primary.main' } }}
-              >
-                {track.artist}
-              </Typography>
-            </Box>
-            {track.isExplicit && <Chip label="E" size="small" />}
-          </Stack>
-
-          {player.error && (
-            <Alert severity="error" onClose={player.dismissError} sx={{ mt: 1.5, py: 0 }}>
-              {player.error}
-            </Alert>
-          )}
-
-          <Collapse in={detailsOpen} sx={{ mt: 1 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.8 }}>
-                {[
-                  meta?.album?.name || track.albumName,
-                  meta?.year,
-                  meta?.genre,
-                  track.duration ? formatTime(track.duration) : null,
-                ]
-                  .filter(Boolean)
-                  .join('  •  ')}
-              </Typography>
-              {meta?.description && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-line', maxHeight: 90, overflow: 'hidden' }}>
-                  {meta.description}
-                </Typography>
-              )}
-            </Box>
-          </Collapse>
-
-          {/* Progress */}
-          <Box sx={{ mt: 2 }}>
-            {duration ? (
-              <Slider
-                size="small"
-                value={progress}
-                max={duration}
-                step={0.5}
-                onChange={(_, value) => player.seek(Number(value))}
-                aria-label="Seek"
-                sx={{ color: 'primary.main', py: 1 }}
-              />
-            ) : (
-              <LinearProgress sx={{ borderRadius: 2, height: 4, bgcolor: 'action.hover' }} />
-            )}
-            <Stack direction="row" justifyContent="space-between" sx={{ mt: -0.5 }}>
-              <Typography variant="caption" color="text.secondary">
-                {formatTime(player.currentTime)}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {duration ? formatTime(duration) : '--:--'}
-              </Typography>
-            </Stack>
-          </Box>
-
-          {/* Transport */}
-          <Stack
-            direction="row"
-            alignItems="center"
-            justifyContent="space-between"
-            sx={{ maxWidth: 400, width: '100%', mx: 'auto', mt: 1 }}
-          >
-            <IconButton
-              aria-label="Shuffle"
-              onClick={player.toggleShuffle}
-              color={player.shuffle ? 'primary' : 'default'}
-            >
-              <ShuffleIcon fontSize="small" />
-            </IconButton>
-            <IconButton aria-label="Previous" onClick={player.previous}>
-              <SkipPreviousIcon />
-            </IconButton>
-            <Fab
-              color="primary"
-              aria-label={player.isPlaying ? 'Pause' : 'Play'}
-              onClick={player.togglePlay}
-              sx={{ width: 62, height: 62, boxShadow: 6 }}
-            >
-              {player.buffering && !player.isPlaying ? (
-                <CircularProgress size={26} color="inherit" />
-              ) : player.isPlaying ? (
-                <PauseIcon sx={{ fontSize: 32 }} />
-              ) : (
-                <PlayArrowIcon sx={{ fontSize: 34 }} />
-              )}
-            </Fab>
-            <IconButton aria-label="Next" onClick={() => player.next()}>
-              <SkipNextIcon />
-            </IconButton>
-            <IconButton
-              aria-label={`Repeat: ${player.repeat}`}
-              onClick={player.cycleRepeat}
-              color={player.repeat === 'off' ? 'default' : 'primary'}
-            >
-              {player.repeat === 'one' ? <RepeatOneIcon fontSize="small" /> : <RepeatIcon fontSize="small" />}
-            </IconButton>
-          </Stack>
-
-          {/* Volume (pointer devices) */}
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={1}
-            sx={{ display: { xs: 'none', sm: 'flex' }, maxWidth: 300, width: '100%', mx: 'auto', mt: 0.5 }}
-          >
-            <IconButton
-              size="small"
-              aria-label="Mute"
-              onClick={() => player.setVolume(player.volume > 0 ? 0 : 1)}
-            >
-              {player.volume > 0 ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
-            </IconButton>
-            <Slider
-              size="small"
-              value={player.volume}
-              min={0}
-              max={1}
-              step={0.05}
-              onChange={(_, value) => player.setVolume(Number(value))}
-              aria-label="Volume"
-            />
-          </Stack>
-
-          {/* Tabs */}
-          <Tabs
-            value={tab}
-            onChange={(_, value) => setTab(value)}
-            variant="fullWidth"
-            sx={{ mt: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
-          >
-            <PanelTab label="Lyrics" />
-            <PanelTab label="Related" />
-            <PanelTab label="Queue" />
-          </Tabs>
-
-          <Box sx={{ flex: 1, minHeight: 220, mt: 1 }}>
-            <Box sx={{ display: tab === 0 ? 'block' : 'none', height: '100%' }}>
-              <LyricsView
-                synced={lyrics.synced}
-                unsynced={lyrics.unsynced}
-                source={lyrics.source}
-              />
-            </Box>
-            <Box sx={{ display: tab === 1 ? 'block' : 'none', height: '100%' }}>
-              <RelatedTab />
-            </Box>
-            <Box sx={{ display: tab === 2 ? 'block' : 'none', height: '100%' }}>
-              <QueueTab />
-            </Box>
-          </Box>
+          {artworkBox}
+          {titleBlock}
+          {errorAlert}
+          {details}
+          {progressBar}
+          {transport}
+          {volume}
+          {tabs}
+          {panel}
         </Box>
       </Box>
     </Dialog>

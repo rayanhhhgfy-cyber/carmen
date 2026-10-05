@@ -28,6 +28,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { usePlayer } from '../player/PlayerContext';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloads';
+import AmbientBackground from './AmbientBackground';
 import MiniPlayer from './MiniPlayer';
 import PlayerSheet from './PlayerSheet';
 
@@ -51,7 +52,10 @@ function SideNav() {
           boxSizing: 'border-box',
           borderRight: 1,
           borderColor: 'divider',
-          bgcolor: 'background.paper',
+          // translucent so the ambient artwork tint bleeds through
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(18,23,20,0.86)' : 'rgba(255,255,255,0.86)',
+          backdropFilter: 'blur(16px)',
         },
       }}
     >
@@ -149,7 +153,10 @@ export default function Layout() {
     : `calc(${navHeight}px + env(safe-area-inset-bottom) + ${showMini ? 84 : 20}px)`;
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      {/* artwork driven ambient tint (painted behind every surface) */}
+      <AmbientBackground />
+
       {isDesktop && <SideNav />}
 
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -195,7 +202,9 @@ export default function Layout() {
         </Box>
       </Box>
 
-      <MiniPlayer bottomOffset={bottomOffset} />
+      {/* the docked bar would sit under the desktop player drawer, so it
+          steps aside while the player is open */}
+      {!(isDesktop && player.sheetOpen) && <MiniPlayer bottomOffset={bottomOffset} />}
 
       {!isDesktop && (
         <BottomNavigation
@@ -211,7 +220,9 @@ export default function Layout() {
             pb: 'env(safe-area-inset-bottom)',
             borderTop: 1,
             borderColor: 'divider',
-            bgcolor: 'background.paper',
+            bgcolor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(18,23,20,0.9)' : 'rgba(255,255,255,0.9)',
+            backdropFilter: 'blur(16px)',
             zIndex: (theme) => theme.zIndex.appBar,
           }}
         >

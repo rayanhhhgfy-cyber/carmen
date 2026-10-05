@@ -18,16 +18,44 @@ export const ACCENTS = [
 
 export const DEFAULT_ACCENT = '#4CAF50';
 
-const FONT =
-  '"Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const SYSTEM_FONT =
+  '"SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+/**
+ * Selectable interface fonts.  `stack` is what ends up in
+ * `theme.typography.fontFamily`; every entry falls back to the system stack
+ * so glyphs that the web font does not cover never break the layout.
+ */
+export const FONTS = [
+  { id: 'system', name: 'System default', stack: SYSTEM_FONT },
+  {
+    id: 'cairo',
+    name: 'Cairo',
+    stack: `"Cairo", ${SYSTEM_FONT}`,
+  },
+  {
+    id: 'alexandria',
+    name: 'Alexandria',
+    stack: `"Alexandria", ${SYSTEM_FONT}`,
+  },
+];
+
+export const DEFAULT_FONT = 'system';
+
+/** Resolve a font id into a CSS font stack (unknown ids fall back to system). */
+export function fontStack(fontId) {
+  const match = FONTS.find((font) => font.id === fontId);
+  return (match || FONTS[0]).stack;
+}
 
 /**
  * Build the MUI theme for a resolved color mode and accent color.
  *
  * @param {'light'|'dark'} mode resolved mode (system is already applied)
  * @param {string} accent hex accent color
+ * @param {string} [fontId] selected font id (see {@link FONTS})
  */
-export function buildTheme(mode, accent) {
+export function buildTheme(mode, accent, fontId = DEFAULT_FONT) {
   const dark = mode === 'dark';
 
   return createTheme({
@@ -48,7 +76,7 @@ export function buildTheme(mode, accent) {
     },
     shape: { borderRadius: 14 },
     typography: {
-      fontFamily: FONT,
+      fontFamily: fontStack(fontId),
       h5: { fontWeight: 700, letterSpacing: '-0.02em' },
       h6: { fontWeight: 700, letterSpacing: '-0.01em' },
       subtitle1: { fontWeight: 600 },

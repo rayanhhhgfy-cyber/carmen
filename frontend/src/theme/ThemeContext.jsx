@@ -7,17 +7,18 @@ import {
   useState,
 } from 'react';
 import { CssBaseline, ThemeProvider as MuiThemeProvider } from '@mui/material';
-import { DEFAULT_ACCENT, buildTheme } from '../theme';
+import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme } from '../theme';
 
 /**
- * Theme engine: light / dark / system modes plus an accent color.
- * The choice is persisted in localStorage and the system mode follows
- * `prefers-color-scheme` live.
+ * Theme engine: light / dark / system modes, an accent color and the
+ * interface font.  The choice is persisted in localStorage and the system
+ * mode follows `prefers-color-scheme` live.
  */
 const ThemeContext = createContext(null);
 
 const STORAGE_MODE = 'samma3ni:themeMode';
 const STORAGE_ACCENT = 'samma3ni:accent';
+const STORAGE_FONT = 'samma3ni:font';
 
 function readStorage(key, fallback) {
   try {
@@ -43,6 +44,7 @@ function systemPrefersDark() {
 export function ThemeProvider({ children }) {
   const [mode, setModeState] = useState(() => readStorage(STORAGE_MODE, 'system'));
   const [accent, setAccentState] = useState(() => readStorage(STORAGE_ACCENT, DEFAULT_ACCENT));
+  const [font, setFontState] = useState(() => readStorage(STORAGE_FONT, DEFAULT_FONT));
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
 
   useEffect(() => {
@@ -63,9 +65,17 @@ export function ThemeProvider({ children }) {
     writeStorage(STORAGE_ACCENT, next);
   }, []);
 
+  const setFont = useCallback((next) => {
+    setFontState(next);
+    writeStorage(STORAGE_FONT, next);
+  }, []);
+
   const resolved = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
 
-  const theme = useMemo(() => buildTheme(resolved, accent), [resolved, accent]);
+  const theme = useMemo(
+    () => buildTheme(resolved, accent, font),
+    [resolved, accent, font],
+  );
 
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -73,8 +83,8 @@ export function ThemeProvider({ children }) {
   }, [accent]);
 
   const value = useMemo(
-    () => ({ mode, setMode, accent, setAccent, resolved }),
-    [mode, setMode, accent, setAccent, resolved],
+    () => ({ mode, setMode, accent, setAccent, font, setFont, resolved }),
+    [mode, setMode, accent, setAccent, font, setFont, resolved],
   );
 
   return (

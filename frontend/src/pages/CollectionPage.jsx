@@ -18,6 +18,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { apiGet } from '../api';
 import { usePlayer } from '../player/PlayerContext';
 import { normalizeList, pickArtwork } from '../utils/track';
+import Artwork from '../components/Artwork';
 import TrackList, { EmptyState } from '../components/TrackList';
 
 /** Album / playlist detail page with a collapsible description. */
@@ -104,18 +105,17 @@ export default function CollectionPage() {
       </IconButton>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ mb: 3 }}>
-        <Box
-          component="img"
-          src={artwork || undefined}
+        <Artwork
+          src={artwork}
           alt=""
+          iconSize={64}
           sx={{
             width: { xs: 160, sm: 220 },
             height: { xs: 160, sm: 220 },
             borderRadius: 3,
-            objectFit: 'cover',
-            bgcolor: 'action.hover',
             boxShadow: 4,
             mx: { xs: 'auto', sm: 0 },
+            flexShrink: 0,
           }}
         />
         <Box sx={{ flex: 1, minWidth: 0, textAlign: { xs: 'center', sm: 'left' } }}>

@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from ytmusicapi import YTMusic
@@ -228,16 +228,54 @@ def get_lyrics(browseId: str, timestamps: bool | None = False):
 _GENRE_HINT = re.compile(r"\bgenres?\b\s*[:\-]\s*([^\n|;]{2,40})", re.IGNORECASE)
 
 
-def _first_thumbnail(*candidates) -> list:
-    """Return the first non-empty thumbnail list found among *candidates*."""
+def _merge_thumbnails(*candidates) -> list:
+    """
+    Merge every thumbnail source into a single list sorted by resolution.
+
+    YouTube hands out the same artwork at several sizes from several
+    endpoints (watch queue, ``videoDetails``, microformat) and each of them
+    is usable on its own.  Combining them and sorting ascending guarantees
+    that the **last** entry is always the largest image available — the
+    player, the ambient background and the MP3 cover art all read it from
+    there (``pickArtwork`` on the client).
+    """
+    merged: dict[str, dict] = {}
+
+    def _add(items) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                continue
+            entry = {"url": url}
+            width = item.get("width")
+            height = item.get("height")
+            if isinstance(width, int) and width:
+                entry["width"] = width
+            if isinstance(height, int) and height:
+                entry["height"] = height
+            existing = merged.get(url)
+            # keep the entry that carries the resolution metadata
+            if existing is None or ("width" not in existing and "width" in entry):
+                merged[url] = entry
+
     for candidate in candidates:
-        if isinstance(candidate, list) and candidate:
-            return candidate
-        if isinstance(candidate, dict):
-            thumbs = candidate.get("thumbnails")
-            if isinstance(thumbs, list) and thumbs:
-                return thumbs
-    return []
+        if isinstance(candidate, list):
+            _add(candidate)
+        elif isinstance(candidate, dict):
+            _add(candidate.get("thumbnails"))
+
+    ordered = sorted(
+        merged.values(),
+        key=lambda thumb: (
+            thumb.get("width") or thumb.get("height") or 0,
+            thumb.get("height") or 0,
+        ),
+    )
+    return ordered
 
 
 def _format_duration(seconds: int | None) -> str | None:
@@ -273,38 +311,281 @@ def _lookup_genre(title: str, artist: str) -> str | None:
     return None
 
 
-def _collect_lyrics(browse_id: str | None) -> dict:
-    """Fetch both the synced and the plain lyrics for a lyrics browse id."""
-    lyrics = {"browseId": browse_id, "synced": None, "unsynced": None, "source": None}
-    if not browse_id:
-        return lyrics
+# ── Synced lyrics ──────────────────────────────────────────────────────────
 
+_INNERTUBE_BROWSE = "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
+_LRCLIB_API = "https://lrclib.net/api"
+_MOBILE_CLIENT = {"clientName": "ANDROID_MUSIC", "clientVersion": "7.21.50"}
+_TIMED_LYRICS_PATH = (
+    "contents",
+    "elementRenderer",
+    "newElement",
+    "type",
+    "componentType",
+    "model",
+    "timedLyricsModel",
+    "lyricsData",
+)
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def _read_json(request: Request, timeout: int):
+    """Issue a request and decode its JSON body, returning None on any failure."""
     try:
-        timed = ytm.get_lyrics(browse_id, timestamps=True)
+        with urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8", "replace") or ""
     except Exception:  # noqa: BLE001
-        timed = None
-    if timed:
-        lyrics["source"] = timed.get("source")
-        if timed.get("hasTimestamps"):
-            lyrics["synced"] = [
-                {
-                    "timeMs": int(line.start_time),
-                    "endTimeMs": int(line.end_time),
-                    "text": line.text,
-                }
-                for line in timed.get("lyrics") or []
-            ]
-        else:
-            lyrics["unsynced"] = timed.get("lyrics")
+        return None
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return payload
 
-    if not lyrics["unsynced"]:
+
+def _browse_mobile(browse_id: str) -> dict | None:
+    """
+    Ask YouTube for a lyrics page with a bare mobile innertube request.
+
+    Only the Android client returns line timestamps, but sending the web
+    ``Authorization: SAPISIDHASH`` header together with a mobile context is
+    rejected with HTTP 400 — which is why ``ytmusicapi`` can only produce
+    unsynced lyrics.  The very same call without any credential succeeds, so
+    it is issued here directly.
+
+    :param browse_id: lyrics browse id (``MPLYt…``)
+    """
+    body = json.dumps(
+        {"browseId": browse_id, "context": {"client": _MOBILE_CLIENT}}
+    ).encode("utf-8")
+    request = Request(
+        _INNERTUBE_BROWSE,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Origin": "https://music.youtube.com",
+            "Referer": "https://music.youtube.com/",
+            "User-Agent": _BROWSER_UA,
+        },
+        method="POST",
+    )
+    payload = _read_json(request, timeout=8)
+    return payload if isinstance(payload, dict) else None
+
+
+def _dig(node, path):
+    """Walk a nested dict following *path*, returning None when it breaks off."""
+    for key in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(key)
+    return node
+
+
+def _find_timed_lines(node):
+    """
+    Locate the raw timed lyric lines anywhere inside a lyrics payload.
+
+    The exact nesting of the response shifts between clients, so the known
+    path is tried first and a depth first scan is used as a safety net.
+    """
+    if isinstance(node, dict):
+        for key in ("timedLyricsData", "timedLyrics", "lyricsData"):
+            value = node.get(key)
+            if (
+                isinstance(value, list)
+                and value
+                and isinstance(value[0], dict)
+                and ("cueRange" in value[0] or "lyricLine" in value[0])
+            ):
+                return value
+        for value in node.values():
+            found = _find_timed_lines(value)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_timed_lines(value)
+            if found:
+                return found
+    return None
+
+
+def _parse_timed_lines(raw_lines: list) -> list:
+    """
+    Convert raw mobile lyric lines into ``{timeMs, endTimeMs, text}`` dicts.
+
+    Gaps are filled so the client always knows how long a line stays active
+    (the player highlights the line until the next one starts).
+    """
+    lines = []
+    for entry in raw_lines:
+        if not isinstance(entry, dict):
+            continue
+        cue = entry.get("cueRange") or {}
+        start = cue.get("startTimeMilliseconds")
         try:
-            plain = ytm.get_lyrics(browse_id, timestamps=False)
-        except Exception:  # noqa: BLE001
-            plain = None
-        if plain:
-            lyrics["unsynced"] = plain.get("lyrics")
-            lyrics["source"] = lyrics["source"] or plain.get("source")
+            start_ms = int(start)
+        except (TypeError, ValueError):
+            continue
+        if start_ms < 0:
+            continue
+        end = cue.get("endTimeMilliseconds")
+        try:
+            end_ms = int(end)
+        except (TypeError, ValueError):
+            end_ms = 0
+        lines.append(
+            {
+                "timeMs": start_ms,
+                "endTimeMs": max(end_ms, start_ms),
+                "text": str(entry.get("lyricLine") or "").strip(),
+            }
+        )
+
+    lines.sort(key=lambda line: line["timeMs"])
+    for index, line in enumerate(lines):
+        if line["endTimeMs"] <= line["timeMs"]:
+            following = lines[index + 1] if index + 1 < len(lines) else None
+            line["endTimeMs"] = following["timeMs"] if following else line["timeMs"] + 4000
+    return lines
+
+
+_LRC_LINE = re.compile(r"^\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]\s?(.*)$")
+
+
+def _parse_lrc(text) -> list | None:
+    """Parse LRC text (``[mm:ss.xx] line``) into the synced lyrics shape."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    lines = []
+    for raw in text.splitlines():
+        match = _LRC_LINE.match(raw.strip())
+        if not match:
+            continue
+        minutes, seconds, fraction, body = match.groups()
+        fraction_ms = int((fraction or "0").ljust(3, "0")[:3])
+        start_ms = int(minutes) * 60_000 + int(seconds) * 1000 + fraction_ms
+        body = body.strip()
+        if not body:
+            continue
+        lines.append(
+            {"timeMs": start_ms, "endTimeMs": start_ms, "text": body}
+        )
+
+    if not lines:
+        return None
+
+    lines.sort(key=lambda line: line["timeMs"])
+    for index, line in enumerate(lines):
+        following = lines[index + 1] if index + 1 < len(lines) else None
+        line["endTimeMs"] = following["timeMs"] if following else line["timeMs"] + 4000
+    return lines
+
+
+def _lrclib_lookup(title: str, artist: str, album: str, duration: int | None):
+    """
+    Look the track up in the public LRCLIB database.
+
+    The exact match endpoint is tried first (title + artist + album +
+    duration) and a free text search is used when it misses.  Returns the
+    raw entry or ``None``; the call is allowed to fail silently so lyrics
+    stay optional.
+    """
+    query = quote(f"{artist} {title}".strip())
+    candidates = []
+
+    params = {"track_name": title, "artist_name": artist}
+    if album:
+        params["album_name"] = album
+    if duration:
+        params["duration"] = str(int(duration))
+    candidates.append(f"{_LRCLIB_API}/get?{urlencode(params)}")
+
+    # retry without the album, it is often missing from the watch payload
+    short = {"track_name": title, "artist_name": artist}
+    if duration:
+        short["duration"] = str(int(duration))
+    candidates.append(f"{_LRCLIB_API}/get?{urlencode(short)}")
+    candidates.append(f"{_LRCLIB_API}/search?q={query}")
+
+    for url in candidates:
+        payload = _read_json(
+            Request(url, headers={"User-Agent": "Samma3ni/1.0"}), timeout=6
+        )
+        entries = payload if isinstance(payload, list) else [payload]
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("syncedLyrics") or entry.get("plainLyrics"):
+                return entry
+    return None
+
+
+def _collect_lyrics(
+    browse_id: str | None,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    duration: int | None = None,
+) -> dict:
+    """
+    Fetch both the synced and the plain lyrics for a lyrics browse id.
+
+    Three sources are tried, in order:
+
+    1. the mobile innertube ``browse`` endpoint, which is the only one that
+       returns line timestamps (``ytmusicapi``'s own timed call fails with
+       HTTP 400 because it pairs the web ``Authorization`` header with a
+       mobile client context — see :func:`_browse_mobile`);
+    2. ``ytmusicapi``'s plain lyrics endpoint for the unsynced text;
+    3. the public LRCLIB database as a fallback, so a track still gets
+       karaoke style lyrics when YouTube does not expose timestamps.
+
+    :param browse_id: lyrics browse id (``MPLYt…``) taken from the watch panel
+    :param title: track title, used by the fallback lookup
+    :param artist: first artist name, used by the fallback lookup
+    :param album: album name, used by the fallback lookup
+    :param duration: track duration in seconds, used by the fallback lookup
+    """
+    lyrics = {"browseId": browse_id, "synced": None, "unsynced": None, "source": None}
+
+    if browse_id:
+        payload = _browse_mobile(browse_id)
+        if payload:
+            data = _dig(payload, _TIMED_LYRICS_PATH)
+            raw_lines = data.get("timedLyricsData") if isinstance(data, dict) else None
+            if not isinstance(raw_lines, list) or not raw_lines:
+                raw_lines = _find_timed_lines(payload)
+            source = data.get("sourceMessage") if isinstance(data, dict) else None
+            if isinstance(raw_lines, list) and raw_lines:
+                lines = _parse_timed_lines(raw_lines)
+                if lines:
+                    lyrics["synced"] = lines
+                    lyrics["source"] = source
+
+        if not lyrics["unsynced"]:
+            try:
+                plain = ytm.get_lyrics(browse_id, timestamps=False)
+            except Exception:  # noqa: BLE001
+                plain = None
+            if plain:
+                lyrics["unsynced"] = plain.get("lyrics")
+                lyrics["source"] = lyrics["source"] or plain.get("source")
+
+    if title and (not lyrics["synced"] or not lyrics["unsynced"]):
+        entry = _lrclib_lookup(title, artist, album, duration)
+        if entry:
+            if not lyrics["synced"]:
+                lyrics["synced"] = _parse_lrc(entry.get("syncedLyrics"))
+            if not lyrics["unsynced"] and entry.get("plainLyrics"):
+                lyrics["unsynced"] = entry.get("plainLyrics")
+            if lyrics["synced"] or lyrics["unsynced"]:
+                lyrics["source"] = lyrics["source"] or "LRCLIB"
 
     return lyrics
 
@@ -378,15 +659,24 @@ def get_track(video_id: str) -> dict:
         or base.get("duration")
         or _format_duration(seconds),
         "duration_seconds": seconds,
-        "thumbnails": _first_thumbnail(
-            base.get("thumbnail"),
-            base.get("thumbnails"),
+        "thumbnails": _merge_thumbnails(
+            # videoDetails carries the largest image (1280x720) and the watch
+            # queue the YouTube Music sized ones — merged, the last entry of
+            # the returned list is always the biggest available artwork.
             details.get("thumbnail"),
             micro.get("thumbnail"),
+            base.get("thumbnails"),
+            base.get("thumbnail"),
         ),
         "description": description,
         "isExplicit": base.get("isExplicit", False),
-        "lyrics": _collect_lyrics(watch.get("lyrics")),
+        "lyrics": _collect_lyrics(
+            watch.get("lyrics"),
+            title=title,
+            artist=artist_name,
+            album=album.get("name") if isinstance(album, dict) else str(album or ""),
+            duration=seconds,
+        ),
         "playlistId": watch.get("playlistId"),
         "relatedBrowseId": watch.get("related"),
     }

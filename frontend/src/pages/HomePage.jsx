@@ -16,7 +16,7 @@ import { usePlayer } from '../player/PlayerContext';
 import { RECENT_LIMIT, shuffleList, useLibrary } from '../utils/library';
 import { normalizeTrack } from '../utils/track';
 import MediaCard from '../components/MediaCard';
-import TrackList, { EmptyState } from '../components/TrackList';
+import { EmptyState } from '../components/TrackList';
 
 function RowSkeleton() {
   return (
@@ -82,6 +82,56 @@ function SectionHeader({ title, subtitle, action }) {
       </Box>
       {action}
     </Box>
+  );
+}
+
+/**
+ * Responsive grid of artwork cards.
+ *
+ * Only the first page is rendered at once: every card goes through the
+ * throttled artwork queue, so keeping the initial batch small (and letting
+ * the browser lazy load what is on screen) is what keeps the home feed fast
+ * and clear of CDN rate limits.
+ */
+function CardGrid({ items, onPlaySong, songsContext, pageSize = 12 }) {
+  const [count, setCount] = useState(pageSize);
+  const visible = items.slice(0, count);
+
+  return (
+    <>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'repeat(auto-fill, minmax(140px, 1fr))',
+            md: 'repeat(auto-fill, minmax(158px, 1fr))',
+          },
+          gap: { xs: 1.75, md: 2.5 },
+          px: { xs: 2, md: 0 },
+        }}
+      >
+        {visible.map((item, index) => (
+          <MediaCard
+            key={`${item.videoId || item.browseId || index}-${index}`}
+            item={item}
+            width="100%"
+            songsContext={songsContext}
+            onPlaySong={onPlaySong}
+          />
+        ))}
+      </Box>
+      {count < items.length && (
+        <Stack alignItems="center" sx={{ mt: 0.5 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setCount((value) => value + pageSize)}
+          >
+            Show {Math.min(pageSize, items.length - count)} more
+          </Button>
+        </Stack>
+      )}
+    </>
   );
 }
 
@@ -211,9 +261,11 @@ export default function HomePage() {
                 </Stack>
               }
             />
-            <Box sx={{ px: { xs: 1, md: 0 } }}>
-              <TrackList tracks={suggestedTracks} numbered />
-            </Box>
+            <CardGrid
+              items={suggestedTracks}
+              songsContext={suggestionContext}
+              onPlaySong={playFromSuggestions}
+            />
           </Box>
         )}
 

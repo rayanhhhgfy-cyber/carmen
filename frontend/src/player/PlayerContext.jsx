@@ -46,6 +46,7 @@ export function PlayerProvider({ children }) {
   const [error, setError] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [buffered, setBuffered] = useState(0);
   const [volume, setVolume] = useState(1);
 
   const [shuffle, setShuffle] = useState(false);
@@ -70,7 +71,27 @@ export function PlayerProvider({ children }) {
     if (!audio || !Number.isFinite(time)) return;
     audio.currentTime = Math.max(0, time);
     setCurrentTime(audio.currentTime);
-  }, []);
+    syncBuffered();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * How far the browser has already downloaded, in seconds.
+   *
+   * Only the range that covers (or precedes) the playhead counts, so a
+   * stray second range never makes the seek bar look ahead of itself.
+   */
+  function syncBuffered() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const ranges = audio.buffered;
+    let end = 0;
+    for (let index = 0; index < ranges.length; index += 1) {
+      if (ranges.start(index) <= audio.currentTime + 1) {
+        end = Math.max(end, ranges.end(index));
+      }
+    }
+    setBuffered((previous) => (Math.abs(previous - end) > 0.2 ? end : previous));
+  }
 
   // ── Queue / track selection ─────────────────────────────────────────────
 
@@ -80,8 +101,10 @@ export function PlayerProvider({ children }) {
       if (!track) return;
 
       if (current && current.videoId === track.videoId) {
-        if (!isPlaying) togglePlay();
+        // Pressing the song that is already active toggles it instead of
+        // silently restarting it from the beginning.
         if (options.openSheet) setSheetOpen(true);
+        else togglePlay();
         return;
       }
 
@@ -133,15 +156,18 @@ export function PlayerProvider({ children }) {
   const clearQueue = useCallback(() => setQueue([]), []);
 
   const buildNext = useCallback(() => {
-    if (queue.length) {
+    // the song that is playing right now never comes back as "next"
+    const pending = queue.filter((entry) => entry.videoId !== current?.videoId);
+
+    if (pending.length) {
       if (shuffle) {
-        const index = Math.floor(Math.random() * queue.length);
+        const index = Math.floor(Math.random() * pending.length);
         return {
-          track: queue[index],
-          rest: queue.filter((_, position) => position !== index),
+          track: pending[index],
+          rest: pending.filter((_, position) => position !== index),
         };
       }
-      return { track: queue[0], rest: queue.slice(1) };
+      return { track: pending[0], rest: pending.slice(1) };
     }
 
     if (related.length) {
@@ -228,6 +254,7 @@ export function PlayerProvider({ children }) {
     }
 
     setBuffering(true);
+    setBuffered(0);
     audio.src = streamUrl(current.videoId);
     audio.load();
     const attempt = audio.play();
@@ -359,6 +386,7 @@ export function PlayerProvider({ children }) {
       dismissError,
       currentTime,
       duration,
+      buffered,
       volume,
       shuffle,
       repeat,
@@ -391,6 +419,7 @@ export function PlayerProvider({ children }) {
       dismissError,
       currentTime,
       duration,
+      buffered,
       volume,
       shuffle,
       repeat,
@@ -421,8 +450,15 @@ export function PlayerProvider({ children }) {
         onPlaying={() => setBuffering(false)}
         onWaiting={() => setBuffering(true)}
         onCanPlay={() => setBuffering(false)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
+        onProgress={syncBuffered}
+        onTimeUpdate={(event) => {
+          setCurrentTime(event.currentTarget.currentTime);
+          syncBuffered();
+        }}
+        onLoadedMetadata={(event) => {
+          setDuration(event.currentTarget.duration || 0);
+          syncBuffered();
+        }}
         onDurationChange={(event) => setDuration(event.currentTarget.duration || 0)}
         onEnded={handleEnded}
         onError={handleError}

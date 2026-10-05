@@ -9,3 +9,4 @@ redis
 yt-dlp[default]
 kurigram
 pytgcrypto
+syncedlyrics

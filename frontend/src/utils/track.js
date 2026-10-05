@@ -6,7 +6,13 @@ import { parseDuration } from './format';
  * normalized shape produced here.
  */
 
-/** Pick the largest usable thumbnail URL out of any supported shape. */
+/**
+ * Pick the largest usable thumbnail URL out of any supported shape.
+ *
+ * The backend returns every available size of an artwork sorted smallest
+ * first — YouTube always appends the biggest one last — so the largest
+ * entry wins here.  Plain strings are taken as-is (already resolved URLs).
+ */
 export function pickArtwork(...candidates) {
   for (const candidate of candidates) {
     if (!candidate) continue;
@@ -62,7 +68,10 @@ export function normalizeTrack(raw) {
     albumName: albumName(raw.album),
     duration: raw.duration || raw.length || null,
     durationSeconds,
-    artwork: pickArtwork(raw.thumbnail, raw.thumbnails),
+    // `artwork` is accepted as well so re-normalizing an already normalized
+    // track (what the home library persists) never loses the cover.
+    artwork: pickArtwork(raw.artwork, raw.thumbnail, raw.thumbnails),
+    year: raw.year || null,
     isExplicit: Boolean(raw.isExplicit),
     playlistId: raw.playlistId || null,
   };

@@ -119,13 +119,14 @@ export default function LyricsView({ synced, unsynced, source }) {
         px: 2,
         py: 1,
         scrollBehavior: 'smooth',
+        overscrollBehavior: 'contain',
         maskImage:
-          'linear-gradient(to bottom, transparent, black 10%, black 88%, transparent)',
+          'linear-gradient(to bottom, transparent, black 8%, black 88%, transparent)',
         WebkitMaskImage:
-          'linear-gradient(to bottom, transparent, black 10%, black 88%, transparent)',
+          'linear-gradient(to bottom, transparent, black 8%, black 88%, transparent)',
       }}
     >
-      <Stack spacing={1.25} sx={{ py: '38vh' }}>
+      <Stack spacing={1.5} sx={{ py: '40vh' }}>
         {lines.map((line, index) => {
           const active = index === activeIndex;
           const past = activeIndex >= 0 && index < activeIndex;
@@ -134,32 +135,34 @@ export default function LyricsView({ synced, unsynced, source }) {
               key={`${line.timeMs}-${index}`}
               component="button"
               type="button"
+              aria-current={active || undefined}
               onClick={() => seek(line.timeMs / 1000)}
               ref={(element) => {
                 lineRefs.current[index] = element;
               }}
               sx={{
                 border: 'none',
-                background: 'none',
+                background: active ? 'action.hover' : 'none',
                 p: 1.25,
                 m: 0,
                 borderRadius: 2,
                 textAlign: 'center',
                 cursor: 'pointer',
                 fontFamily: 'inherit',
-                lineHeight: 1.45,
-                fontSize: active ? '1.25rem' : '1.02rem',
-                fontWeight: active ? 700 : 500,
+                lineHeight: 1.4,
+                fontSize: active ? { xs: '1.3rem', md: '1.45rem' } : '1rem',
+                fontWeight: active ? 800 : 500,
+                letterSpacing: active ? '-0.01em' : 'normal',
                 color: active ? 'primary.main' : 'text.primary',
-                opacity: active ? 1 : past ? 0.5 : 0.3,
-                transform: active ? 'scale(1.05)' : 'scale(1)',
-                textShadow: active ? '0 0 24px rgba(0,0,0,0.25)' : 'none',
+                opacity: active ? 1 : past ? 0.42 : 0.3,
+                transform: active ? 'scale(1.04)' : 'scale(1)',
+                textShadow: active ? '0 0 28px rgba(0,0,0,0.28)' : 'none',
                 transition:
-                  'opacity 420ms ease, transform 420ms cubic-bezier(.2,.8,.2,1), color 420ms ease, font-size 300ms ease',
+                  'opacity 400ms ease, transform 400ms cubic-bezier(.2,.8,.2,1), color 400ms ease, background-color 400ms ease, font-size 300ms ease, font-weight 300ms ease',
                 '&:hover': { opacity: active ? 1 : 0.75 },
               }}
             >
-              {line.text || ' '}
+              {line.text || '♪'}
             </Typography>
           );
         })}

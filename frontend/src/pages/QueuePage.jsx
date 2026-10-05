@@ -1,6 +1,7 @@
 import { Box, Chip, Container, Stack, Typography } from '@mui/material';
 import { usePlayer } from '../player/PlayerContext';
 import { EmptyState } from '../components/TrackList';
+import Artwork from '../components/Artwork';
 import QueueTab from '../components/QueueTab';
 import RelatedTab from '../components/RelatedTab';
 
@@ -50,11 +51,11 @@ export default function QueuePage() {
             cursor: 'pointer',
           }}
         >
-          <Box
-            component="img"
-            src={track.artwork || undefined}
+          <Artwork
+            src={track.artwork}
             alt=""
-            sx={{ width: 64, height: 64, borderRadius: 2, objectFit: 'cover', bgcolor: 'action.hover' }}
+            iconSize={28}
+            sx={{ width: 64, height: 64, borderRadius: 2, flexShrink: 0 }}
           />
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="subtitle1" noWrap>

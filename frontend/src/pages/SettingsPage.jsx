@@ -15,7 +15,7 @@ import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import SmartphoneIcon from '@mui/icons-material/SettingsBrightness';
 
-import { ACCENTS, DEFAULT_ACCENT } from '../theme';
+import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
 import { API_BASE } from '../api';
 
@@ -32,9 +32,10 @@ function Section({ title, children }) {
   );
 }
 
-/** Theme engine controls: color mode + accent color. */
+/** Theme engine controls: color mode + accent color + interface font. */
 export default function SettingsPage() {
-  const { mode, setMode, accent, setAccent, resolved } = useTheme();
+  const { mode, setMode, accent, setAccent, font, setFont, resolved } = useTheme();
+  const selectedFont = FONTS.find((option) => option.id === font) || FONTS[0];
 
   return (
     <Container maxWidth="sm" sx={{ pt: { xs: 2, md: 3 }, pb: 4 }}>
@@ -80,6 +81,63 @@ export default function SettingsPage() {
               </ToggleButtonGroup>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
                 System follows your device&apos;s <b>prefers-color-scheme</b> setting live.
+              </Typography>
+            </Box>
+
+            <Divider />
+
+            <Box>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  Interface font
+                </Typography>
+                <Chip size="small" label={selectedFont.name} color="primary" variant="outlined" />
+              </Stack>
+              <ToggleButtonGroup
+                exclusive
+                fullWidth
+                size="small"
+                value={font}
+                onChange={(_, value) => value && setFont(value)}
+                aria-label="Interface font"
+              >
+                {FONTS.map((option) => (
+                  <ToggleButton key={option.id} value={option.id}>
+                    {option.name}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+              <Box
+                sx={{
+                  mt: 1.25,
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: 'action.hover',
+                  fontFamily: fontStack(font),
+                }}
+              >
+                <Typography sx={{ fontFamily: 'inherit', fontWeight: 700 }} noWrap>
+                  Listen now — {selectedFont.name}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontFamily: 'inherit', display: 'block' }}
+                >
+                  The quick brown fox jumps over the lazy dog
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  dir="rtl"
+                  sx={{ fontFamily: 'inherit', display: 'block', mt: 0.25 }}
+                >
+                  اسمعني — موسيقى بلا حدود
+                </Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                Cairo and Alexandria are loaded from Fontsource and only
+                downloaded once you pick them.
               </Typography>
             </Box>
 

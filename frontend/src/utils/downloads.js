@@ -157,21 +157,51 @@ async function toMp3(arrayBuffer, onProgress) {
   }
 }
 
+async function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
+ * Cover art for the ID3 APIC frame.
+ *
+ * The largest YouTube Music artwork is the last entry of the payload's
+ * thumbnail list, so it is tried first; the plain YouTube thumbnail is only
+ * a last resort.  A `429` from the image CDN is retried after a short pause.
+ */
 async function fetchArtwork(track, meta) {
   const candidates = [
-    pickArtwork(meta?.thumbnails),
-    track.artwork,
-    track.videoId ? `https://i.ytimg.com/vi/${track.videoId}/hqdefault.jpg` : null,
-  ].filter(Boolean);
+    ...new Set(
+      [
+        pickArtwork(meta?.thumbnails),
+        track.artwork,
+        track.videoId
+          ? `https://i.ytimg.com/vi/${track.videoId}/maxresdefault.jpg`
+          : null,
+        track.videoId
+          ? `https://i.ytimg.com/vi/${track.videoId}/hq720.jpg`
+          : null,
+      ].filter(Boolean),
+    ),
+  ];
 
   for (const url of candidates) {
-    try {
-      const response = await fetch(url, { mode: 'cors' });
-      if (!response.ok) continue;
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength > 1024) return buffer;
-    } catch {
-      /* try the next candidate */
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(url, { mode: 'cors' });
+        if (response.status === 429 || response.status === 503) {
+          await sleep(500 * (attempt + 1));
+          continue;
+        }
+        if (!response.ok) break;
+        const buffer = await response.arrayBuffer();
+        if (buffer.byteLength > 1024) return buffer;
+        break;
+      } catch {
+        await sleep(300);
+        break;
+      }
     }
   }
   return null;

@@ -14,12 +14,14 @@ import {
 } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExplicitIcon from '@mui/icons-material/Explicit';
 import { usePlayer } from '../player/PlayerContext';
 import { formatTime } from '../utils/format';
+import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
 
 function Equalizer() {
@@ -82,30 +84,38 @@ export default function TrackRow({ track, contextTracks = null, index = null, me
       >
         <ListItemButton
           onClick={() => player.playTrack(track, contextTracks)}
-          sx={{ borderRadius: 2, py: 0.75 }}
+          sx={{
+            borderRadius: 2,
+            py: 0.75,
+            bgcolor: active ? 'action.selected' : 'transparent',
+            '&:hover': { bgcolor: active ? 'action.hover' : 'action.hover' },
+          }}
         >
-          {index !== null && !artwork ? (
+          {artwork ? (
+            <ListItemIcon sx={{ minWidth: 46 }}>
+              <Artwork
+                src={artwork}
+                alt=""
+                icon={MusicNoteIcon}
+                iconSize={22}
+                sx={{ width: 44, height: 44, borderRadius: 1.5 }}
+              />
+            </ListItemIcon>
+          ) : index !== null ? (
             <Typography
               variant="body2"
               color={active ? 'primary.main' : 'text.secondary'}
-              sx={{ width: 26, textAlign: 'center', fontWeight: 600 }}
+              sx={{ width: 46, textAlign: 'center', fontWeight: 600 }}
             >
               {index + 1}
             </Typography>
           ) : (
             <ListItemIcon sx={{ minWidth: 46 }}>
-              <Box
-                component="img"
-                src={artwork}
-                alt=""
-                loading="lazy"
-                sx={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 1.5,
-                  objectFit: 'cover',
-                  bgcolor: 'action.hover',
-                }}
+              <Artwork
+                src={null}
+                icon={MusicNoteIcon}
+                iconSize={22}
+                sx={{ width: 44, height: 44, borderRadius: 1.5 }}
               />
             </ListItemIcon>
           )}

@@ -1,8 +1,8 @@
 import { Box, Chip, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import AlbumIcon from '@mui/icons-material/Album';
 import { useNavigate } from 'react-router-dom';
 import { pickArtwork } from '../utils/track';
+import Artwork from './Artwork';
 
 /**
  * Classify an arbitrary browse item (home rows, search results, related).
@@ -36,7 +36,7 @@ export default function MediaCard({ item, onPlaySong, songsContext = null, width
   const isFluid = typeof width !== 'number';
   const boxWidth = isFluid ? width : `${width}px`;
 
-  const artwork = pickArtwork(item.thumbnail, item.thumbnails) || null;
+  const artwork = pickArtwork(item.artwork, item.thumbnail, item.thumbnails) || null;
   const title = item.title || 'Untitled';
   const subtitle =
     item.artist ||
@@ -81,35 +81,19 @@ export default function MediaCard({ item, onPlaySong, songsContext = null, width
       }}
     >
       <Box sx={{ position: 'relative', width: '100%', aspectRatio: '1 / 1' }}>
-        <Box
+        <Artwork
           className="card-art"
-          component="img"
-          src={artwork || undefined}
+          src={artwork}
           alt=""
-          loading="lazy"
+          iconSize={44}
           sx={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
+            position: 'absolute',
+            inset: 0,
             borderRadius: shape === 'circle' ? '50%' : 2,
-            bgcolor: 'action.hover',
             transition: 'transform 220ms ease',
             boxShadow: 1,
           }}
         />
-        {!artwork && (
-          <Box
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              display: 'grid',
-              placeItems: 'center',
-              color: 'text.disabled',
-            }}
-          >
-            <AlbumIcon sx={{ fontSize: 42 }} />
-          </Box>
-        )}
         {card.kind === 'song' && (
           <Box
             className="card-play"
