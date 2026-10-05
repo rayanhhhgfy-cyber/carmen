@@ -2,7 +2,8 @@ import json
 import logging
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlencode, urlparse
+from typing import NamedTuple
+from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
 
 from ytmusicapi import YTMusic
@@ -228,6 +229,33 @@ def get_lyrics(browseId: str, timestamps: bool | None = False):
 _GENRE_HINT = re.compile(r"\bgenres?\b\s*[:\-]\s*([^\n|;]{2,40})", re.IGNORECASE)
 
 
+_CDN_ARTWORK = "https://i.ytimg.com"
+
+
+def _cdn_thumbnails(video_id: str) -> list:
+    """
+    Largest artwork for *video_id* from the ``i.ytimg.com`` CDN.
+
+    Every song list in the app renders ``https://i.ytimg.com/vi_webp/<id>/
+    maxresdefault.webp`` (and the ``.jpg`` twin for MP3 cover art): unlike
+    ``yt3.googleusercontent.com`` — which answers a burst of artwork requests
+    with ``429`` — these URLs are plain YouTube thumbnails and are served from
+    the same CDN as the video itself.
+
+    Declared as 1280×1280 so it is the biggest entry of the merged list and
+    therefore the last one, which is where the client reads it from.
+    """
+    if not video_id:
+        return []
+    return [
+        {
+            "url": f"{_CDN_ARTWORK}/vi_webp/{video_id}/maxresdefault.webp",
+            "width": 1280,
+            "height": 1280,
+        }
+    ]
+
+
 def _merge_thumbnails(*candidates) -> list:
     """
     Merge every thumbnail source into a single list sorted by resolution.
@@ -301,7 +329,7 @@ def _lookup_genre(title: str, artist: str) -> str | None:
     term = quote(f"{artist} {title}".strip())
     request = Request(
         f"https://itunes.apple.com/search?term={term}&entity=song&limit=1",
-        headers={"User-Agent": "Samma3ni/1.0"},
+        headers={"User-Agent": "Carmen/1.0"},
     )
     with urlopen(request, timeout=2) as response:
         payload = json.loads(response.read().decode("utf-8") or "{}")
@@ -487,42 +515,47 @@ def _parse_lrc(text) -> list | None:
     return lines
 
 
-def _lrclib_lookup(title: str, artist: str, album: str, duration: int | None):
+def _syncedlyrics_lrc(title: str, artist: str, album: str, duration: int | None):
     """
-    Look the track up in the public LRCLIB database.
+    Return raw **LRC** text for the track using the ``syncedlyrics`` library.
 
-    The exact match endpoint is tried first (title + artist + album +
-    duration) and a free text search is used when it misses.  Returns the
-    raw entry or ``None``; the call is allowed to fail silently so lyrics
-    stay optional.
+    The library walks a list of public providers (LRCLIB, Musixmatch, NetEase,
+    …) and only reports a hit once it holds a genuinely timestamped LRC
+    document, which is exactly what the karaoke view needs.  The lookup is
+    allowed to fail silently — lyrics stay optional and a slow provider must
+    never break the track payload.
+
+    :param title: track title
+    :param artist: artist name
+    :param album: album name (only used to refine a query)
+    :param duration: track length in seconds (unused by the lib, kept for
+                     callers that build their own queries)
     """
-    query = quote(f"{artist} {title}".strip())
-    candidates = []
+    if not (title or artist):
+        return None
 
-    params = {"track_name": title, "artist_name": artist}
-    if album:
-        params["album_name"] = album
-    if duration:
-        params["duration"] = str(int(duration))
-    candidates.append(f"{_LRCLIB_API}/get?{urlencode(params)}")
+    try:
+        import syncedlyrics
+    except Exception:  # noqa: BLE001
+        return None
 
-    # retry without the album, it is often missing from the watch payload
-    short = {"track_name": title, "artist_name": artist}
-    if duration:
-        short["duration"] = str(int(duration))
-    candidates.append(f"{_LRCLIB_API}/get?{urlencode(short)}")
-    candidates.append(f"{_LRCLIB_API}/search?q={query}")
-
-    for url in candidates:
-        payload = _read_json(
-            Request(url, headers={"User-Agent": "Samma3ni/1.0"}), timeout=6
+    queries = [
+        query
+        for query in (
+            f"{artist} {title}".strip(),
+            f"{title} {album}".strip(),
+            title,
         )
-        entries = payload if isinstance(payload, list) else [payload]
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            if entry.get("syncedLyrics") or entry.get("plainLyrics"):
-                return entry
+        if query
+    ]
+
+    for query in dict.fromkeys(queries):
+        try:
+            lrc = syncedlyrics.search(query, synced_only=True)
+        except Exception:  # noqa: BLE001
+            lrc = None
+        if isinstance(lrc, str) and _parse_lrc(lrc):
+            return lrc
     return None
 
 
@@ -543,8 +576,9 @@ def _collect_lyrics(
        HTTP 400 because it pairs the web ``Authorization`` header with a
        mobile client context — see :func:`_browse_mobile`);
     2. ``ytmusicapi``'s plain lyrics endpoint for the unsynced text;
-    3. the public LRCLIB database as a fallback, so a track still gets
-       karaoke style lyrics when YouTube does not expose timestamps.
+    3. the ``syncedlyrics`` library, which returns an LRC document (timestamped
+       per line) from public providers, so a track still gets karaoke style
+       lyrics when YouTube does not expose timestamps.
 
     :param browse_id: lyrics browse id (``MPLYt…``) taken from the watch panel
     :param title: track title, used by the fallback lookup
@@ -577,15 +611,16 @@ def _collect_lyrics(
                 lyrics["unsynced"] = plain.get("lyrics")
                 lyrics["source"] = lyrics["source"] or plain.get("source")
 
-    if title and (not lyrics["synced"] or not lyrics["unsynced"]):
-        entry = _lrclib_lookup(title, artist, album, duration)
-        if entry:
-            if not lyrics["synced"]:
-                lyrics["synced"] = _parse_lrc(entry.get("syncedLyrics"))
-            if not lyrics["unsynced"] and entry.get("plainLyrics"):
-                lyrics["unsynced"] = entry.get("plainLyrics")
-            if lyrics["synced"] or lyrics["unsynced"]:
-                lyrics["source"] = lyrics["source"] or "LRCLIB"
+    if title and not lyrics["synced"]:
+        lrc = _syncedlyrics_lrc(title, artist, album, duration)
+        if lrc:
+            lines = _parse_lrc(lrc)
+            if lines:
+                lyrics["synced"] = lines
+                lyrics["source"] = lyrics["source"] or "SyncedLyrics"
+
+    if not lyrics["unsynced"] and lyrics["synced"]:
+        lyrics["unsynced"] = "\n".join(line["text"] for line in lyrics["synced"])
 
     return lyrics
 
@@ -636,6 +671,23 @@ def get_track(video_id: str) -> dict:
         raise DurationLimitExceeded(video_id, seconds)
 
     artist_name = artists[0]["name"] if artists and artists[0].get("name") else ""
+
+    # Every thumbnail source merged, sorted smallest first: the last entry is
+    # the biggest one available (the i.ytimg CDN entry, see `_cdn_thumbnails`).
+    cdn = _cdn_thumbnails(video_id)
+    thumbnails = _merge_thumbnails(
+        cdn,
+        # videoDetails carries the largest image (1280x720) and the watch
+        # queue the YouTube Music sized ones.
+        details.get("thumbnail"),
+        micro.get("thumbnail"),
+        base.get("thumbnails"),
+        base.get("thumbnail"),
+    )
+    artwork = (cdn[0]["url"] if cdn else None) or (
+        thumbnails[-1]["url"] if thumbnails else None
+    )
+
     genre = None
     match = _GENRE_HINT.search(description or "")
     if match:
@@ -659,15 +711,10 @@ def get_track(video_id: str) -> dict:
         or base.get("duration")
         or _format_duration(seconds),
         "duration_seconds": seconds,
-        "thumbnails": _merge_thumbnails(
-            # videoDetails carries the largest image (1280x720) and the watch
-            # queue the YouTube Music sized ones — merged, the last entry of
-            # the returned list is always the biggest available artwork.
-            details.get("thumbnail"),
-            micro.get("thumbnail"),
-            base.get("thumbnails"),
-            base.get("thumbnail"),
-        ),
+        # Largest artwork of the list — always the i.ytimg CDN entry, which is
+        # also what `artwork` points at for a direct <img src>.
+        "thumbnails": thumbnails,
+        "artwork": artwork,
         "description": description,
         "isExplicit": base.get("isExplicit", False),
         "lyrics": _collect_lyrics(
@@ -915,17 +962,21 @@ AUDIO_CACHE_LIMIT = 100  # number of downloaded files kept on disk
 AUDIO_SUFFIXES = (".m4a", ".mp4", ".webm", ".ogg", ".opus")
 
 streaming_options = {
-    "quiet": False,
-    "cookiesfrombrowser": ("chrome", "Default"),
-    "verbose": True,
+    # No browser cookie jar: decrypting Chrome's cookie store costs 1-3 seconds
+    # on *every* yt-dlp attempt (it shells out to the OS keychain), a headless
+    # server has no browser anyway, and playback does not need those cookies.
+    "quiet": True,
+    "no_warnings": True,
     "js_runtimes": {"deno": {}},
     "format": "bestaudio[ext=m4a]/bestaudio/best",
-    "no_warnings": False,
-    # "extractor_args": {"youtube": {"player_client": ["web_safari", "web_embedded"]}},
 }
 
 _download_locks: dict[str, threading.Lock] = {}
 _download_guard = threading.Lock()
+
+# video_id -> (direct CDN url, request headers, unix expiry, player client).
+# Filled by resolve_stream_url().
+_STREAM_URLS: dict[str, tuple[str, dict, float, str | None]] = {}
 
 
 def _lock_for(video_id: str) -> threading.Lock:
@@ -1045,15 +1096,116 @@ def _remember_client(client: str | None):
         _preferred_client = client
 
 
-def get_stream_url(video_id: str) -> str:
+# Failures no other player client can fix: the video itself is gone, private
+# or blocked.  Retrying the remaining clients would only pile their extraction
+# time (5-12s each) onto a request that can never succeed — measured at 63s
+# for a single unavailable track.
+_PERMANENT_FAILURES = (
+    "video unavailable",
+    "private video",
+    "video has been removed",
+    "video has been deleted",
+    "this video is unavailable",
+    "no longer available",
+    "has been terminated",
+    "uploader has closed",
+    "is not available",
+    "not provide this video",
+)
+
+
+def _is_permanent_failure(exc: Exception) -> bool:
+    """True when retrying with another player client cannot succeed."""
+    message = str(exc).lower()
+    return any(pattern in message for pattern in _PERMANENT_FAILURES)
+
+
+class StreamTarget(NamedTuple):
+    """A direct CDN URL plus everything the server needs to fetch it."""
+
+    url: str
+    headers: dict
+    client: str | None
+
+
+def resolve_stream_url(video_id: str, skip: set | None = None) -> StreamTarget:
     """
-    Use yt-dlp to resolve a direct streaming URL for a given YouTube Music video ID.
+    Return a direct CDN URL **and** its request headers for *video_id*.
+
+    yt-dlp only runs when there is nothing cached: the URL is kept in memory
+    together with the ``expire`` timestamp the CDN put on it (a few hours), so
+    every replay of a track inside the same server process skips extraction
+    entirely — that is the difference between a ~200ms and a multi second
+    start.
+
+    :param skip: player clients to leave out (a client whose URL the CDN
+                 already answered with ``403``)
+    :raises DurationLimitExceeded: if the track is longer than one hour
+    """
+    skip = skip or set()
+    now = time.time()
+    with _download_guard:
+        entry = _STREAM_URLS.get(video_id)
+    if entry and entry[2] > now and entry[3] not in skip:
+        return StreamTarget(entry[0], dict(entry[1]), entry[3])
+
+    last_error: Exception | None = None
+    permanent = 0
+    for client in _client_order():
+        if client in skip:
+            continue
+        try:
+            url, headers = get_stream_details(video_id, client)
+        except DurationLimitExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if _is_permanent_failure(exc):
+                # Playability can be client specific, so one alternative is
+                # tried before giving up — but only one: a track that is
+                # really gone costs ~12s per attempt, not ~60s.
+                permanent += 1
+                if permanent >= 2:
+                    break
+            continue
+        _remember_client(client)
+        with _download_guard:
+            _STREAM_URLS[video_id] = (
+                url,
+                headers,
+                time.time() + get_stream_url_ttl(url),
+                client,
+            )
+        return StreamTarget(url, dict(headers), client)
+
+    raise last_error or ValueError(f"could not resolve a stream URL for {video_id}")
+
+
+def forget_stream_url(video_id: str) -> None:
+    """Drop the cached stream URL of *video_id* (after a CDN 403, for example)."""
+    with _download_guard:
+        _STREAM_URLS.pop(video_id, None)
+
+
+def get_stream_details(video_id: str, client: str | None = None) -> tuple[str, dict]:
+    """
+    Resolve a direct CDN URL **and** the request headers yt-dlp used.
+
+    The headers matter: the CDN signs its URLs against the client that asked
+    for them, so replaying a URL with a different ``User-Agent`` is a common
+    source of ``403`` responses.
 
     :param video_id: YouTube video ID
+    :param client: optional player client to force (see :data:`STREAM_CLIENTS`)
+    :return: ``(url, headers)``
     :raises DurationLimitExceeded: if the track is longer than one hour
     :raises ValueError: if yt-dlp did not return a URL
     """
-    with YoutubeDL(streaming_options) as ydl:
+    options = dict(streaming_options)
+    if client:
+        options["extractor_args"] = {"youtube": {"player_client": [client]}}
+
+    with YoutubeDL(options) as ydl:
         info = ydl.extract_info(_watch_url(video_id), download=False)
 
     seconds = parse_duration_seconds(info.get("duration"))
@@ -1064,7 +1216,12 @@ def get_stream_url(video_id: str) -> str:
     if not stream_url:
         raise ValueError(f"yt-dlp returned no URL for video {video_id}")
 
-    return stream_url
+    return stream_url, dict(info.get("http_headers") or {})
+
+
+def get_stream_url(video_id: str, client: str | None = None) -> str:
+    """Convenience wrapper around :func:`get_stream_details` (URL only)."""
+    return get_stream_details(video_id, client)[0]
 
 
 def get_stream_url_ttl(stream_url: str) -> int:
@@ -1119,6 +1276,7 @@ def download_audio(video_id: str) -> str:
         outtmpl = str(AUDIO_CACHE_DIR / f"{video_id}.%(ext)s")
         produced: Path | None = None
         last_error: Exception | None = None
+        permanent = 0
 
         for client in _client_order():
             label = client or "default"
@@ -1161,6 +1319,14 @@ def download_audio(video_id: str) -> str:
                     label,
                     exc,
                 )
+                # A track that no longer exists cannot be rescued by the next
+                # player client — stop instead of paying its extraction time
+                # (~12s per attempt).  One alternative is tried first because
+                # playability really can be client specific.
+                if _is_permanent_failure(exc):
+                    permanent += 1
+                    if permanent >= 2:
+                        break
 
         if produced is None:
             raise last_error or ValueError(
