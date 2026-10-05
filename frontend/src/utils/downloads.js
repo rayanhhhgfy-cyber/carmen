@@ -11,7 +11,7 @@
 import { ID3Writer } from 'browser-id3-writer';
 import { streamUrl } from '../api';
 import { safeFileName } from './format';
-import { cdnArtworkJpg, pickArtwork } from './track';
+import { cdnArtwork, pickArtwork } from './track';
 
 // ── Observable download store ───────────────────────────────────────────────
 
@@ -241,7 +241,7 @@ async function fetchArtwork(track, meta) {
   const candidates = [
     ...new Set(
       [
-        cdnArtworkJpg(track.videoId),
+        cdnArtwork(track.videoId),
         track.videoId
           ? `https://i.ytimg.com/vi/${track.videoId}/hq720.jpg`
           : null,

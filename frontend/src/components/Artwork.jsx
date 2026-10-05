@@ -17,8 +17,8 @@ import { artworkFallbacks, isArtworkReady, loadArtwork } from '../utils/artwork'
  * shipping a resized image from the server.
  *
  * Sizes that do not exist on the CDN walk down a fixed chain
- * (`maxresdefault.webp` → `maxresdefault.jpg` → `hq720` → … → `hqdefault`),
- * never back to a URL that already failed.
+ * (`maxresdefault.jpg` → `hq720.jpg` → … → `hqdefault.jpg` — always JPEG,
+ * the WebP twin never renders), never back to a URL that already failed.
  *
  * @param {string} [src] artwork URL (largest available size)
  */

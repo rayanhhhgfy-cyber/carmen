@@ -13,6 +13,11 @@ import { extractColor, loadArtwork } from '../utils/artwork';
  * tint a second layer on top.  Everything cross-fades so switching tracks
  * feels like the room changes color instead of the page reloading.
  *
+ * The artwork contribution runs at **50%** strength — image and tint are half
+ * the opacity they would otherwise be — so the interface stays the thing you
+ * read and the cover is only a suggestion of mood.  The neutral scrim over
+ * it stays full strength to keep text readable.
+ *
  * The image itself goes through the throttled artwork queue, so this layer
  * never contributes to the CDN rate limiting.
  */
@@ -74,7 +79,8 @@ export default function AmbientBackground() {
             height: '130%',
             objectFit: 'cover',
             filter: 'blur(110px) saturate(1.7)',
-            opacity: dark ? 0.5 : 0.34,
+            // 50% of the artwork theme: half the wash, full readability
+            opacity: dark ? 0.25 : 0.17,
             transform: 'scale(1.06)',
           }}
         />
@@ -83,7 +89,8 @@ export default function AmbientBackground() {
         sx={{
           position: 'absolute',
           inset: 0,
-          bgcolor: color ? alpha(color, dark ? 0.16 : 0.12) : 'transparent',
+          // half the extracted cover colour as well — 50% artwork theme
+          bgcolor: color ? alpha(color, dark ? 0.08 : 0.06) : 'transparent',
           transition: 'background-color 700ms ease',
         }}
       />

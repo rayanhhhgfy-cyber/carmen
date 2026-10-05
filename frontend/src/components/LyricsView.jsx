@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { usePlayer } from '../player/PlayerContext';
 
+const SCROLL_MS = 180;
+
 /**
  * YouTube Music style synced lyrics.
  *
- * Active line follows the audio clock (rAF), animates in place and is kept
- * vertically centered with a smooth auto scroll.  Falls back to plain
- * unsynced lyrics when no timestamps are available.
+ * Active line follows the audio clock (rAF), is tinted with the accent color
+ * (no highlight box) and is kept vertically centered with a fast eased
+ * scroll.  Falls back to plain unsynced lyrics when no timestamps exist.
  */
 export default function LyricsView({ synced, unsynced, source }) {
   const { audioRef, seek, current } = usePlayer();
@@ -49,15 +51,36 @@ export default function LyricsView({ synced, unsynced, source }) {
     return () => cancelAnimationFrame(frame);
   }, [lines, hasSynced, audioRef]);
 
-  // Keep the active line centered inside the scrollable lyrics area
+  /**
+   * Keep the active line centered inside the scrollable lyrics area.
+   *
+   * The browser's native smooth scroll takes the better part of a second to
+   * cover the 40vh padding this list has, which reads as "the lyrics are
+   * lagging behind the song".  A short eased tween lands on the line before
+   * the next word is sung while still gliding instead of jump-cutting.
+   */
   useEffect(() => {
-    if (activeIndex < 0) return;
+    if (activeIndex < 0) return undefined;
     const container = containerRef.current;
     const element = lineRefs.current[activeIndex];
-    if (!container || !element) return;
-    const target =
-      element.offsetTop - container.clientHeight / 2 + element.offsetHeight / 2;
-    container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+    if (!container || !element) return undefined;
+    const from = container.scrollTop;
+    const to = Math.max(
+      0,
+      element.offsetTop - container.clientHeight / 2 + element.offsetHeight / 2,
+    );
+    const delta = to - from;
+    if (Math.abs(delta) < 1) return undefined;
+
+    const startedAt = performance.now();
+    let frame = 0;
+    const step = (now) => {
+      const t = Math.min(1, (now - startedAt) / SCROLL_MS);
+      container.scrollTop = from + delta * (1 - (1 - t) ** 3);
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
   }, [activeIndex]);
 
   if (!hasSynced) {
@@ -118,7 +141,6 @@ export default function LyricsView({ synced, unsynced, source }) {
         overflowY: 'auto',
         px: 2,
         py: 1,
-        scrollBehavior: 'smooth',
         overscrollBehavior: 'contain',
         maskImage:
           'linear-gradient(to bottom, transparent, black 8%, black 88%, transparent)',
@@ -142,7 +164,10 @@ export default function LyricsView({ synced, unsynced, source }) {
               }}
               sx={{
                 border: 'none',
-                background: active ? 'action.hover' : 'none',
+                // No highlight box behind the current line: it is marked by
+                // colour alone, so nothing on screen ever shifts or resizes
+                // while the song plays.
+                background: 'none',
                 p: 1.25,
                 m: 0,
                 borderRadius: 2,
@@ -150,15 +175,11 @@ export default function LyricsView({ synced, unsynced, source }) {
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 lineHeight: 1.4,
-                fontSize: active ? { xs: '1.3rem', md: '1.45rem' } : '1rem',
-                fontWeight: active ? 800 : 500,
-                letterSpacing: active ? '-0.01em' : 'normal',
+                fontSize: { xs: '1.15rem', md: '1.2rem' },
+                fontWeight: active ? 700 : 500,
                 color: active ? 'primary.main' : 'text.primary',
                 opacity: active ? 1 : past ? 0.42 : 0.3,
-                transform: active ? 'scale(1.04)' : 'scale(1)',
-                textShadow: active ? '0 0 28px rgba(0,0,0,0.28)' : 'none',
-                transition:
-                  'opacity 400ms ease, transform 400ms cubic-bezier(.2,.8,.2,1), color 400ms ease, background-color 400ms ease, font-size 300ms ease, font-weight 300ms ease',
+                transition: 'color 160ms ease, opacity 160ms ease, font-weight 160ms ease',
                 '&:hover': { opacity: active ? 1 : 0.75 },
               }}
             >

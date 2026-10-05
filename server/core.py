@@ -236,11 +236,12 @@ def _cdn_thumbnails(video_id: str) -> list:
     """
     Largest artwork for *video_id* from the ``i.ytimg.com`` CDN.
 
-    Every song list in the app renders ``https://i.ytimg.com/vi_webp/<id>/
-    maxresdefault.webp`` (and the ``.jpg`` twin for MP3 cover art): unlike
-    ``yt3.googleusercontent.com`` — which answers a burst of artwork requests
-    with ``429`` — these URLs are plain YouTube thumbnails and are served from
-    the same CDN as the video itself.
+    Every song list in the app renders ``https://i.ytimg.com/vi/<id>/
+    maxresdefault.jpg``: unlike ``yt3.googleusercontent.com`` — which answers
+    a burst of artwork requests with ``429`` — these URLs are plain YouTube
+    thumbnails served from the same CDN as the video itself.  **JPEG only**:
+    the ``vi_webp`` WebP variants are never used, some browsers fail to paint
+    them.
 
     Declared as 1280×1280 so it is the biggest entry of the merged list and
     therefore the last one, which is where the client reads it from.
@@ -249,7 +250,7 @@ def _cdn_thumbnails(video_id: str) -> list:
         return []
     return [
         {
-            "url": f"{_CDN_ARTWORK}/vi_webp/{video_id}/maxresdefault.webp",
+            "url": f"{_CDN_ARTWORK}/vi/{video_id}/maxresdefault.jpg",
             "width": 1280,
             "height": 1280,
         }

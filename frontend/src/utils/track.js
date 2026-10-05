@@ -9,20 +9,16 @@ import { parseDuration } from './format';
 const YTIMG = 'https://i.ytimg.com';
 
 /**
- * Largest artwork of a song, taken from the ``i.ytimg.com`` CDN (WebP).
+ * Largest artwork of a song, taken from the ``i.ytimg.com`` CDN.
  *
  * All the song lists — related, queue, suggestions, search — render this URL
  * instead of the ``yt3.googleusercontent.com`` cover YouTube Music hands out,
  * because that host answers bursts of artwork requests with ``429``.
+ *
+ * Always **JPEG**: the CDN also exposes a ``vi_webp/…webp`` twin that some
+ * browsers refuse to paint, so it is never used — display or download.
  */
 export function cdnArtwork(videoId) {
-  return typeof videoId === 'string' && videoId
-    ? `${YTIMG}/vi_webp/${videoId}/maxresdefault.webp`
-    : null;
-}
-
-/** The same artwork as a JPEG — what the MP3 cover art embeds. */
-export function cdnArtworkJpg(videoId) {
   return typeof videoId === 'string' && videoId
     ? `${YTIMG}/vi/${videoId}/maxresdefault.jpg`
     : null;
@@ -35,6 +31,11 @@ function area(thumb) {
   return width * height || thumb?.width || thumb?.height || 0;
 }
 
+/** WebP never renders reliably in an `<img>` — always prefer JPEG. */
+function isWebp(url) {
+  return typeof url === 'string' && /\.webp([?#]|$)/i.test(url);
+}
+
 /**
  * Pick the largest usable thumbnail URL out of any supported shape.
  *
@@ -42,19 +43,34 @@ function area(thumb) {
  * first — the biggest one is always the **last** entry — and sorts by pixel
  * area so a square 1280×1280 cover beats a 1280×720 video frame.  Plain
  * strings are taken as-is (already resolved URLs).
+ *
+ * A `.webp` answer is only ever used as a last resort: whatever else is in
+ * the payload wins first, so the app never paints (or fails to paint) a WebP
+ * when a JPEG of the same cover exists.
  */
 export function pickArtwork(...candidates) {
+  let webpFallback = null;
   for (const candidate of candidates) {
     if (!candidate) continue;
-    if (typeof candidate === 'string' && /^https?:/.test(candidate)) return candidate;
+    if (typeof candidate === 'string' && /^https?:/.test(candidate)) {
+      if (isWebp(candidate)) {
+        if (!webpFallback) webpFallback = candidate;
+      } else {
+        return candidate;
+      }
+      continue;
+    }
     const list = Array.isArray(candidate) ? candidate : candidate.thumbnails;
     if (Array.isArray(list) && list.length) {
-      const sorted = [...list].sort((a, b) => area(b) - area(a));
-      const url = sorted[0]?.url;
-      if (url) return url;
+      const sorted = [...list]
+        .filter((thumb) => thumb?.url)
+        .sort((a, b) => area(b) - area(a));
+      const jpeg = sorted.find((thumb) => !isWebp(thumb.url));
+      if (jpeg) return jpeg.url;
+      if (!webpFallback && sorted.length) webpFallback = sorted[0].url;
     }
   }
-  return null;
+  return webpFallback;
 }
 
 /**

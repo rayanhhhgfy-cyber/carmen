@@ -38,6 +38,31 @@ SENSITIVE_URL_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# i.ytimg.com keeps every thumbnail twice: /vi_webp/<id>/<size>.webp and
+# /vi/<id>/<size>.jpg
+WEBP_PATH_RE = re.compile(
+    r"/vi_webp/(?P<name>[^?#]+)\.webp(?P<tail>[?#][^#\s]*)?$", re.IGNORECASE
+)
+WEBP_EXT_RE = re.compile(r"\.webp(?=[?#][^#\s]*$|$)", re.IGNORECASE)
+
+
+def as_jpg(url: str) -> str:
+    """
+    Swap a WebP answer for its JPEG twin.
+
+    ``i.ytimg.com/vi_webp/<id>/<size>.webp`` becomes
+    ``i.ytimg.com/vi/<id>/<size>.jpg`` and any other ``….webp`` URL simply
+    loses the extension.  WebP does not paint reliably in every browser, so
+    only JPEG ever leaves the API.
+    """
+    if ".webp" not in url:
+        return url
+    match = WEBP_PATH_RE.search(url)
+    if match:
+        tail = match.group("tail") or ""
+        return f"{url[:match.start()]}/vi/{match.group('name')}.jpg{tail}"
+    return WEBP_EXT_RE.sub(".jpg", url)
+
 
 def is_thumbnail_url(url: str) -> bool:
     try:
@@ -50,6 +75,8 @@ def is_thumbnail_url(url: str) -> bool:
 def sanitize_url(url: str) -> str | None:
     if not isinstance(url, str):
         return url
+    if url.startswith(("http://", "https://")):
+        url = as_jpg(url)
     if is_thumbnail_url(url):
         return url
     if SENSITIVE_URL_PATTERNS.search(url):
@@ -59,6 +86,9 @@ def sanitize_url(url: str) -> str | None:
 
 def sanitize_value(value):
     if isinstance(value, str):
+        # `thumbnail`, `artwork`, … : same WebP -> JPEG swap as `url` keys
+        if value.startswith(("http://", "https://")):
+            value = as_jpg(value)
         if SENSITIVE_URL_PATTERNS.search(value):
             return None
         return value

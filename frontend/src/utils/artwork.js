@@ -18,13 +18,15 @@ export const ARTWORK_GAP_MS = 500;
 
 /** Sizes the i.ytimg CDN exposes for a video, largest first. */
 const YTIMG_SIZES = ['maxresdefault', 'hq720', 'sddefault', 'hqdefault'];
+// the WebP twin (`vi_webp/…webp`) is matched so it still gets a fallback,
+// but it is never produced again: some browsers fail to paint WebP
 const YTIMG_RE = /^https:\/\/i\.ytimg\.com\/(?:vi_webp|vi)\/([\w-]{11})\/([\w-]+)\.(?:webp|jpg|png)$/;
 
 /**
- * Smaller alternatives of an i.ytimg artwork, largest first.
+ * Smaller alternatives of an i.ytimg artwork, largest first, **JPEG only**.
  *
  * `maxresdefault` does not exist for every upload, so a tile that fails to
- * paint walks down this list (`maxresdefault.jpg` → `hq720` → `hqdefault`)
+ * paint walks down this list (`maxresdefault.jpg` → `hq720.jpg` → …)
  * instead of leaving an empty box behind.
  *
  * @param {string} url artwork URL
@@ -38,7 +40,6 @@ export function artworkFallbacks(url) {
   const out = [];
   for (const candidate of YTIMG_SIZES.slice(start < 0 ? 0 : start)) {
     out.push(`https://i.ytimg.com/vi/${videoId}/${candidate}.jpg`);
-    out.push(`https://i.ytimg.com/vi_webp/${videoId}/${candidate}.webp`);
   }
   return [...new Set(out)].filter((candidate) => candidate !== url);
 }
