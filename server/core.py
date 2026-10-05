@@ -967,6 +967,7 @@ streaming_options = {
     # on *every* yt-dlp attempt (it shells out to the OS keychain), a headless
     # server has no browser anyway, and playback does not need those cookies.
     "quiet": True,
+    "cookiesfrombrowser": ("chrome", "Default"),
     "no_warnings": True,
     "js_runtimes": {"deno": {}},
     "format": "bestaudio[ext=m4a]/bestaudio/best",
