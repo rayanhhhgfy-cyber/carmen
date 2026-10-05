@@ -38,3 +38,5 @@ browser.json
 venv/
 __pycache__/
 test.py
+server/.audio_cache/
+server/cookies.txt

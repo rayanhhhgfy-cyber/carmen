@@ -2,6 +2,8 @@ import re
 from functools import wraps
 from urllib.parse import urlparse
 
+from .filters import strip_long_tracks
+
 # Keys to remove entirely from any dict
 SENSITIVE_KEYS = {
     "feedbackTokens",
@@ -106,6 +108,14 @@ def sanitize_list(items: list) -> list:
 
 
 def sanitize(data):
+    """
+    Scrub tracking/streaming data and drop tracks longer than one hour.
+
+    Every route is wrapped with :func:`sanitized`, so applying the duration
+    filter here guarantees the "> 1 hour" rule holds for every payload that
+    leaves the API (search, home, watch, playlists, related, suggestions, ...).
+    """
+    data = strip_long_tracks(data)
     if isinstance(data, dict):
         return sanitize_dict(data)
     if isinstance(data, list):

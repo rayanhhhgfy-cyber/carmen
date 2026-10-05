@@ -1,7 +1,7 @@
 import asyncio
 from functools import partial
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..cache import cached
 from ..core import (
@@ -16,19 +16,39 @@ from ..core import (
     get_lyrics,
     get_mood_categories,
     get_mood_playlists,
+    get_related,
     get_signatureTimestamp,
     get_song,
     get_song_credits,
     get_song_related,
     get_tasteprofile,
+    get_track,
     get_user,
     get_user_playlists,
     get_user_videos,
+)
+from ..filters import (
+    MAX_DURATION_SECONDS,
+    DurationLimitExceeded,
+    parse_duration_seconds,
 )
 from ..sanitizers import sanitized
 from ..state import executor
 
 router = APIRouter(prefix="/browsing", tags=["Browsing"])
+
+
+def _guard_duration(result, video_id: str):
+    """Reject tracks longer than one hour with an explicit 400."""
+    details = (result or {}).get("videoDetails") or {}
+    seconds = parse_duration_seconds(details.get("lengthSeconds"))
+    if seconds and seconds > MAX_DURATION_SECONDS:
+        raise HTTPException(
+            status_code=400,
+            detail=DurationLimitExceeded(video_id, seconds).args[0],
+        )
+    return result
+
 
 
 @router.get(
@@ -288,8 +308,57 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
     - **signatureTimestamp**: timestamp of the base.js player (from get_signatureTimestamp)
     """
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    result = await loop.run_in_executor(
         executor, partial(get_song, videoId, signatureTimestamp)
+    )
+    return _guard_duration(result, videoId)
+
+
+@router.get(
+    "/track/{videoId}",
+    summary="Get Enriched Track",
+    response_description="Full track payload: metadata, artwork, genre and lyrics",
+)
+@sanitized
+@cached("track", ttl=3600)
+async def track(videoId: str):
+    """
+    Returns everything the player needs about a track in one call.
+
+    Payload contains title, artists, album, genre, release year, artwork URL
+    and both the synced and unsynced lyrics, plus the ids needed to fetch the
+    related songs.
+
+    - **videoId**: video ID of the song
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(executor, partial(get_track, videoId))
+    except DurationLimitExceeded as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/related/{videoId}",
+    summary="Get Related Songs",
+    response_description="Contextually related tracks for the given song",
+)
+@sanitized
+@cached("related", ttl=600)
+async def related(videoId: str, limit: int = 25):
+    """
+    Returns the songs that belong next to the given one: the watch queue
+    (what YouTube Music plays after this track), the "Related" watch panel
+    and, as a fallback, the radio generated around the seed.
+
+    Tracks longer than one hour are filtered out.
+
+    - **videoId**: video ID used as the seed
+    - **limit**: maximum number of tracks to return (default: 25)
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        executor, partial(get_related, videoId, limit)
     )
 
 

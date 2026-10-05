@@ -9,6 +9,7 @@ import uvicorn
 import uvloop
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pyrogram import Client
 
 from . import state
@@ -84,6 +85,25 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# The React client is served from another origin (or the dev server), and it
+# reads audio bytes for the browser side MP3 download, so CORS must be open
+# and the range related headers must be readable from JS.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=[
+        "Accept-Ranges",
+        "Content-Length",
+        "Content-Range",
+        "ETag",
+        "Last-Modified",
+    ],
+)
+
 app.include_router(router)
 
 
