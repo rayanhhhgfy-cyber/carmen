@@ -1,0 +1,16 @@
+{
+  "extends": "@react-native/typescript-config",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", "modules/**/spec/**/*", "App.tsx", "index.js"],
+  "exclude": [
+    "node_modules",
+    "**/android/**",
+    "**/windows/**",
+    "**/macos/**",
+    "**/linux/**"
+  ]
+}
