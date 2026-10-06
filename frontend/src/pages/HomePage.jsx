@@ -76,14 +76,43 @@ function SectionHeader({ title, subtitle, action }) {
 /**
  * Responsive grid of artwork cards.
  *
- * Only the first page is rendered at once: every card goes through the
- * throttled artwork queue, so keeping the initial batch small (and letting
- * the browser lazy load what is on screen) is what keeps the home feed fast
- * and clear of CDN rate limits.
+ * Pages load **adaptively**: one page is rendered and, while a sentinel
+ * just under the grid is still near the viewport, the next one is added —
+ * 600px before the reader reaches the end, with no button to press.  A
+ * first page that does not even fill the screen tops itself up until it
+ * does, and it stops at the last card.
+ *
+ * Cards stay cheap because every one of them goes through the throttled
+ * artwork queue and the browser lazy loads what is on screen, so the grid
+ * only ever holds what has been asked for so far.
  */
 function CardGrid({ items, onPlaySong, songsContext, pageSize = 12 }) {
   const [count, setCount] = useState(pageSize);
   const visible = items.slice(0, count);
+  const hasMore = count < items.length;
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    if (!hasMore) return undefined;
+    const node = sentinelRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setCount((value) => Math.min(value + pageSize, items.length));
+        }
+      },
+      // pull the trigger early, so the next page is painted before it is
+      // reached and scrolling never catches up with the loader
+      { rootMargin: '600px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+    // rebuilt on every growth on purpose: a sentinel that never left the
+    // viewport fires no new entry, and a fresh observer reports its state
+    // straight away — that is what fills a screen that is still too short
+  }, [hasMore, count, pageSize, items.length]);
 
   return (
     <>
@@ -108,17 +137,7 @@ function CardGrid({ items, onPlaySong, songsContext, pageSize = 12 }) {
           />
         ))}
       </Box>
-      {count < items.length && (
-        <Stack alignItems="center" sx={{ mt: 0.5 }}>
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => setCount((value) => value + pageSize)}
-          >
-            Show {Math.min(pageSize, items.length - count)} more
-          </Button>
-        </Stack>
-      )}
+      {hasMore && <Box ref={sentinelRef} aria-hidden sx={{ height: 1 }} />}
     </>
   );
 }
@@ -223,31 +242,15 @@ export default function HomePage() {
   return (
     <Container maxWidth="lg" sx={{ pt: { xs: 2, md: 3 }, px: { xs: 0, md: 3 } }}>
       <Stack spacing={3.5}>
-        <Box
-          sx={{
-            px: { xs: 2, md: 0 },
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 1,
-          }}
-        >
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="h5">Listen now</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {hasPersonalFeed
-                ? 'Your recently played songs and picks built from what you listen to'
-                : 'Play a song and this page fills up with your history and suggestions'}
-            </Typography>
-          </Box>
-          {/* The feed only moves when the reader says so: pull it down on a
-              phone, press this on a bigger screen. */}
+        {/* The feed only moves when the reader says so: pull it down on a
+            phone, press this on a bigger screen. */}
+        <Box sx={{ px: { xs: 2, md: 0 }, display: 'flex', justifyContent: 'flex-end' }}>
           <Tooltip title="Refresh feed">
             <span>
               <IconButton
                 aria-label="Refresh feed"
                 onClick={refresh}
                 disabled={refreshing}
-                sx={{ mt: 0.5 }}
               >
                 {refreshing ? (
                   <CircularProgress size={20} color="primary" />

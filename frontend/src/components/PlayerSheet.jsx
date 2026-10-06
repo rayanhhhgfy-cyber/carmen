@@ -1,4 +1,20 @@
-import { forwardRef, useEffect, useMemo, useState } from 'react';
+import Artwork from "./Artwork";
+import DownloadButton from "./DownloadButton";
+import LyricsView from "./LyricsView";
+import QueueTab from "./QueueTab";
+import RelatedTab from "./RelatedTab";
+import RepeatIcon from "@mui/icons-material/Repeat";
+import RepeatOneIcon from "@mui/icons-material/RepeatOne";
+import ShuffleIcon from "@mui/icons-material/Shuffle";
+import VolumeOffIcon from "@mui/icons-material/VolumeOff";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import { alpha } from "@mui/material/styles";
+import { forwardRef, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { usePlayer } from "../player/PlayerContext";
+import { formatTime } from "../utils/format";
+import { pickArtwork } from "../utils/track";
+
 import {
   Alert,
   AppBar,
@@ -16,26 +32,12 @@ import {
   Slide,
   Tab,
   Tabs,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import ShuffleIcon from '@mui/icons-material/Shuffle';
-import RepeatIcon from '@mui/icons-material/Repeat';
-import RepeatOneIcon from '@mui/icons-material/RepeatOne';
-import VolumeUpIcon from '@mui/icons-material/VolumeUp';
-import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import { alpha } from '@mui/material/styles';
-import { useNavigate } from 'react-router-dom';
 
-import { usePlayer } from '../player/PlayerContext';
-import { formatTime } from '../utils/format';
-import { pickArtwork } from '../utils/track';
-import Artwork from './Artwork';
-import DownloadButton from './DownloadButton';
-import LyricsView from './LyricsView';
-import RelatedTab from './RelatedTab';
-import QueueTab from './QueueTab';
 import {
   ChevronLeftIcon,
   ExpandMoreIcon,
@@ -149,7 +151,8 @@ export default function PlayerSheet() {
         position: 'relative',
         width: '100%',
         maxWidth: {
-          xs: 'min(58vw, 260px)',
+          // a phone has room for the cover to carry the screen
+          xs: 'min(74vw, 320px)',
           sm: 'min(60vw, 300px)',
           // wide card on a desktop, but never taller than the drawer allows
           // so the whole column fits without a scrollbar
@@ -174,7 +177,12 @@ export default function PlayerSheet() {
   );
 
   const titleBlock = (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 2 }}>
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1}
+      sx={{ mt: 2, textAlign: { xs: 'center', md: 'left' } }}
+    >
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="h6" noWrap>
           {track.title}
@@ -457,11 +465,8 @@ export default function PlayerSheet() {
       alignItems="center"
       spacing={1}
       sx={{
-        display: { xs: 'none', sm: 'flex' },
         width: 'fit-content',
         maxWidth: '100%',
-        mx: 'auto',
-        mt: 1.75,
         px: 1.25,
         py: 0.5,
         borderRadius: 999,
@@ -489,7 +494,7 @@ export default function PlayerSheet() {
         aria-label="Volume"
         sx={{
           color: 'primary.main',
-          width: 112,
+          width: { xs: 84, sm: 112 },
           py: 0,
           '& .MuiSlider-rail': {
             bgcolor: 'action.hover',
@@ -511,10 +516,48 @@ export default function PlayerSheet() {
       <Typography
         variant="caption"
         color="text.secondary"
-        sx={{ minWidth: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+        sx={{
+          display: { xs: 'none', md: 'block' },
+          minWidth: 34,
+          textAlign: 'right',
+          fontVariantNumeric: 'tabular-nums',
+        }}
       >
         {Math.round(player.volume * 100)}%
       </Typography>
+    </Stack>
+  );
+
+  /**
+   * Bottom utility row — volume with the two track actions beside it.
+   *
+   * Download and track details used to sit in the header, as far from the
+   * controls as possible; down here they join the transport, and the row
+   * gives the phone layout a proper bottom edge instead of dead space.
+   */
+  const utilityRow = (
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent="center"
+      spacing={1.25}
+      sx={{ mt: 1.75, width: '100%' }}
+    >
+      {volume}
+      <Box aria-hidden sx={{ width: 1, height: 26, bgcolor: 'divider', mx: 0.25 }} />
+      <Tooltip title={detailsOpen ? 'Hide track details' : 'Track details'}>
+        <IconButton
+          size="small"
+          aria-label="Track details"
+          aria-expanded={detailsOpen}
+          color={detailsOpen ? 'primary' : 'default'}
+          onClick={() => setDetailsOpen((value) => !value)}
+          sx={{ width: 34, height: 34, border: 1, borderColor: 'divider' }}
+        >
+          <InfoIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <DownloadButton track={track} meta={meta} size="small" />
     </Stack>
   );
 
@@ -615,19 +658,9 @@ export default function PlayerSheet() {
         <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
           {isDesktop ? <ChevronLeftIcon /> : <ExpandMoreIcon />}
         </IconButton>
-        <Box sx={{ flex: 1, textAlign: 'center' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ letterSpacing: 1.2 }}>
-            NOW PLAYING
-          </Typography>
-        </Box>
-        <IconButton
-          aria-label="Track details"
-          color={detailsOpen ? 'primary' : 'default'}
-          onClick={() => setDetailsOpen((value) => !value)}
-        >
-          <InfoIcon fontSize="small" />
-        </IconButton>
-        <DownloadButton edge="end" track={track} meta={meta} />
+        {/* download and details moved down to the utility row, next to the
+            volume, so the header only carries the way out */}
+        <Box sx={{ flex: 1 }} />
       </Stack>
     </AppBar>
   );
@@ -714,10 +747,10 @@ export default function PlayerSheet() {
               {artworkBox}
               {titleBlock}
               {errorAlert}
-              {details}
               {progressBar}
               {transport}
-              {volume}
+              {details}
+              {utilityRow}
             </Box>
 
             {/* ── Right: lyrics / related / queue ───────────────────── */}
@@ -782,16 +815,20 @@ export default function PlayerSheet() {
               px: 3,
               pt: 1,
               pb: 2,
+              // on a short screen the column scrolls instead of clipping
+              overflowY: 'auto',
             }}
           >
             {artworkBox}
             {titleBlock}
             {errorAlert}
-            {details}
             {progressBar}
             {transport}
-            {volume}
-            {tabs}
+            {details}
+            {utilityRow}
+            {/* Panel tabs hug the bottom edge — the thumb reaches them and
+                the column no longer trails off into empty space. */}
+            <Box sx={{ mt: 'auto', pt: 1.5 }}>{tabs}</Box>
             {panel}
           </Box>
         )}

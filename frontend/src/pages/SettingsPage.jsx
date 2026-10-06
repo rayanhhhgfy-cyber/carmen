@@ -12,7 +12,6 @@ import {
 } from '@mui/material';
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
-import { API_BASE } from '../api';
 import {
   CheckIcon,
   DarkModeIcon,
@@ -30,6 +29,23 @@ function Section({ title, children }) {
         {children}
       </Paper>
     </Box>
+  );
+}
+
+/** Link chip: the credits are plain links, they open in a new tab. */
+function Credit({ href, children }) {
+  return (
+    <Chip
+      component="a"
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      clickable
+      size="small"
+      variant="outlined"
+      label={children}
+      sx={{ fontWeight: 600 }}
+    />
   );
 }
 
@@ -118,7 +134,7 @@ export default function SettingsPage() {
                 }}
               >
                 <Typography sx={{ fontFamily: 'inherit', fontWeight: 700 }} noWrap>
-                  Listen now — {selectedFont.name}
+                  Carmen — {selectedFont.name}
                 </Typography>
                 <Typography
                   variant="caption"
@@ -232,12 +248,21 @@ export default function SettingsPage() {
           </Stack>
         </Section>
 
-        <Section title="Backend">
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-              {API_BASE}
-            </Typography>
-            <Chip size="small" label="FastAPI + yt-dlp" variant="outlined" />
+        <Section title="Credits">
+          <Stack spacing={1.25}>
+            <Box>
+              <Typography variant="body2" fontWeight={700}>
+                Zaid Ballour
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Design, development and maintenance of Carmen
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Credit href="https://github.com/z44d">GitHub · z44d</Credit>
+              <Credit href="https://x.com/0z44d">X · 0z44d</Credit>
+              <Credit href="https://t.me/zaidballour">Telegram · @zaidballour</Credit>
+            </Stack>
           </Stack>
         </Section>
       </Stack>
