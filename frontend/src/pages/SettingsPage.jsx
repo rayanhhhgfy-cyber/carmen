@@ -16,7 +16,10 @@ import {
   CheckIcon,
   DarkModeIcon,
   DevicePhoneMobileIcon,
+  GitHubIcon,
   LightModeIcon,
+  TelegramIcon,
+  XIcon,
 } from '../components/icons';
 
 function Section({ title, children }) {
@@ -32,8 +35,12 @@ function Section({ title, children }) {
   );
 }
 
-/** Link chip: the credits are plain links, they open in a new tab. */
-function Credit({ href, children }) {
+/**
+ * Credit link: the platform's own mark with the handle beside it, opening
+ * in a new tab.  `name` is what a screen reader hears — the visible label
+ * is only the handle, the icon carries the rest.
+ */
+function Credit({ href, name, icon, iconColor, children }) {
   return (
     <Chip
       component="a"
@@ -43,8 +50,13 @@ function Credit({ href, children }) {
       clickable
       size="small"
       variant="outlined"
+      icon={icon}
       label={children}
-      sx={{ fontWeight: 600 }}
+      aria-label={`${name} — ${children}`}
+      sx={{
+        fontWeight: 600,
+        '& .MuiChip-icon': { fontSize: 17, color: iconColor },
+      }}
     />
   );
 }
@@ -259,9 +271,30 @@ export default function SettingsPage() {
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Credit href="https://github.com/z44d">GitHub · z44d</Credit>
-              <Credit href="https://x.com/0z44d">X · 0z44d</Credit>
-              <Credit href="https://t.me/zaidballour">Telegram · @zaidballour</Credit>
+              <Credit
+                href="https://github.com/z44d"
+                name="GitHub"
+                icon={<GitHubIcon />}
+                iconColor="text.primary"
+              >
+                @z44d
+              </Credit>
+              <Credit
+                href="https://x.com/0z44d"
+                name="X"
+                icon={<XIcon />}
+                iconColor="text.primary"
+              >
+                @0z44d
+              </Credit>
+              <Credit
+                href="https://t.me/zaidballour"
+                name="Telegram"
+                icon={<TelegramIcon />}
+                iconColor="#229ED9"
+              >
+                @zaidballour
+              </Credit>
             </Stack>
           </Stack>
         </Section>
