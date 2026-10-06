@@ -1,13 +1,11 @@
 import Artwork from "./Artwork";
-import DownloadButton from "./DownloadButton";
 import LyricsView from "./LyricsView";
+import PlayerMenu from "./PlayerMenu";
 import QueueTab from "./QueueTab";
 import RelatedTab from "./RelatedTab";
 import RepeatIcon from "@mui/icons-material/Repeat";
 import RepeatOneIcon from "@mui/icons-material/RepeatOne";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
-import VolumeOffIcon from "@mui/icons-material/VolumeOff";
-import VolumeUpIcon from "@mui/icons-material/VolumeUp";
 import { alpha } from "@mui/material/styles";
 import { forwardRef, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -21,7 +19,6 @@ import {
   Box,
   Chip,
   CircularProgress,
-  Collapse,
   Dialog,
   Drawer,
   Fab,
@@ -41,7 +38,6 @@ import {
 import {
   ChevronLeftIcon,
   ExpandMoreIcon,
-  InfoIcon,
   LyricsIcon,
   PauseIcon,
   PlayArrowIcon,
@@ -59,9 +55,6 @@ const Transition = forwardRef(function Transition(props, ref) {
 const LYRICS_TAB = 0;
 const RELATED_TAB = 1;
 const QUEUE_TAB = 2;
-
-/** Tab index used when nothing has been chosen yet (matches no tab). */
-const NO_TAB = -1;
 
 function IconTab({ icon, label, ...props }) {
   return (
@@ -97,7 +90,6 @@ export default function PlayerSheet() {
    */
   const [tab, setTab] = useState(null);
   const activeTab = tab ?? (isDesktop ? RELATED_TAB : null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   // Mobile only: a tab that was tapped takes over the whole screen with a
   // compact "now playing" card on top; the down arrow folds it back.
   const [expanded, setExpanded] = useState(false);
@@ -135,15 +127,6 @@ export default function PlayerSheet() {
   // The song's own artwork: the i.ytimg CDN entry (maxresdefault), which is
   // also the largest item of the merged thumbnail list.
   const artwork = track.artwork || pickArtwork(meta?.thumbnails);
-
-  const infoLine = [
-    meta?.album?.name || track.albumName,
-    meta?.year,
-    meta?.genre,
-    track.duration ? formatTime(track.duration) : null,
-  ]
-    .filter(Boolean)
-    .join('  •  ');
 
   const artworkBox = (
     <Box
@@ -210,25 +193,6 @@ export default function PlayerSheet() {
       {player.error}
     </Alert>
   ) : null;
-
-  const details = (
-    <Collapse in={detailsOpen} sx={{ mt: 1 }}>
-      <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.8 }}>
-          {infoLine}
-        </Typography>
-        {meta?.description && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-line', maxHeight: 160, overflowY: 'auto' }}
-          >
-            {meta.description}
-          </Typography>
-        )}
-      </Box>
-    </Collapse>
-  );
 
   /**
    * Seek bar: a hairline rail that fattens under the pointer, the buffered
@@ -458,108 +422,23 @@ export default function PlayerSheet() {
     </Stack>
   );
 
-  /** Volume as a compact pill: mute button, filled track, live percentage. */
-  const volume = (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={1}
-      sx={{
-        width: 'fit-content',
-        maxWidth: '100%',
-        px: 1.25,
-        py: 0.5,
-        borderRadius: 999,
-        border: '1px solid',
-        borderColor: 'divider',
-        bgcolor: 'background.paper',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-      }}
-    >
-      <IconButton
-        size="small"
-        aria-label="Mute"
-        onClick={() => player.setVolume(player.volume > 0 ? 0 : 1)}
-        sx={{ color: 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
-      >
-        {player.volume > 0 ? <VolumeUpIcon fontSize="small" /> : <VolumeOffIcon fontSize="small" />}
-      </IconButton>
-      <Slider
-        size="small"
-        value={player.volume}
-        min={0}
-        max={1}
-        step={0.05}
-        onChange={(_, value) => player.setVolume(Number(value))}
-        aria-label="Volume"
-        sx={{
-          color: 'primary.main',
-          width: { xs: 84, sm: 112 },
-          py: 0,
-          '& .MuiSlider-rail': {
-            bgcolor: 'action.hover',
-            opacity: 1,
-            height: 4,
-            borderRadius: 3,
-          },
-          '& .MuiSlider-track': { border: 0, height: 4, borderRadius: 3 },
-          '& .MuiSlider-thumb': {
-            width: 12,
-            height: 12,
-            bgcolor: 'background.paper',
-            border: (t) => `3px solid ${t.palette.primary.main}`,
-            boxShadow: 'none',
-            '&:hover': { boxShadow: 'none' },
-          },
-        }}
-      />
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{
-          display: { xs: 'none', md: 'block' },
-          minWidth: 34,
-          textAlign: 'right',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {Math.round(player.volume * 100)}%
-      </Typography>
-    </Stack>
-  );
-
   /**
-   * Bottom utility block — the volume pill on top, with download and track
-   * details underneath it.
+   * Bottom utility block — the "⋯" menu.
    *
-   * Those two used to sit in the header, as far from the controls as
-   * possible; down here they sit under the volume, where the thumb lands,
-   * and the block gives the phone layout a proper bottom edge instead of
-   * dead space.
+   * It used to be the volume pill with two standalone buttons (info +
+   * download) under it; the pill is gone (the player plays at full level and
+   * the OS mixer owns volume) and everything about the song that is not a
+   * transport control lives in the menu, down here where the thumb lands.
    */
   const utilityRow = (
     <Stack alignItems="center" sx={{ mt: 1.75, width: '100%' }}>
-      {volume}
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="center"
         spacing={1}
-        sx={{ mt: 0.75 }}
       >
-        <Tooltip title={detailsOpen ? 'Hide track details' : 'Track details'}>
-          <IconButton
-            size="small"
-            aria-label="Track details"
-            aria-expanded={detailsOpen}
-            color={detailsOpen ? 'primary' : 'default'}
-            onClick={() => setDetailsOpen((value) => !value)}
-            sx={{ width: 34, height: 34, border: 1, borderColor: 'divider' }}
-          >
-            <InfoIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <DownloadButton track={track} meta={meta} size="small" />
+        <PlayerMenu track={track} meta={meta} />
       </Stack>
     </Stack>
   );
@@ -572,19 +451,59 @@ export default function PlayerSheet() {
     if (!isDesktop) setExpanded(true);
   };
 
-  const tabs = (
-    <Tabs
-      value={activeTab ?? NO_TAB}
-      onChange={handleTabChange}
-      variant="fullWidth"
-      aria-label="Player panels"
-      sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
-    >
-      <IconTab label="Lyrics" icon={<LyricsIcon />} />
-      <IconTab label="Related" icon={<RelatedIcon />} />
-      <IconTab label="Queue" icon={<QueueMusicIcon />} />
-    </Tabs>
-  );
+  const tabItems = [
+    { index: LYRICS_TAB, label: 'Lyrics', icon: <LyricsIcon /> },
+    { index: RELATED_TAB, label: 'Related', icon: <RelatedIcon /> },
+    { index: QUEUE_TAB, label: 'Queue', icon: <QueueMusicIcon /> },
+  ];
+
+  /**
+   * The three panel tabs.
+   *
+   * `activeTab` is `null` on a phone until one of them is tapped, and MUI's
+   * `<Tabs>` rejects the "nothing selected" `value={-1}` — it warns about
+   * children with index 0, 1, 2 not matching the value.  So while nothing is
+   * selected the same three icons are plain buttons with the same footprint;
+   * the moment one is chosen the real `<Tabs>` takes over with a proper
+   * `value`.
+   */
+  const tabs =
+    activeTab === null ? (
+      <Stack
+        direction="row"
+        aria-label="Player panels"
+        sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+      >
+        {tabItems.map((item) => (
+          <Tooltip title={item.label} key={item.label}>
+            <IconButton
+              aria-label={item.label}
+              onClick={() => handleTabChange(null, item.index)}
+              sx={{
+                flex: 1,
+                borderRadius: 0,
+                minHeight: 52,
+                color: 'text.secondary',
+              }}
+            >
+              {item.icon}
+            </IconButton>
+          </Tooltip>
+        ))}
+      </Stack>
+    ) : (
+      <Tabs
+        value={activeTab}
+        onChange={handleTabChange}
+        variant="fullWidth"
+        aria-label="Player panels"
+        sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+      >
+        {tabItems.map((item) => (
+          <IconTab key={item.label} label={item.label} icon={item.icon} value={item.index} />
+        ))}
+      </Tabs>
+    );
 
   // Compact "now playing" card shown on top of an expanded phone panel:
   // artwork, title, artist and the down arrow that folds it back.
@@ -661,8 +580,8 @@ export default function PlayerSheet() {
         <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
           {isDesktop ? <ChevronLeftIcon /> : <ExpandMoreIcon />}
         </IconButton>
-        {/* download and details moved down to the utility row, next to the
-            volume, so the header only carries the way out */}
+        {/* the download / detail buttons live in the utility row as the "⋯"
+            menu, so the header only carries the way out */}
         <Box sx={{ flex: 1 }} />
       </Stack>
     </AppBar>
@@ -752,7 +671,6 @@ export default function PlayerSheet() {
               {errorAlert}
               {progressBar}
               {transport}
-              {details}
               {utilityRow}
             </Box>
 
@@ -827,7 +745,6 @@ export default function PlayerSheet() {
             {errorAlert}
             {progressBar}
             {transport}
-            {details}
             {utilityRow}
             {/* Panel tabs hug the bottom edge — the thumb reaches them and
                 the column no longer trails off into empty space. */}

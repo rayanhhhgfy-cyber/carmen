@@ -57,6 +57,21 @@ export default function SearchPage() {
     else setSearchParams({}, { replace: true });
   }, [query, setSearchParams]);
 
+  // …and the other way round: arriving here with a *different* query (the
+  // "Go to artist" / "Go to album" jumps in the player's ⋯ menu) has to run
+  // a new search, because the query lives in this component's state.  A
+  // change we made ourselves always matches `queryRef` and is skipped, so a
+  // filter the user picked survives their own typing.
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  useEffect(() => {
+    const target = searchParams.get('query') || '';
+    if (target === queryRef.current) return;
+    setQuery(target);
+    setInput(target);
+    setFilter('');
+  }, [searchParams]);
+
   // Debounced typing -> suggestions
   useEffect(() => {
     window.clearTimeout(debounceRef.current);

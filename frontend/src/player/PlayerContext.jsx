@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { apiGet, streamUrl } from '../api';
 import { useMediaSession } from './mediaSession';
+import { useAdaptiveAccent } from '../theme/adaptiveAccent';
 import { addSuggestions, recordPlay } from '../utils/library';
 import { normalizeList, normalizeTrack } from '../utils/track';
 
@@ -61,11 +62,14 @@ export function PlayerProvider({ children }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
-  const [volume, setVolume] = useState(1);
 
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('off'); // off | all | one
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // While "Adaptive accent color" is on, the cover of the playing song sets
+  // the theme's accent (see theme/adaptiveAccent.js).
+  useAdaptiveAccent(current);
 
   // ── Audio element control ────────────────────────────────────────────────
 
@@ -334,11 +338,6 @@ export function PlayerProvider({ children }) {
     };
   }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (audio) audio.volume = volume;
-  }, [volume]);
-
   // ── System media controls (macOS Now Playing, Control Center, …) ───────
   // Registers its handlers once and reads these callbacks through a ref, so
   // nothing here re-binds or goes stale on every render.
@@ -480,12 +479,10 @@ export function PlayerProvider({ children }) {
       currentTime,
       duration,
       buffered,
-      volume,
       shuffle,
       repeat,
       sheetOpen,
       setSheetOpen,
-      setVolume,
       playTrack,
       playAll,
       addToQueue,
@@ -514,7 +511,6 @@ export function PlayerProvider({ children }) {
       currentTime,
       duration,
       buffered,
-      volume,
       shuffle,
       repeat,
       sheetOpen,
@@ -537,6 +533,8 @@ export function PlayerProvider({ children }) {
   return (
     <PlayerContext.Provider value={value}>
       {children}
+      {/* No volume control: the element plays at full level and the OS mixer
+          owns loudness, so the player keeps no volume state at all. */}
       <audio
         ref={audioRef}
         preload="auto"

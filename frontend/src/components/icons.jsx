@@ -338,6 +338,30 @@ export const HistoryIcon = (props) => (
   </Solid>
 );
 
+/** Artist (person) — "Go to artist". */
+export const UserIcon = (props) => (
+  <Solid {...props}>
+    <circle cx="12" cy="7.5" r="3.75" />
+    <path d="M4.5 19.5C4.5 16.3 7.86 14.25 12 14.25S19.5 16.3 19.5 19.5Z" />
+  </Solid>
+);
+
+/**
+ * Disc (record) — "Go to album".
+ *
+ * Two concentric shapes in one path: the outer circle and the centre hole,
+ * cut out by `evenodd` — a stroked icon would not match its solid siblings.
+ */
+export const AlbumIcon = (props) => (
+  <Solid {...props}>
+    <path
+      fillRule="evenodd"
+      d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12ZM8.25 12c0-2.071 1.679-3.75 3.75-3.75s3.75 1.679 3.75 3.75-1.679 3.75-3.75 3.75S8.25 14.071 8.25 12Z"
+      clipRule="evenodd"
+    />
+  </Solid>
+);
+
 /* ── brand marks (credits) ────────────────────────────────────────────── */
 
 /** GitHub octocat. */
