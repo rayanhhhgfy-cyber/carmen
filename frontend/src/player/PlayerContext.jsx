@@ -22,6 +22,19 @@ const PlayerContext = createContext(null);
 
 const HISTORY_LIMIT = 100;
 
+/** Last second of the track the player has already downloaded. */
+function bufferedEnd(audio) {
+  const ranges = audio.buffered;
+  if (!ranges || !ranges.length) return 0;
+  return ranges.end(ranges.length - 1);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function shuffled(list) {
   const copy = [...list];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -371,6 +384,67 @@ export function PlayerProvider({ children }) {
 
   const dismissError = useCallback(() => setError(null), []);
 
+  /**
+   * Wait until the server has finished caching *videoId*.
+   *
+   * The relay tees every byte it sends the player into the server's audio
+   * cache, so a download of the song that is playing right now waits here
+   * and then picks the finished file up from disk — instead of opening a
+   * second live stream next to the one this player is holding open.
+   *
+   * It always resolves: the file landed, the whole track arrived, playback
+   * moved to another song, the player errored or ended, nothing moved for
+   * twelve seconds, the server stopped answering, or the minute passed.
+   */
+  const waitForCache = useCallback(async (videoId) => {
+    const token = encodeURIComponent(videoId);
+    const deadline = Date.now() + 60_000;
+    const STALL_LIMIT = 12_000;
+    let unreachable = 0;
+    let lastEnd = -1;
+    let lastChangeAt = Date.now();
+    let sawWholeBuffer = false;
+
+    while (Date.now() < deadline) {
+      let cached = false;
+      try {
+        const payload = await apiGet('/stream/status', { vidId: videoId });
+        cached = Boolean(payload?.cached);
+        unreachable = 0;
+      } catch {
+        // a server that does not answer (or still runs the old build
+        // without /stream/status) must not stall the download for a minute
+        unreachable += 1;
+        if (unreachable >= 3) return;
+      }
+      if (cached) return;
+      if (sawWholeBuffer) return;
+
+      const audio = audioRef.current;
+      if (!audio || !audio.src || !audio.src.includes(`vidId=${token}`)) return;
+      if (audio.error || audio.ended) return;
+
+      const end = bufferedEnd(audio);
+      const whole =
+        Number.isFinite(audio.duration) && audio.duration > 0 && end >= audio.duration - 0.5;
+
+      if (whole) {
+        // the last byte just reached the browser — give the relay a beat to
+        // close the file, then the status check above confirms it
+        sawWholeBuffer = true;
+      } else if (end > lastEnd + 0.2) {
+        lastEnd = end;
+        lastChangeAt = Date.now();
+      }
+
+      // the player stopped pulling data: waiting any longer would only
+      // delay a download the stream is no longer helping with
+      if (Date.now() - lastChangeAt > STALL_LIMIT) return;
+
+      await wait(750);
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       audioRef,
@@ -405,6 +479,7 @@ export function PlayerProvider({ children }) {
       seek,
       toggleShuffle,
       cycleRepeat,
+      waitForCache,
     }),
     [
       current,
@@ -436,6 +511,7 @@ export function PlayerProvider({ children }) {
       seek,
       toggleShuffle,
       cycleRepeat,
+      waitForCache,
     ],
   );
 

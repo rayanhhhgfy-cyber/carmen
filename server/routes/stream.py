@@ -24,6 +24,7 @@ from ..core import (
     resolve_stream_url,
 )
 from ..filters import DurationLimitExceeded
+from ..sanitizers import sanitized
 
 router = APIRouter(tags=["Stream"])
 log = logging.getLogger(__name__)
@@ -260,6 +261,29 @@ async def _proxy_audio(
 
 
 # ── Stream endpoint ─────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/stream/status",
+    summary="Audio Cache Status",
+    response_description="Whether the audio of the video is already on disk",
+)
+@sanitized
+async def stream_status(
+    vidId: str = Query(..., description="YouTube video ID to check"),
+):
+    """
+    Whether the audio of a video is already in the server side audio cache.
+
+    The client polls this while the song is still streaming: as soon as the
+    relay has finished writing the file, a download can read it straight from
+    disk instead of opening a second live stream next to the one the player
+    is holding open.
+
+    Deliberately not cached — the whole point of the answer is how fresh it
+    is — and it only stats a file, so it never touches yt-dlp or the CDN.
+    """
+    return {"cached": bool(find_cached_audio(vidId))}
 
 
 @router.get(

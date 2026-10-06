@@ -82,8 +82,33 @@ function getFFmpeg() {
   return ffmpegPromise;
 }
 
-async function fetchAudio(videoId, onProgress) {
-  const response = await fetch(streamUrl(videoId));
+/**
+ * Build the error used when the connection to the audio endpoint dies.
+ *
+ * `TypeError: Failed to fetch` is what the browser reports for a connection
+ * that never made it or broke while reading — it carries no status code, so
+ * the failure is tagged and the message stays human readable.
+ *
+ * @param {unknown} cause original browser error
+ * @returns {Error} with `.retryable = true`
+ */
+function networkError(cause) {
+  const error = new Error(
+    'Could not reach the server for the audio — check your connection and try again',
+  );
+  error.retryable = true;
+  error.cause = cause;
+  return error;
+}
+
+async function fetchAudioOnce(videoId, onProgress) {
+  let response;
+  try {
+    response = await fetch(streamUrl(videoId));
+  } catch (cause) {
+    throw networkError(cause);
+  }
+
   if (!response.ok) {
     let detail = `audio request failed (${response.status})`;
     try {
@@ -92,21 +117,37 @@ async function fetchAudio(videoId, onProgress) {
     } catch {
       /* not a json body */
     }
-    throw new Error(detail);
+    const error = new Error(detail);
+    // 502/503/504 = the server was still resolving the track or briefly
+    // overloaded; by the time the retry lands it usually serves the file
+    // straight from its audio cache.
+    error.retryable = [502, 503, 504].includes(response.status);
+    throw error;
   }
 
   const total = Number(response.headers.get('content-length')) || 0;
-  if (!response.body || !total) return response.arrayBuffer();
+  if (!response.body || !total) {
+    try {
+      return await response.arrayBuffer();
+    } catch (cause) {
+      throw networkError(cause);
+    }
+  }
 
   const reader = response.body.getReader();
   const chunks = [];
   let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    loaded += value.length;
-    onProgress(Math.min(loaded / total, 1));
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      onProgress(Math.min(loaded / total, 1));
+    }
+  } catch (cause) {
+    // the relay dropped mid body — the most common "Failed to fetch"
+    throw networkError(cause);
   }
 
   const buffer = new Uint8Array(loaded);
@@ -116,6 +157,31 @@ async function fetchAudio(videoId, onProgress) {
     offset += chunk.length;
   });
   return buffer.buffer;
+}
+
+/**
+ * Read the whole audio of a video, retrying the failures that can succeed
+ * on a second attempt (dropped connection, upstream busy).
+ *
+ * The audio lives behind a connection the player may also be using, so a
+ * hiccup there is routine rather than fatal; a retry a moment later is
+ * often served from the file the first attempt made the server finish.
+ */
+async function fetchAudio(videoId, onProgress) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (attempt > 1) {
+      patchJob(videoId, { step: 'Retrying audio', progress: 0 });
+      await sleep(600 * (attempt - 1));
+    }
+    try {
+      return await fetchAudioOnce(videoId, onProgress);
+    } catch (error) {
+      lastError = error;
+      if (!error?.retryable) throw error;
+    }
+  }
+  throw lastError;
 }
 
 async function toMp3(arrayBuffer, onProgress) {
@@ -353,19 +419,36 @@ function isRunning(videoId) {
  *
  * @param {object} track normalized track
  * @param {object|null} meta enriched payload from /browsing/track/{id}
+ * @param {object} [options]
+ * @param {() => Promise<void>} [options.waitForCache] awaited first while the
+ *   job reports "Waiting for the stream to finish caching" — the song that is
+ *   streaming is being written into the server's audio cache at that moment,
+ *   so waiting turns the download's fetch into a read of the finished file
+ *   instead of a second live stream opened next to the one the player holds.
  */
-export function startDownload(track, meta) {
+export function startDownload(track, meta, options = {}) {
   if (!track?.videoId || isRunning(track.videoId)) return;
+
+  const waitForCache = typeof options.waitForCache === 'function' ? options.waitForCache : null;
 
   patchJob(track.videoId, {
     title: track.title,
     status: 'running',
-    step: 'Downloading audio',
+    step: waitForCache ? 'Waiting for the stream to finish caching' : 'Downloading audio',
     progress: 0,
   });
 
   const videoId = track.videoId;
   const finish = async () => {
+    if (waitForCache) {
+      try {
+        await waitForCache();
+      } catch {
+        /* waiting is an optimisation — the download proceeds either way */
+      }
+    }
+
+    patchJob(videoId, { step: 'Downloading audio', progress: 0 });
     const audioBuffer = await fetchAudio(videoId, (ratio) =>
       patchJob(videoId, { step: 'Downloading audio', progress: ratio * 0.4 }),
     );
