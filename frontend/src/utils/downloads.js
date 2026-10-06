@@ -104,7 +104,12 @@ function networkError(cause) {
 async function fetchAudioOnce(videoId, onProgress) {
   let response;
   try {
-    response = await fetch(streamUrl(videoId));
+    // `no-store` matters: the player's own <audio> request for this URL is
+    // made *without* an Origin header, and before the server stamped the CORS
+    // headers on those answers the browser cached one of them.  A download
+    // reusing that stored response would be blocked as a CORS failure — so
+    // the audio bytes are always fetched fresh.
+    response = await fetch(streamUrl(videoId), { cache: 'no-store' });
   } catch (cause) {
     throw networkError(cause);
   }

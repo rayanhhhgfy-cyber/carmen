@@ -385,7 +385,12 @@ export function PlayerProvider({ children }) {
 
     let message = 'This track could not be played';
     try {
-      const response = await fetch(streamUrl(videoId), { method: 'GET' });
+      // `no-store`: never read the response the <audio> element left in the
+      // HTTP cache — see the same call in utils/downloads.js
+      const response = await fetch(streamUrl(videoId), {
+        method: 'GET',
+        cache: 'no-store',
+      });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         message = payload?.detail || message;

@@ -14,7 +14,7 @@ from pyrogram import Client
 
 from . import state
 from .core import init_ytm
-from .errors import CatchAllErrors
+from .errors import EXPOSE_HEADERS, CatchAllErrors
 from .routes import router
 
 load_dotenv()
@@ -92,7 +92,10 @@ app = FastAPI(
 # call ends up on the outside.  Keeping CatchAllErrors below means every error
 # it answers still travels through CORSMiddleware and keeps its headers —
 # otherwise the browser reports the failure as a CORS problem instead of
-# showing the real message.  See server/errors.py.
+# showing the real message.  It also stamps those headers onto the responses
+# CORSMiddleware leaves alone (requests with no `Origin`, such as the player's
+# own `<audio>` element), so a response the browser caches is always safe to
+# reuse.  See server/errors.py.
 app.add_middleware(CatchAllErrors)
 
 # The React client is served from another origin (or the dev server), and it
@@ -104,13 +107,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=[
-        "Accept-Ranges",
-        "Content-Length",
-        "Content-Range",
-        "ETag",
-        "Last-Modified",
-    ],
+    expose_headers=EXPOSE_HEADERS,
 )
 
 app.include_router(router)
