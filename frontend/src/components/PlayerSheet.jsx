@@ -529,35 +529,38 @@ export default function PlayerSheet() {
   );
 
   /**
-   * Bottom utility row — volume with the two track actions beside it.
+   * Bottom utility block — the volume pill on top, with download and track
+   * details underneath it.
    *
-   * Download and track details used to sit in the header, as far from the
-   * controls as possible; down here they join the transport, and the row
-   * gives the phone layout a proper bottom edge instead of dead space.
+   * Those two used to sit in the header, as far from the controls as
+   * possible; down here they sit under the volume, where the thumb lands,
+   * and the block gives the phone layout a proper bottom edge instead of
+   * dead space.
    */
   const utilityRow = (
-    <Stack
-      direction="row"
-      alignItems="center"
-      justifyContent="center"
-      spacing={1.25}
-      sx={{ mt: 1.75, width: '100%' }}
-    >
+    <Stack alignItems="center" sx={{ mt: 1.75, width: '100%' }}>
       {volume}
-      <Box aria-hidden sx={{ width: 1, height: 26, bgcolor: 'divider', mx: 0.25 }} />
-      <Tooltip title={detailsOpen ? 'Hide track details' : 'Track details'}>
-        <IconButton
-          size="small"
-          aria-label="Track details"
-          aria-expanded={detailsOpen}
-          color={detailsOpen ? 'primary' : 'default'}
-          onClick={() => setDetailsOpen((value) => !value)}
-          sx={{ width: 34, height: 34, border: 1, borderColor: 'divider' }}
-        >
-          <InfoIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-      <DownloadButton track={track} meta={meta} size="small" />
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="center"
+        spacing={1}
+        sx={{ mt: 0.75 }}
+      >
+        <Tooltip title={detailsOpen ? 'Hide track details' : 'Track details'}>
+          <IconButton
+            size="small"
+            aria-label="Track details"
+            aria-expanded={detailsOpen}
+            color={detailsOpen ? 'primary' : 'default'}
+            onClick={() => setDetailsOpen((value) => !value)}
+            sx={{ width: 34, height: 34, border: 1, borderColor: 'divider' }}
+          >
+            <InfoIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <DownloadButton track={track} meta={meta} size="small" />
+      </Stack>
     </Stack>
   );
 
