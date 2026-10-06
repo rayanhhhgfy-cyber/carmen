@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { apiGet, streamUrl } from '../api';
+import { useMediaSession } from './mediaSession';
 import { addSuggestions, recordPlay } from '../utils/library';
 import { normalizeList, normalizeTrack } from '../utils/track';
 
@@ -337,6 +338,19 @@ export function PlayerProvider({ children }) {
     const audio = audioRef.current;
     if (audio) audio.volume = volume;
   }, [volume]);
+
+  // ── System media controls (macOS Now Playing, Control Center, …) ───────
+  // Registers its handlers once and reads these callbacks through a ref, so
+  // nothing here re-binds or goes stale on every render.
+  useMediaSession({
+    audioRef,
+    current,
+    meta,
+    isPlaying,
+    onPrevious: previous,
+    onNext: next,
+    onSeek: seek,
+  });
 
   // ── Local home library: recent plays + suggested songs ─────────────────
 
