@@ -118,10 +118,11 @@ async function fetchAudioOnce(videoId, onProgress) {
       /* not a json body */
     }
     const error = new Error(detail);
+    // 500 = an unexpected server failure that a retry may well outlive,
     // 502/503/504 = the server was still resolving the track or briefly
     // overloaded; by the time the retry lands it usually serves the file
     // straight from its audio cache.
-    error.retryable = [502, 503, 504].includes(response.status);
+    error.retryable = [500, 502, 503, 504].includes(response.status);
     throw error;
   }
 

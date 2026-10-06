@@ -994,8 +994,14 @@ def find_cached_audio(video_id: str) -> Path | None:
     """Return the already downloaded audio file for *video_id*, if any."""
     for suffix in AUDIO_SUFFIXES:
         candidate = AUDIO_CACHE_DIR / f"{video_id}{suffix}"
-        if candidate.is_file() and candidate.stat().st_size:
-            return candidate
+        try:
+            if candidate.is_file() and candidate.stat().st_size:
+                return candidate
+        except OSError:
+            # an id the filesystem refuses (too long, odd characters) or a
+            # file deleted between the two calls is simply not cached —
+            # never let a stat turn into a 500 for the client
+            continue
     return None
 
 

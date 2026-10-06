@@ -352,6 +352,20 @@ async def stream_audio(
             )
             forget_stream_url(vidId)
             skip.add(target.client)
+        except Exception as exc:  # noqa: BLE001
+            # The connection to the CDN died before a single byte was sent
+            # (network blip, URL expired while connecting, socket reset).
+            # Nothing is on the wire yet, so move to the next player client
+            # and let the full download below be the last resort — letting
+            # this escape used to reach the browser as a headerless 500,
+            # which it reported as a CORS error.
+            log.warning(
+                "Relay failed for %s via %s: %s",
+                vidId,
+                target.client,
+                exc,
+            )
+            skip.add(target.client)
 
     # 3) fall back to buffering the whole file on the server
     try:

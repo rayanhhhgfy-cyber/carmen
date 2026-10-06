@@ -14,6 +14,7 @@ from pyrogram import Client
 
 from . import state
 from .core import init_ytm
+from .errors import CatchAllErrors
 from .routes import router
 
 load_dotenv()
@@ -85,6 +86,14 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Registered first on purpose: Starlette inserts each middleware at the front
+# of the list and wraps the stack in reverse, so the *last* `add_middleware`
+# call ends up on the outside.  Keeping CatchAllErrors below means every error
+# it answers still travels through CORSMiddleware and keeps its headers —
+# otherwise the browser reports the failure as a CORS problem instead of
+# showing the real message.  See server/errors.py.
+app.add_middleware(CatchAllErrors)
 
 # The React client is served from another origin (or the dev server), and it
 # reads audio bytes for the browser side MP3 download, so CORS must be open
