@@ -252,7 +252,8 @@ export default function SettingsPage() {
             <Typography variant="body2">
               Every <b>Download</b> runs entirely in your browser: the audio is fetched from the
               server buffer, converted to MP3 with ffmpeg.wasm and tagged with the title, artists,
-              album, year, genre, cover art and synced lyrics before being saved.
+              album, year, genre, cover art and the lyrics — synced lyrics are written as LRC
+              timestamps — before being saved.
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Songs longer than 1 hour are not offered by the API.

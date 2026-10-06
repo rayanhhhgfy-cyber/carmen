@@ -5,12 +5,14 @@
  *   1. fetch the audio bytes from the server side buffer (/stream)
  *   2. transcode to MP3 with ffmpeg.wasm
  *   3. attach ID3v2.3 tags — title, artists, album, year, genre, cover art
- *      and both synced (SYLT) and unsynced (USLT) lyrics
+ *      and both synced (SYLT) and unsynced (USLT) lyrics — the USLT frame
+ *      carries the LRC text whenever the song has timestamps
  *   4. save the resulting .mp3 file
  */
 import { ID3Writer } from 'browser-id3-writer';
 import { streamUrl } from '../api';
 import { safeFileName } from './format';
+import { plainLyrics, syncedLines, toLrc } from './lyrics';
 import { cdnArtwork, pickArtwork } from './track';
 
 // ── Observable download store ───────────────────────────────────────────────
@@ -369,13 +371,12 @@ function buildTaggedBuffer(mp3Buffer, track, meta, coverBuffer) {
     });
   }
 
-  const synced = Array.isArray(meta?.lyrics?.synced) ? meta.lyrics.synced : null;
-  const unsynced =
-    typeof meta?.lyrics?.unsynced === 'string' && meta.lyrics.unsynced.trim()
-      ? meta.lyrics.unsynced
-      : null;
+  const synced = syncedLines(meta);
+  const unsynced = plainLyrics(meta);
 
-  if (synced?.length) {
+  // SYLT is the machine readable timeline; players that ignore it still get
+  // the words through USLT below.
+  if (synced) {
     writer.setFrame('SYLT', {
       type: 1, // lyrics
       timestampFormat: 2, // milliseconds
@@ -385,8 +386,11 @@ function buildTaggedBuffer(mp3Buffer, track, meta, coverBuffer) {
     });
   }
 
-  // USLT keeps plain lyrics readable in players that ignore SYLT
-  const plain = unsynced || (synced ? synced.map((line) => line.text).join('\n') : null);
+  // USLT carries the lyrics as **LRC** whenever the song has timestamps —
+  // the same `[mm:ss.cc]` lines the lyrics panel shows — so a player that
+  // only reads unsynced lyrics still gets the timing. Plain text is the
+  // fallback for songs that come back without timestamps.
+  const plain = synced ? `${toLrc(synced)}\n` : unsynced;
   if (plain) {
     writer.setFrame('USLT', {
       language: 'eng',
@@ -486,4 +490,33 @@ export function startDownload(track, meta, options = {}) {
     });
     setNotice('error', error?.message || 'Download failed');
   });
+}
+
+/**
+ * Save the lyrics of a track as a file.
+ *
+ * Timestamped lyrics are written as **`.lrc`** — the `[mm:ss.cc]` dialect
+ * every player understands, and the exact text the lyrics panel renders —
+ * while a song that only came back with plain text is saved as `.txt`.
+ *
+ * @param {object} track normalized track
+ * @param {object|null} meta enriched payload from /browsing/track/{id}
+ * @returns {string|null} the saved file name, or `null` when the track has no
+ *   lyrics to save
+ */
+export function downloadLyrics(track, meta) {
+  const synced = syncedLines(meta);
+  const unsynced = plainLyrics(meta);
+  if (!synced && !unsynced) return null;
+
+  const label =
+    track?.title && track.artist && track.artist !== 'Unknown artist'
+      ? `${track.artist} - ${track.title}`
+      : track?.title || 'lyrics';
+  const fileName = `${safeFileName(label)}.${synced ? 'lrc' : 'txt'}`;
+  const body = synced ? `${toLrc(synced)}\n` : unsynced;
+
+  saveBlob(new Blob([body], { type: 'text/plain;charset=utf-8' }), fileName);
+  setNotice('success', `Saved "${fileName}"`);
+  return fileName;
 }

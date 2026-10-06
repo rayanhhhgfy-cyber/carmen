@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import { Lrc, useRecoverAutoScrollImmediately } from 'react-lrc';
 import { usePlayer } from '../player/PlayerContext';
+import { toLrc } from '../utils/lyrics';
 
 /**
  * YouTube Music style synced lyrics, rendered by `react-lrc`.
@@ -20,20 +21,6 @@ import { usePlayer } from '../player/PlayerContext';
  *
  * Falls back to plain unsynced lyrics when no timestamps exist.
  */
-
-/** `[mm:ss.cc]text` — the LRC flavour `clrc` parses. */
-function toLrc(lines) {
-  const pad = (value) => String(value).padStart(2, '0');
-  return lines
-    .map((line) => {
-      const ms = Math.max(0, line.timeMs);
-      const minutes = Math.floor(ms / 60000);
-      const seconds = Math.floor(ms / 1000) % 60;
-      const centis = Math.floor(ms / 10) % 100;
-      return `[${pad(minutes)}:${pad(seconds)}.${pad(centis)}]${line.text}`;
-    })
-    .join('\n');
-}
 
 /** Scroll container of `react-lrc` (the component merges its own defaults). */
 const LRC_STYLE = {
@@ -136,7 +123,18 @@ export default function LyricsView({ synced, unsynced, source }) {
             color: active ? 'primary.main' : 'text.primary',
             opacity: active ? 1 : past ? 0.42 : 0.3,
             transition: 'color 150ms ease, opacity 150ms ease',
-            '&:hover': { opacity: active ? 1 : 0.75 },
+            // A line the reader tapped keeps `:hover` (and focus) on touch
+            // screens, and `:focus` rings stay behind after a tap — the
+            // highlight has to follow the song, not the finger, so a line
+            // that has already been and gone never brightens again and only
+            // the keyboard still draws a ring.
+            '&:hover': { opacity: active ? 1 : past ? 0.42 : 0.75 },
+            '&:focus:not(:focus-visible)': { outline: 'none' },
+            '&:focus-visible': {
+              outline: '2px solid',
+              outlineColor: 'primary.main',
+              outlineOffset: 2,
+            },
           }}
         >
           {line.content || '♪'}
