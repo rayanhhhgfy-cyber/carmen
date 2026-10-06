@@ -1,9 +1,9 @@
-import { Box, Chip, Container, Stack, Typography } from '@mui/material';
-import { usePlayer } from '../player/PlayerContext';
-import { EmptyState } from '../components/TrackList';
-import Artwork from '../components/Artwork';
-import QueueTab from '../components/QueueTab';
-import RelatedTab from '../components/RelatedTab';
+import Artwork from "../components/Artwork";
+import QueueTab from "../components/QueueTab";
+import RelatedTab from "../components/RelatedTab";
+import { Box, Chip, Container, Stack, Typography } from "@mui/material";
+import { EmptyState } from "../components/TrackList";
+import { usePlayer } from "../player/PlayerContext";
 
 /**
  * Queue page: now playing, up next and the related songs that keep the
@@ -33,7 +33,7 @@ export default function QueuePage() {
         <Box>
           <Typography variant="h5">Queue</Typography>
           <Typography variant="body2" color="text.secondary">
-            Now playing — {track.title}
+            Now playing
           </Typography>
         </Box>
 
