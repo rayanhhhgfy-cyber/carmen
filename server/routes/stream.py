@@ -316,7 +316,15 @@ async def stream_audio(
     """
     cached = find_cached_audio(vidId)
     if cached:
-        return _audio_response(cached, vidId)
+        try:
+            return _audio_response(cached, vidId)
+        except OSError:
+            # The audio cache only keeps its newest files, so this one may
+            # have been pruned between the lookup and the open.  Falling
+            # through relays it again instead of letting a broken response
+            # reach the browser as a headerless 500 — which it reports as a
+            # CORS error.
+            log.warning("Cached audio for %s disappeared before serving", vidId)
 
     loop = asyncio.get_running_loop()
     skip: set = set()
@@ -396,7 +404,13 @@ async def stream_audio(
     if state.tg_client and CHAT_ID and not await _get_tg_msg_id(vidId):
         asyncio.create_task(_upload_to_tg(vidId, path))
 
-    return _audio_response(path, vidId)
+    try:
+        return _audio_response(path, vidId)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="The downloaded audio could not be read from disk",
+        ) from exc
 
 
 def _audio_response(path: Path | str, vid_id: str) -> FileResponse:
@@ -408,8 +422,15 @@ def _audio_response(path: Path | str, vid_id: str) -> FileResponse:
     """
     path = Path(path)
     media_type = MEDIA_TYPES.get(path.suffix.lower(), "audio/mp4")
+    # Stat up front and hand the result over: on its own ``FileResponse``
+    # stats *after* the route returned, and a file that vanished in between
+    # (pruned, rewritten by a download) used to raise a ``RuntimeError``
+    # before the response headers — a headerless 500 that the browser
+    # reports as a CORS error.  Raising here lets the caller fall back to
+    # the relay instead.
     return FileResponse(
         path,
+        stat_result=path.stat(),
         media_type=media_type,
         headers={
             "Accept-Ranges": "bytes",
