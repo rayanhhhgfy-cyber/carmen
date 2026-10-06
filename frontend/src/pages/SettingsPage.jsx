@@ -5,6 +5,7 @@ import {
   Divider,
   Paper,
   Stack,
+  Switch,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
@@ -63,7 +64,18 @@ function Credit({ href, name, icon, iconColor, children }) {
 
 /** Theme engine controls: color mode + accent color + interface font. */
 export default function SettingsPage() {
-  const { mode, setMode, accent, setAccent, font, setFont, resolved } = useTheme();
+  const {
+    mode,
+    setMode,
+    accent,
+    setAccent,
+    adaptiveAccent,
+    setAdaptiveAccent,
+    adaptiveColor,
+    font,
+    setFont,
+    resolved,
+  } = useTheme();
   const selectedFont = FONTS.find((option) => option.id === font) || FONTS[0];
 
   return (
@@ -223,6 +235,46 @@ export default function SettingsPage() {
                 Defaults to Material Green ({DEFAULT_ACCENT}).
               </Typography>
             </Box>
+
+            <Divider />
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  Adaptive accent color
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  The accent follows the cover of the song that is playing —
+                  the most used color of the artwork, or white when the cover
+                  is black. Your chosen accent is used while nothing plays.
+                </Typography>
+              </Box>
+              <Switch
+                checked={adaptiveAccent}
+                onChange={(_, checked) => setAdaptiveAccent(checked)}
+                inputProps={{ 'aria-label': 'Adaptive accent color' }}
+                sx={{ flexShrink: 0 }}
+              />
+            </Stack>
+
+            {adaptiveAccent && adaptiveColor && (
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: -0.5 }}>
+                <Box
+                  sx={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    bgcolor: adaptiveColor,
+                    border: 1,
+                    borderColor: 'divider',
+                    flexShrink: 0,
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  {adaptiveColor} — read from the cover of the playing song
+                </Typography>
+              </Stack>
+            )}
 
             <Box
               sx={{

@@ -10,14 +10,17 @@ import { CssBaseline, ThemeProvider as MuiThemeProvider } from '@mui/material';
 import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme } from '../theme';
 
 /**
- * Theme engine: light / dark / system modes, an accent color and the
- * interface font.  The choice is persisted in localStorage and the system
- * mode follows `prefers-color-scheme` live.
+ * Theme engine: light / dark / system modes, an accent color (manually
+ * picked, or taken from the cover of the song that is playing when
+ * "Adaptive accent color" is on) and the interface font.  The choice is
+ * persisted in localStorage and the system mode follows
+ * `prefers-color-scheme` live.
  */
 const ThemeContext = createContext(null);
 
 const STORAGE_MODE = 'carmen:themeMode';
 const STORAGE_ACCENT = 'carmen:accent';
+const STORAGE_ADAPTIVE = 'carmen:adaptiveAccent';
 // v2 key: Alexandria is the project font for both scripts, so an older
 // `carmen:font` / `samma3ni:font` choice is deliberately not carried over.
 const STORAGE_FONT = 'carmen:font.v2';
@@ -61,6 +64,13 @@ export function ThemeProvider({ children }) {
   const [accent, setAccentState] = useState(() => readStorage(STORAGE_ACCENT, DEFAULT_ACCENT));
   const [font, setFontState] = useState(() => readStorage(STORAGE_FONT, DEFAULT_FONT));
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
+  const [adaptiveAccent, setAdaptiveState] = useState(
+    () => readStorage(STORAGE_ADAPTIVE, '0') === '1',
+  );
+  // Colour read out of the playing song's cover — session state, because it
+  // is re-derived from the artwork every time a track starts (see
+  // theme/adaptiveAccent.js).
+  const [adaptiveColor, setAdaptiveColor] = useState(null);
 
   useEffect(() => {
     if (!window.matchMedia) return undefined;
@@ -85,21 +95,59 @@ export function ThemeProvider({ children }) {
     writeStorage(STORAGE_FONT, next);
   }, []);
 
+  const setAdaptiveAccent = useCallback((next) => {
+    const enabled = Boolean(next);
+    setAdaptiveState(enabled);
+    writeStorage(STORAGE_ADAPTIVE, enabled ? '1' : '0');
+    // switching it off goes back to the accent picked above straight away
+    if (!enabled) setAdaptiveColor(null);
+  }, []);
+
   const resolved = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
 
+  // Adaptive only wins while it is switched on *and* a cover has actually
+  // been read; otherwise the accent chosen in Settings is what the app wears.
+  const accentInUse = adaptiveAccent && adaptiveColor ? adaptiveColor : accent;
+
   const theme = useMemo(
-    () => buildTheme(resolved, accent, font),
-    [resolved, accent, font],
+    () => buildTheme(resolved, accentInUse, font),
+    [resolved, accentInUse, font],
   );
 
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', accent);
-  }, [accent]);
+    if (meta) meta.setAttribute('content', accentInUse);
+  }, [accentInUse]);
 
   const value = useMemo(
-    () => ({ mode, setMode, accent, setAccent, font, setFont, resolved }),
-    [mode, setMode, accent, setAccent, font, setFont, resolved],
+    () => ({
+      mode,
+      setMode,
+      accent,
+      setAccent,
+      accentInUse,
+      adaptiveAccent,
+      setAdaptiveAccent,
+      adaptiveColor,
+      setAdaptiveColor,
+      font,
+      setFont,
+      resolved,
+    }),
+    [
+      mode,
+      setMode,
+      accent,
+      setAccent,
+      accentInUse,
+      adaptiveAccent,
+      setAdaptiveAccent,
+      adaptiveColor,
+      setAdaptiveColor,
+      font,
+      setFont,
+      resolved,
+    ],
   );
 
   return (
