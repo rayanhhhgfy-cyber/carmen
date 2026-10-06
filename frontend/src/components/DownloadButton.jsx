@@ -1,8 +1,7 @@
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
-import CheckIcon from '@mui/icons-material/CheckCircle';
 import { useDownloads } from '../hooks';
 import { startDownload } from '../utils/downloads';
+import { CheckCircleIcon, DownloadIcon } from './icons';
 
 /**
  * Triggers the client side MP3 download (transcode + ID3 tagging).
@@ -35,7 +34,7 @@ export default function DownloadButton({ track, meta, size = 'medium', ...props 
           {running ? (
             <CircularProgress size={18} variant="determinate" value={Math.round((job.progress || 0) * 100)} />
           ) : done ? (
-            <CheckIcon fontSize={size} />
+            <CheckCircleIcon fontSize={size} />
           ) : (
             <DownloadIcon fontSize={size} />
           )}

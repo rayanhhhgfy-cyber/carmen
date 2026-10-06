@@ -20,21 +20,11 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import LyricsIcon from '@mui/icons-material/Lyrics';
-import QueueMusicIcon from '@mui/icons-material/QueueMusic';
-import ExploreIcon from '@mui/icons-material/Explore';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
-import SkipNextIcon from '@mui/icons-material/SkipNext';
-import SkipPreviousIcon from '@mui/icons-material/SkipPrevious';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import RepeatOneIcon from '@mui/icons-material/RepeatOne';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import VolumeOffIcon from '@mui/icons-material/VolumeOff';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { alpha } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 
@@ -46,6 +36,18 @@ import DownloadButton from './DownloadButton';
 import LyricsView from './LyricsView';
 import RelatedTab from './RelatedTab';
 import QueueTab from './QueueTab';
+import {
+  ChevronLeftIcon,
+  ExpandMoreIcon,
+  InfoIcon,
+  LyricsIcon,
+  PauseIcon,
+  PlayArrowIcon,
+  QueueMusicIcon,
+  RelatedIcon,
+  SkipNextIcon,
+  SkipPreviousIcon,
+} from './icons';
 
 const Transition = forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
@@ -146,7 +148,13 @@ export default function PlayerSheet() {
       sx={{
         position: 'relative',
         width: '100%',
-        maxWidth: { xs: 'min(58vw, 260px)', sm: 'min(60vw, 300px)', md: 320 },
+        maxWidth: {
+          xs: 'min(58vw, 260px)',
+          sm: 'min(60vw, 300px)',
+          // wide card on a desktop, but never taller than the drawer allows
+          // so the whole column fits without a scrollbar
+          md: 'min(100%, 340px, calc(34vh + 40px))',
+        },
         mx: 'auto',
       }}
     >
@@ -205,7 +213,7 @@ export default function PlayerSheet() {
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-line', maxHeight: 90, overflow: 'hidden' }}
+            sx={{ display: 'block', mt: 0.5, whiteSpace: 'pre-line', maxHeight: 160, overflowY: 'auto' }}
           >
             {meta.description}
           </Typography>
@@ -527,7 +535,7 @@ export default function PlayerSheet() {
       sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
     >
       <IconTab label="Lyrics" icon={<LyricsIcon />} />
-      <IconTab label="Related" icon={<ExploreIcon />} />
+      <IconTab label="Related" icon={<RelatedIcon />} />
       <IconTab label="Queue" icon={<QueueMusicIcon />} />
     </Tabs>
   );
@@ -577,12 +585,16 @@ export default function PlayerSheet() {
 
   const panel =
     activeTab === null ? null : (
-      // every panel stays mounted (hidden) so switching tabs never
-      // re-fetches; a phone that opened no tab renders nothing at all
+      // related and queue stay mounted (hidden) so switching tabs never
+      // re-fetches; lyrics mounts only while its tab is open because
+      // `react-lrc` has to measure real layout to auto scroll — a
+      // `display: none` panel has none, so it would land on the wrong line
       <Box sx={{ flex: 1, minHeight: 240, mt: 1 }}>
-        <Box sx={{ display: activeTab === LYRICS_TAB ? 'block' : 'none', height: '100%' }}>
-          <LyricsView synced={lyrics.synced} unsynced={lyrics.unsynced} source={lyrics.source} />
-        </Box>
+        {activeTab === LYRICS_TAB && (
+          <Box sx={{ height: '100%' }}>
+            <LyricsView synced={lyrics.synced} unsynced={lyrics.unsynced} source={lyrics.source} />
+          </Box>
+        )}
         <Box sx={{ display: activeTab === RELATED_TAB ? 'block' : 'none', height: '100%' }}>
           <RelatedTab />
         </Box>
@@ -613,7 +625,7 @@ export default function PlayerSheet() {
           color={detailsOpen ? 'primary' : 'default'}
           onClick={() => setDetailsOpen((value) => !value)}
         >
-          <InfoOutlinedIcon fontSize="small" />
+          <InfoIcon fontSize="small" />
         </IconButton>
         <DownloadButton edge="end" track={track} meta={meta} />
       </Stack>
@@ -653,7 +665,7 @@ export default function PlayerSheet() {
         onClose={handleClose}
         PaperProps={{
           sx: {
-            width: { md: 720, lg: 840 },
+            width: { md: 800, lg: 960 },
             maxWidth: '100vw',
             boxSizing: 'border-box',
             bgcolor: 'background.default',
@@ -682,7 +694,7 @@ export default function PlayerSheet() {
               flex: 1,
               minHeight: 0,
               display: 'grid',
-              gridTemplateColumns: 'minmax(0, 300px) minmax(0, 1fr)',
+              gridTemplateColumns: 'minmax(0, 360px) minmax(0, 1fr)',
               gap: 3,
               px: 3,
               pt: 1,

@@ -1,8 +1,8 @@
 import { Box, Button, Stack, Typography } from '@mui/material';
-import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
 import TrackList, { EmptyState } from './TrackList';
 import { usePlayer } from '../player/PlayerContext';
+import { TrashIcon } from './icons';
 
 /** Up-next list of the active queue. */
 export default function QueueTab() {
@@ -27,7 +27,7 @@ export default function QueueTab() {
           </Button>
           <Button
             size="small"
-            startIcon={<DeleteSweepIcon fontSize="small" />}
+            startIcon={<TrashIcon fontSize="small" />}
             onClick={player.clearQueue}
             disabled={!player.queue.length}
           >

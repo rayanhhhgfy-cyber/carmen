@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '@mui/material';
-import AlbumIcon from '@mui/icons-material/Album';
 import {
   artworkFallbacks,
   isArtworkReady,
   loadArtwork,
   paintedArtwork,
 } from '../utils/artwork';
+import { MusicNoteIcon } from './icons';
 
 /**
  * Artwork tile that goes through the throttled loader.
@@ -34,7 +34,7 @@ import {
 export default function Artwork({
   src,
   alt = '',
-  icon: Icon = AlbumIcon,
+  icon: Icon = MusicNoteIcon,
   iconSize = 40,
   sx,
   imgSx,

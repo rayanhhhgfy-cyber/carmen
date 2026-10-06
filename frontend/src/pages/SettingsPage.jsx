@@ -10,14 +10,15 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import CheckIcon from '@mui/icons-material/Check';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import LightModeIcon from '@mui/icons-material/LightMode';
-import SmartphoneIcon from '@mui/icons-material/SettingsBrightness';
-
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
 import { API_BASE } from '../api';
+import {
+  CheckIcon,
+  DarkModeIcon,
+  DevicePhoneMobileIcon,
+  LightModeIcon,
+} from '../components/icons';
 
 function Section({ title, children }) {
   return (
@@ -76,7 +77,7 @@ export default function SettingsPage() {
                   <DarkModeIcon fontSize="small" sx={{ mr: 0.75 }} /> Dark
                 </ToggleButton>
                 <ToggleButton value="system">
-                  <SmartphoneIcon fontSize="small" sx={{ mr: 0.75 }} /> System
+                  <DevicePhoneMobileIcon fontSize="small" sx={{ mr: 0.75 }} /> System
                 </ToggleButton>
               </ToggleButtonGroup>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>

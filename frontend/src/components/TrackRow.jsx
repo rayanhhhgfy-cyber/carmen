@@ -12,17 +12,19 @@ import {
   MenuItem,
   Typography,
 } from '@mui/material';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import MusicNoteIcon from '@mui/icons-material/MusicNote';
-import QueueMusicIcon from '@mui/icons-material/QueueMusic';
-import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExplicitIcon from '@mui/icons-material/Explicit';
 import { usePlayer } from '../player/PlayerContext';
 import { formatTime } from '../utils/format';
 import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
+import {
+  InfoIcon,
+  MoreVertIcon,
+  MusicNoteIcon,
+  PlayArrowIcon,
+  PlusIcon,
+  QueueMusicIcon,
+} from './icons';
 
 function Equalizer() {
   return (
@@ -176,7 +178,7 @@ export default function TrackRow({ track, contextTracks = null, index = null, me
             setAnchor(null);
           }}
         >
-          <ListItemIcon><PlaylistAddIcon fontSize="small" /></ListItemIcon>
+          <ListItemIcon><PlusIcon fontSize="small" /></ListItemIcon>
           Play next
         </MenuItem>
         <MenuItem
@@ -194,7 +196,7 @@ export default function TrackRow({ track, contextTracks = null, index = null, me
             setAnchor(null);
           }}
         >
-          <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
+          <ListItemIcon><InfoIcon fontSize="small" /></ListItemIcon>
           {detailsOpen ? 'Hide details' : 'Show details'}
         </MenuItem>
         <MenuItem>

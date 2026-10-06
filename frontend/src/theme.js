@@ -101,6 +101,26 @@ export function buildTheme(mode, accent, fontId = DEFAULT_FONT) {
             fontFamily: 'inherit',
             color: 'inherit',
           },
+          /*
+           * Scrollbars are hidden everywhere — home, lyrics, queue,
+           * settings, the player, the whole window.  Scrolling itself is
+           * untouched: wheel, trackpad, touch, keyboard and the drag of a
+           * hidden track all still work, only the bar is no longer painted.
+           *
+           * `scrollbar-width` is the modern (Firefox) way, `msOverflowStyle`
+           * covers legacy Edge, and the webkit pseudo element hides the bar
+           * in Chrome, Edge and Safari — including the document scrollbar,
+           * which Blink draws from the root element's pseudo element.
+           */
+          '*': {
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+          },
+          '::-webkit-scrollbar, *::-webkit-scrollbar': {
+            width: 0,
+            height: 0,
+            display: 'none',
+          },
         },
       },
       MuiButton: {

@@ -1,8 +1,8 @@
 import { Box, Chip, Typography } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { useNavigate } from 'react-router-dom';
 import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
+import { PlayArrowIcon } from './icons';
 
 /**
  * Classify an arbitrary browse item (home rows, search results, related).

@@ -13,9 +13,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import SearchIcon from '@mui/icons-material/Search';
-import CloseIcon from '@mui/icons-material/Close';
-import HistoryEduIcon from '@mui/icons-material/HistoryEdu';
 import { useSearchParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
@@ -23,6 +20,7 @@ import { usePlayer } from '../player/PlayerContext';
 import { normalizeTrack } from '../utils/track';
 import MediaCard from '../components/MediaCard';
 import TrackList, { EmptyState } from '../components/TrackList';
+import { CloseIcon, HistoryIcon, SearchIcon } from '../components/icons';
 
 const FILTERS = [
   { id: '', label: 'All' },
@@ -188,7 +186,7 @@ export default function SearchPage() {
                   onClick={() => submit(suggestion)}
                   sx={{ borderRadius: 2, mx: 0.5 }}
                 >
-                  <HistoryEduIcon fontSize="small" color="action" sx={{ mr: 1.5 }} />
+                  <HistoryIcon fontSize="small" color="action" sx={{ mr: 1.5 }} />
                   <ListItemText primary={suggestion} primaryTypographyProps={{ variant: 'body2' }} />
                 </ListItemButton>
               ))}

@@ -1,12 +1,9 @@
 import { Box, IconButton, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
-import SkipNextIcon from '@mui/icons-material/SkipNext';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import CircularProgress from '@mui/material/CircularProgress';
 import { usePlayer } from '../player/PlayerContext';
 import Artwork from './Artwork';
+import { ExpandLessIcon, PauseIcon, PlayArrowIcon, SkipNextIcon } from './icons';
 
 /**
  * Compact player docked above the navigation bar. Tapping it opens the full

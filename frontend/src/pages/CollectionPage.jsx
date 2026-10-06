@@ -9,10 +9,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ShuffleIcon from '@mui/icons-material/Shuffle';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
@@ -20,6 +17,7 @@ import { usePlayer } from '../player/PlayerContext';
 import { normalizeList, pickArtwork } from '../utils/track';
 import Artwork from '../components/Artwork';
 import TrackList, { EmptyState } from '../components/TrackList';
+import { ArrowBackIcon, ExpandMoreIcon, PlayArrowIcon } from '../components/icons';
 
 /** Album / playlist detail page with a collapsible description. */
 export default function CollectionPage() {

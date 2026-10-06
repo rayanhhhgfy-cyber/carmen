@@ -16,12 +16,6 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import HomeIcon from '@mui/icons-material/Home';
-import SearchIcon from '@mui/icons-material/Search';
-import QueueMusicIcon from '@mui/icons-material/QueueMusic';
-import SettingsIcon from '@mui/icons-material/Settings';
-import DarkModeIcon from '@mui/icons-material/DarkMode';
-import LightModeIcon from '@mui/icons-material/LightMode';
 import { useSyncExternalStore } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -31,11 +25,19 @@ import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/
 import AmbientBackground from './AmbientBackground';
 import MiniPlayer from './MiniPlayer';
 import PlayerSheet from './PlayerSheet';
+import {
+  DarkModeIcon,
+  HomeIcon,
+  LightModeIcon,
+  QueueListIcon,
+  SearchIcon,
+  SettingsIcon,
+} from './icons';
 
 const NAV_ITEMS = [
   { label: 'Home', path: '/', icon: HomeIcon },
   { label: 'Search', path: '/search', icon: SearchIcon },
-  { label: 'Queue', path: '/queue', icon: QueueMusicIcon },
+  { label: 'Queue', path: '/queue', icon: QueueListIcon },
   { label: 'Settings', path: '/settings', icon: SettingsIcon },
 ];
 
