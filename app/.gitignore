@@ -1,6 +1,0 @@
-node_modules/
-.gradle/
-build/
-Pods/
-*.hbc
-msbuild.binlog
