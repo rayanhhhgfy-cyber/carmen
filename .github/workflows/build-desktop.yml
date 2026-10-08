@@ -1,0 +1,103 @@
+name: Desktop Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Release upload is done by the dedicated `release` job (contents: write);
+# everything else stays read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build bundles (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system deps (Tauri webkit/appindicator)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS deps (root = Tauri CLI, frontend = vite build)
+        run: |
+          # Root package-lock.json may be uncommitted — tolerate its absence
+          # (see ci.yml); the frontend lockfile is tracked, so keep npm ci.
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm --prefix frontend ci
+
+      - name: Build bundles (tauri build)
+        # The action runs `npm run tauri -- build --ci` from the repo root.
+        # It picks up src-tauri/tauri.conf.json automatically, whose
+        # `build.beforeBuildCommand` is `npm run build:frontend` (already
+        # wired) — no override needed. Bundle targets come from
+        # `bundle.targets: "all"`: msi+nsis on Windows, app+dmg on macOS,
+        # deb+rpm+appimage on Linux. No code signing is configured yet, so
+        # all bundles are unsigned (macOS gets ad-hoc signing only).
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          args: --ci
+          # Upload every bundle as a workflow artifact so the single
+          # `release` job below can attach them — this avoids three matrix
+          # jobs racing to create the same GitHub release. Empty tagName
+          # means "do not touch any release from here".
+          tagName: ''
+          uploadWorkflowArtifacts: true
+          uploadUpdaterJson: false
+
+  release:
+    name: Attach bundles to the GitHub release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: bundles
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: bundles/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

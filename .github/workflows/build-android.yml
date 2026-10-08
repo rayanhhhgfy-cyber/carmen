@@ -1,0 +1,224 @@
+name: Android Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Release upload is done by the dedicated `release` job (contents: write);
+# everything else stays read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK + AAB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: android
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        # The Tauri CLI (cargo-mobile2 backend) accepts any installed NDK —
+        # it picks the newest directory under $ANDROID_HOME/ndk and exports
+        # NDK_HOME itself — but we pin one explicitly so builds are
+        # deterministic. The first candidate matches the NDK version pinned
+        # by the Tauri CLI; the second is a fallback in case the package
+        # list changes. cargo-ndk is NOT required: the Gradle `rust` plugin
+        # invokes the Tauri CLI, which drives cargo + the NDK linkers itself.
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platform-tools" "ndk;29.0.13846066" \
+            || sdkmanager --install "platform-tools" "ndk;27.0.12077973"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          NDK_DIR="$(ls -1d "$SDK_ROOT"/ndk/* | sort -V | tail -1)"
+          echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "Using NDK: $NDK_DIR"
+
+      - name: Install JS deps (root = Tauri CLI, frontend = vite build)
+        run: |
+          # Root package-lock.json may be uncommitted — tolerate its absence
+          # (see ci.yml); the frontend lockfile is tracked, so keep npm ci.
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm --prefix frontend ci
+
+      - name: Generate src-tauri/gen/android when missing
+        # The generated Gradle project is not committed to the repo (yet), so
+        # create it on the fly. `--ci` (plus CI=true, always set on Actions)
+        # skips the interactive prompts; `npx tauri` resolves the locally
+        # installed @tauri-apps/cli from package-lock.json.
+        # Locally the same thing is `npm run android:init`.
+        run: |
+          if [ -f src-tauri/gen/android/build.gradle.kts ]; then
+            echo "src-tauri/gen/android already present - skipping init."
+          else
+            npx tauri android init --ci
+          fi
+
+      - name: Configure release signing from keystore secrets
+        # Signing follows https://v2.tauri.app/distribute/sign/android/:
+        #   * the keystore is decoded OUT of the repo into $RUNNER_TEMP
+        #   * src-tauri/gen/android/keystore.properties is written with
+        #     keyAlias / password / storeFile (+ optional keyPassword)
+        #   * the generated app/build.gradle.kts ships WITHOUT a signing
+        #     config, so a release `signingConfigs` block is patched in
+        #     (idempotently — skipped when the block already exists).
+        # Required secrets (see DEVELOPMENT.md §10):
+        #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+        #   ANDROID_KEYSTORE_ALIAS, ANDROID_KEY_PASSWORD (optional; falls
+        #   back to the store password).
+        # Without secrets the step exits early and the build stays unsigned.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 not set - building an UNSIGNED release."
+            exit 0
+          fi
+
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/upload-keystore.jks"
+
+          mkdir -p src-tauri/gen/android
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          keyAlias=${ANDROID_KEYSTORE_ALIAS}
+          password=${ANDROID_KEYSTORE_PASSWORD}
+          keyPassword=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}
+          storeFile=${RUNNER_TEMP}/upload-keystore.jks
+          EOF
+          echo "Wrote src-tauri/gen/android/keystore.properties (values not logged)."
+
+          python3 - <<'PY'
+          import pathlib
+          import sys
+
+          gradle = pathlib.Path("src-tauri/gen/android/app/build.gradle.kts")
+          if not gradle.is_file():
+              print(f"ERROR: {gradle} not found - run the init step first.", file=sys.stderr)
+              sys.exit(1)
+          src = gradle.read_text()
+
+          if "keystore.properties" in src:
+              print("build.gradle.kts already reads keystore.properties - nothing to patch.")
+              sys.exit(0)
+
+          import_anchor = "import java.util.Properties"
+          if import_anchor not in src:
+              print(f"ERROR: {gradle} does not look like the Tauri Android template "
+                    f"(missing '{import_anchor}'). Update this workflow.", file=sys.stderr)
+              sys.exit(1)
+          if "import java.io.FileInputStream" not in src:
+              src = src.replace(import_anchor, import_anchor + "\nimport java.io.FileInputStream", 1)
+
+          signing_block = "\n".join([
+              "    signingConfigs {",
+              '        create("release") {',
+              '            val keystorePropertiesFile = rootProject.file("keystore.properties")',
+              '            val keystoreProperties = Properties()',
+              '            if (keystorePropertiesFile.exists()) {',
+              '                keystoreProperties.load(FileInputStream(keystorePropertiesFile))',
+              "            }",
+              '            keyAlias = keystoreProperties["keyAlias"] as String',
+              '            keyPassword = (keystoreProperties["keyPassword"] ?: keystoreProperties["password"]) as String',
+              '            storeFile = file(keystoreProperties["storeFile"] as String)',
+              '            storePassword = keystoreProperties["password"] as String',
+              "        }",
+              "    }",
+          ])
+
+          build_types_anchor = "    buildTypes {"
+          if build_types_anchor not in src:
+              print(f"ERROR: anchor '{build_types_anchor.strip()}' not found in {gradle}. "
+                    f"Update this workflow.", file=sys.stderr)
+              sys.exit(1)
+          src = src.replace(
+              build_types_anchor,
+              signing_block + "\n\n" + build_types_anchor,
+              1,
+          )
+
+          release_anchor = '        getByName("release") {'
+          if release_anchor not in src:
+              print(f"ERROR: anchor '{release_anchor.strip()}' not found in {gradle}. "
+                    f"Update this workflow.", file=sys.stderr)
+              sys.exit(1)
+          src = src.replace(
+              release_anchor,
+              release_anchor + '\n            signingConfig = signingConfigs.getByName("release")',
+              1,
+          )
+
+          gradle.write_text(src)
+          print(f"Patched {gradle} with the release signing config.")
+          PY
+
+      - name: Build release APK + AAB
+        # `tauri android build` builds BOTH formats when neither --apk nor
+        # --aab is given; both flags are passed explicitly for clarity.
+        # (They are Tauri CLI flags, NOT gradle passthrough — `-- ...` would
+        # be handed to the runner instead.)
+        # Outputs land under src-tauri/gen/android/app/build/outputs/
+        # (apk/<flavor>/release/*.apk, bundle/<flavor>Release/*.aab).
+        run: npx tauri android build --release --ci --apk --aab
+
+      - name: Upload APK/AAB workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: carmen-android
+          if-no-files-found: error
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+
+  release:
+    name: Attach APK/AAB to the GitHub release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: carmen-android
+          path: bundles
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          # fail_on_unmatched_files stays false: an unsigned run still ships
+          # .apk + .aab, but a future bundle-target change may drop one.
+          files: |
+            bundles/**/*.apk
+            bundles/**/*.aab
+          generate_release_notes: true
