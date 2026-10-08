@@ -40,3 +40,9 @@ __pycache__/
 test.py
 server/.audio_cache/
 server/cookies.txt
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+# .ruff_cache
+.ruff_cache/

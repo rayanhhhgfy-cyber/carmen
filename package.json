@@ -1,9 +1,21 @@
 {
   "name": "carmen",
-  "module": "index.ts",
-  "type": "module",
+  "version": "1.0.0",
   "private": true,
+  "type": "module",
+  "description": "Carmen — cross-platform, offline-first music player (Tauri v2 + React + TypeScript)",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm run typecheck && npm run build:frontend && tauri build",
+    "build:frontend": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "icons": "tauri icon src-tauri/app-icon.png",
+    "android:init": "tauri android init"
+  },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
     "@types/bun": "latest"
   },
   "peerDependencies": {
