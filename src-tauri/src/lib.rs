@@ -7,11 +7,16 @@
 mod commands;
 mod tray;
 
+#[cfg(target_os = "macos")]
+use tauri::Manager;
+
 /// Runs the Tauri event loop.
 ///
 /// Desktop lifecycle contract (see DEVELOPMENT.md):
 /// * closing / hiding the main window never exits the process — it collapses
 ///   into the system tray so background audio keeps playing;
+/// * reopening (tray click, Dock icon click on macOS, launcher) brings the
+///   same window back on the previously saved route;
 /// * quitting only happens through the tray "Quit" item (or the OS request).
 pub fn run() {
     tauri::Builder::default()
@@ -42,6 +47,21 @@ pub fn run() {
             commands::app::app_info,
             commands::app::storage_paths,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Carmen");
+        .build(tauri::generate_context!())
+        .expect("error while building Carmen")
+        .run(|app, event| {
+            // Dock icon click on macOS: `applicationShouldHandleReopen` fires
+            // when the user clicks the Dock icon while the window is hidden in
+            // the tray — without this handler the click appears to do nothing.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }
