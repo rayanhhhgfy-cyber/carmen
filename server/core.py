@@ -516,7 +516,24 @@ def _parse_lrc(text) -> list | None:
     return lines
 
 
-def _syncedlyrics_lrc(title: str, artist: str, album: str, duration: int | None):
+#: Known lyrics providers understood by the ``provider`` query parameter.
+#: ``auto`` (or omitting the parameter) keeps the default resolution chain.
+LYRICS_PROVIDERS: dict[str, str] = {
+    "lrclib": "Lrclib",
+    "musixmatch": "Musixmatch",
+    "netease": "NetEase",
+    "megalobiz": "Megalobiz",
+    "genius": "Genius",
+}
+
+
+def _syncedlyrics_lrc(
+    title: str,
+    artist: str,
+    album: str,
+    duration: int | None,
+    provider: str | None = None,
+):
     """
     Return raw **LRC** text for the track using the ``syncedlyrics`` library.
 
@@ -531,6 +548,8 @@ def _syncedlyrics_lrc(title: str, artist: str, album: str, duration: int | None)
     :param album: album name (only used to refine a query)
     :param duration: track length in seconds (unused by the lib, kept for
                      callers that build their own queries)
+    :param provider: restrict the lookup to a single provider (a
+                     :data:`LYRICS_PROVIDERS` key) instead of the whole list
     """
     if not (title or artist):
         return None
@@ -539,6 +558,12 @@ def _syncedlyrics_lrc(title: str, artist: str, album: str, duration: int | None)
         import syncedlyrics
     except Exception:  # noqa: BLE001
         return None
+
+    # An empty list means "every provider" for syncedlyrics (`None` would
+    # crash its name-lowering comprehension).
+    providers = [LYRICS_PROVIDERS[provider]] if provider in LYRICS_PROVIDERS else []
+    # Genius only carries plain text — accept an unsynced document there.
+    synced_only = provider != "genius"
 
     queries = [
         query
@@ -552,10 +577,10 @@ def _syncedlyrics_lrc(title: str, artist: str, album: str, duration: int | None)
 
     for query in dict.fromkeys(queries):
         try:
-            lrc = syncedlyrics.search(query, synced_only=True)
+            lrc = syncedlyrics.search(query, synced_only=synced_only, providers=providers)
         except Exception:  # noqa: BLE001
             lrc = None
-        if isinstance(lrc, str) and _parse_lrc(lrc):
+        if isinstance(lrc, str) and (synced_only or _parse_lrc(lrc)):
             return lrc
     return None
 
@@ -566,6 +591,7 @@ def _collect_lyrics(
     artist: str = "",
     album: str = "",
     duration: int | None = None,
+    provider: str | None = None,
 ) -> dict:
     """
     Fetch both the synced and the plain lyrics for a lyrics browse id.
@@ -581,13 +607,31 @@ def _collect_lyrics(
        per line) from public providers, so a track still gets karaoke style
        lyrics when YouTube does not expose timestamps.
 
+    When ``provider`` names a specific source (a :data:`LYRICS_PROVIDERS`
+    key), the YouTube steps are skipped entirely and **only** that provider is
+    consulted — the client's "Lyrics Provider" setting maps onto this.
+
     :param browse_id: lyrics browse id (``MPLYt…``) taken from the watch panel
     :param title: track title, used by the fallback lookup
     :param artist: first artist name, used by the fallback lookup
     :param album: album name, used by the fallback lookup
     :param duration: track duration in seconds, used by the fallback lookup
+    :param provider: force a single lyrics provider (``None`` = default chain)
     """
     lyrics = {"browseId": browse_id, "synced": None, "unsynced": None, "source": None}
+
+    if provider in LYRICS_PROVIDERS:
+        lrc = _syncedlyrics_lrc(title, artist, album, duration, provider=provider)
+        if lrc:
+            lines = _parse_lrc(lrc)
+            if lines:
+                lyrics["synced"] = lines
+                lyrics["source"] = LYRICS_PROVIDERS[provider]
+                lyrics["unsynced"] = "\n".join(line["text"] for line in lines)
+            elif provider == "genius":
+                lyrics["unsynced"] = lrc
+                lyrics["source"] = LYRICS_PROVIDERS[provider]
+        return lyrics
 
     if browse_id:
         payload = _browse_mobile(browse_id)
@@ -626,16 +670,18 @@ def _collect_lyrics(
     return lyrics
 
 
-def get_track(video_id: str) -> dict:
+def get_track(video_id: str, provider: str | None = None) -> dict:
     """
     Build one fully enriched payload for a single track.
 
     Combines the watch queue (title, artists, album, year, artwork), the
     player response (microformat / description) and the lyrics endpoint
     (synced + unsynced) so the client gets everything it needs — display,
-    playback and the browser side MP3 tagging — from a single request.
+    playback and the offline library — from a single request.
 
     :param video_id: YouTube video ID
+    :param provider: force a lyrics provider (see :data:`LYRICS_PROVIDERS`);
+                     ``None`` keeps the default resolution chain
     :raises DurationLimitExceeded: if the track is longer than one hour
     """
     watch: dict = {}
@@ -724,6 +770,7 @@ def get_track(video_id: str) -> dict:
             artist=artist_name,
             album=album.get("name") if isinstance(album, dict) else str(album or ""),
             duration=seconds,
+            provider=provider,
         ),
         "playlistId": watch.get("playlistId"),
         "relatedBrowseId": watch.get("related"),

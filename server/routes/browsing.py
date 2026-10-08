@@ -26,6 +26,7 @@ from ..core import (
     get_user,
     get_user_playlists,
     get_user_videos,
+    LYRICS_PROVIDERS,
 )
 from ..filters import (
     MAX_DURATION_SECONDS,
@@ -321,7 +322,7 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
 )
 @sanitized
 @cached("track", ttl=3600)
-async def track(videoId: str):
+async def track(videoId: str, provider: str | None = None):
     """
     Returns everything the player needs about a track in one call.
 
@@ -330,10 +331,21 @@ async def track(videoId: str):
     related songs.
 
     - **videoId**: video ID of the song
+    - **provider**: force a lyrics source — one of ``lrclib``, ``musixmatch``,
+      ``netease``, ``megalobiz`` or ``genius``. Omit it (or pass ``auto``) to
+      keep the default resolution chain.
     """
+    if provider in (None, "", "auto"):
+        provider = None
+    elif provider not in LYRICS_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown lyrics provider {provider!r} "
+            f"(expected one of: auto, {', '.join(LYRICS_PROVIDERS)})",
+        )
     loop = asyncio.get_running_loop()
     try:
-        return await loop.run_in_executor(executor, partial(get_track, videoId))
+        return await loop.run_in_executor(executor, partial(get_track, videoId, provider))
     except DurationLimitExceeded as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
