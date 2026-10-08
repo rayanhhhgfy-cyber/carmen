@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconButton, Tooltip } from '@mui/material';
 
-import { isFavorite, toggleFavorite } from '../db/repos/favorites';
+import { toggleFavorite } from '../db/repos/favorites';
+import { useFlag } from '../db/flags';
+import { useTheme } from '../theme/ThemeContext';
 import type { Track } from '../types/models';
 import { HeartFilledIcon, HeartIcon } from './icons';
 
@@ -11,48 +13,38 @@ interface NPFavoriteProps {
 }
 
 /**
- * Heart button of the player: reads the favorites repository for the
+ * Heart button of the player: reads the shared flags store for the
  * *current* song and flips it in place.
  *
- * The repository is async (SQLite, with an in-memory fallback while the
- * database is still opening), so two guards keep the UI honest:
- * the lookup of a track that changed underneath is dropped, and a toggle
- * that lands after the user skipped to another song never paints the wrong
- * song's state.  The fill also pops when the heart lands — the one moment
- * of feedback the async write cannot give by itself.
+ * The store is hydrated at startup and patched by `toggleFavorite`, so no
+ * per-mount database lookup is needed — the heart is correct on the first
+ * frame and stays in sync with every other heart in the app. A toggle that
+ * lands after the user skipped to another song never paints the wrong song's
+ * state (the flags key off the id, not local state), and the fill still pops
+ * when it lands — the one moment of feedback the async write cannot give.
  */
 export default function NPFavorite({ track, size = 'medium' }: NPFavoriteProps) {
-  const [favorite, setFavorite] = useState(false);
+  const favorite = useFlag('favorite', track.videoId);
+  // Readable accent: a filled heart in the pinned white accent would vanish
+  // on the light player surface (see `accentFg` in ThemeContext).
+  const { accentFg } = useTheme();
   const busyRef = useRef(false);
-  /** The song the async answers below still belong to. */
-  const trackIdRef = useRef(track.videoId);
+  const [popping, setPopping] = useState(false);
 
-  trackIdRef.current = track.videoId;
-
+  // One pop per tap: clear the flag once the keyframes are done, otherwise
+  // the second heart of the same session would not animate.
   useEffect(() => {
-    let alive = true;
-    // a new song always starts from "not favorited" until it is looked up
-    setFavorite(false);
-    isFavorite(track.videoId)
-      .then((value) => {
-        if (alive) setFavorite(value);
-      })
-      .catch(() => {
-        /* the repository falls back to memory; the heart simply stays off */
-      });
-    return () => {
-      alive = false;
-    };
-  }, [track.videoId]);
+    if (!popping) return undefined;
+    const timer = window.setTimeout(() => setPopping(false), 300);
+    return () => window.clearTimeout(timer);
+  }, [popping]);
 
   const handleToggle = async () => {
     if (busyRef.current) return;
     busyRef.current = true;
-    const videoId = track.videoId;
     try {
       const next = await toggleFavorite(track);
-      // only paint if the user is still on the song this toggle belonged to
-      if (trackIdRef.current === videoId) setFavorite(next);
+      if (next) setPopping(true);
     } catch {
       /* nothing to surface — the repository already fell back internally */
     } finally {
@@ -70,16 +62,16 @@ export default function NPFavorite({ track, size = 'medium' }: NPFavoriteProps) 
         aria-pressed={favorite}
         onClick={() => void handleToggle()}
         sx={{
-          color: favorite ? 'primary.main' : 'text.secondary',
+          color: favorite ? accentFg : 'text.secondary',
           transition: 'color 160ms ease, transform 160ms ease',
-          animation: favorite ? 'np-fav-pop 260ms cubic-bezier(.2,.8,.2,1)' : 'none',
+          animation: popping ? 'np-fav-pop 260ms cubic-bezier(.2,.8,.2,1)' : 'none',
           '&:hover': {
-            color: favorite ? 'primary.main' : 'text.primary',
+            color: favorite ? accentFg : 'text.primary',
             bgcolor: 'action.hover',
           },
           '&:active': { transform: 'scale(0.88)' },
           '@keyframes np-fav-pop': {
-            '0%': { transform: 'scale(0.6)' },
+            '0%': { transform: 'scale(1)' },
             '55%': { transform: 'scale(1.25)' },
             '100%': { transform: 'scale(1)' },
           },

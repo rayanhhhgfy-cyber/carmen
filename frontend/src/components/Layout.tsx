@@ -22,6 +22,7 @@ import type { ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { usePlayer } from '../player/PlayerContext';
+import { useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloads';
 import AmbientBackground from './AmbientBackground';
@@ -54,6 +55,9 @@ const NAV_ITEMS: NavItem[] = [
 
 function SideNav() {
   const location = useLocation();
+  // Glass only while the ambient tint can bleed through: high performance
+  // mode paints the solid paper colour instead (no backdrop-filter).
+  const effectsEnabled = useEffectsEnabled();
   return (
     <Drawer
       variant="permanent"
@@ -67,8 +71,12 @@ function SideNav() {
           borderColor: 'divider',
           // translucent so the ambient artwork tint bleeds through
           bgcolor: (theme) =>
-            theme.palette.mode === 'dark' ? 'rgba(18,23,20,0.86)' : 'rgba(255,255,255,0.86)',
-          backdropFilter: 'blur(16px)',
+            !effectsEnabled
+              ? theme.palette.background.paper
+              : theme.palette.mode === 'dark'
+                ? 'rgba(18,23,20,0.86)'
+                : 'rgba(255,255,255,0.86)',
+          backdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
         },
       }}
     >
@@ -153,6 +161,14 @@ export default function Layout() {
   const navigate = useNavigate();
   const isDesktop = useMediaQuery(muiTheme.breakpoints.up('md'));
   const showMini = Boolean(player.current);
+  // High performance mode: no ambient artwork layer, no glass surfaces —
+  // plain solid ones instead (see useEffectsEnabled).
+  const effectsEnabled = useEffectsEnabled();
+  // A white accent painted straight onto the light bar would be white on
+  // white, so the selected label falls back to the plain text colour there.
+  const whiteAccentOnLightBar =
+    muiTheme.palette.mode === 'light' &&
+    muiTheme.palette.primary.main.toLowerCase() === '#ffffff';
 
   const navHeight = 56;
   const bottomOffset = isDesktop
@@ -167,8 +183,9 @@ export default function Layout() {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      {/* artwork driven ambient tint (painted behind every surface) */}
-      <AmbientBackground />
+      {/* artwork driven ambient tint (painted behind every surface) —
+          high performance mode skips the layer entirely */}
+      {effectsEnabled && <AmbientBackground />}
 
       {isDesktop && <SideNav />}
 
@@ -179,11 +196,13 @@ export default function Layout() {
           elevation={0}
           enableColorOnDark
           sx={{
-            backdropFilter: 'blur(12px)',
+            backdropFilter: effectsEnabled ? 'blur(12px)' : 'none',
             bgcolor: (theme) =>
-              theme.palette.mode === 'dark'
-                ? 'rgba(10,13,11,0.72)'
-                : 'rgba(246,247,246,0.78)',
+              !effectsEnabled
+                ? theme.palette.background.default
+                : theme.palette.mode === 'dark'
+                  ? 'rgba(10,13,11,0.72)'
+                  : 'rgba(246,247,246,0.78)',
             borderBottom: 1,
             borderColor: 'divider',
           }}
@@ -234,8 +253,12 @@ export default function Layout() {
             borderTop: 1,
             borderColor: 'divider',
             bgcolor: (theme) =>
-              theme.palette.mode === 'dark' ? 'rgba(18,23,20,0.9)' : 'rgba(255,255,255,0.9)',
-            backdropFilter: 'blur(16px)',
+              !effectsEnabled
+                ? theme.palette.background.paper
+                : theme.palette.mode === 'dark'
+                  ? 'rgba(18,23,20,0.9)'
+                  : 'rgba(255,255,255,0.9)',
+            backdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
             zIndex: (theme) => theme.zIndex.appBar,
           }}
         >
@@ -245,7 +268,14 @@ export default function Layout() {
               value={path}
               label={label}
               icon={<Icon />}
-              sx={{ color: location.pathname === path ? 'primary.main' : 'text.secondary' }}
+              sx={{
+                color:
+                  location.pathname === path
+                    ? whiteAccentOnLightBar
+                      ? 'text.primary'
+                      : 'primary.main'
+                    : 'text.secondary',
+              }}
             />
           ))}
         </BottomNavigation>

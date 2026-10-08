@@ -6,6 +6,7 @@
  */
 import type { PlaylistSong, Track } from '../../types/models';
 import { getDb } from '../connection';
+import { setFlag } from '../flags';
 import { fallbackGet, fallbackSet, usingFallback } from './fallback';
 import { mapSongRow, trackBindValues, UPSERT_TRACK_SQL, type SongRow } from './rows';
 
@@ -38,6 +39,7 @@ export async function toggleFavorite(track: Track): Promise<boolean> {
     if (next) current.add(videoId);
     else current.delete(videoId);
     fallbackSet('favoriteIds', [...current]);
+    setFlag('favorite', videoId, next);
     return next;
   }
 
@@ -45,6 +47,7 @@ export async function toggleFavorite(track: Track): Promise<boolean> {
   const exists = await isFavorite(videoId);
   if (exists) {
     await db.execute('DELETE FROM favorites WHERE video_id = $1', [videoId]);
+    setFlag('favorite', videoId, false);
     return false;
   }
   await db.execute(UPSERT_TRACK_SQL, trackBindValues(track));
@@ -52,6 +55,7 @@ export async function toggleFavorite(track: Track): Promise<boolean> {
     'INSERT INTO favorites (video_id, created_at) VALUES ($1, $2)',
     [videoId, Date.now()],
   );
+  setFlag('favorite', videoId, true);
   return true;
 }
 

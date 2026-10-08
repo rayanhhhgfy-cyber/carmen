@@ -15,9 +15,12 @@ import {
   deleteDownloadRow,
   getDownload,
   insertDownload,
+  listDownloads,
   updateLyricsPath,
 } from '../db/repos/downloads';
+import { upsertTrack } from '../db/repos/tracks';
 import { deleteSongFolder, songFolder, writeBinary, writeText } from '../offline/storage';
+import { setFlag } from '../db/flags';
 import {
   invalidateLocalCaches,
   isDownloaded,
@@ -244,6 +247,24 @@ async function fetchArtwork(
 
 // ── Pipeline ────────────────────────────────────────────────────────────────
 
+/**
+ * Backfills the album of a track from its enriched `/browsing/track/{id}`
+ * payload.
+ *
+ * Rows that start their life in a search result or a queue often carry no
+ * album at all, which made the Albums section of the Library group them under
+ * "Unknown album". The payload always ships one (string or object form), so
+ * the record written to SQLite gets it before the track does.
+ */
+function withAlbumFrom(track: Track, meta: TrackMeta | null): Track {
+  if (track.albumName || !meta?.album) return track;
+  const raw = meta.album;
+  const name = typeof raw === 'string' ? raw : raw?.name;
+  if (!name) return track;
+  const id = typeof raw === 'string' ? null : (raw?.id ?? null);
+  return { ...track, albumName: name, album: { name, id } };
+}
+
 function isRunning(videoId: string): boolean {
   const job = store.jobs[videoId];
   return Boolean(job && (job.status === 'running' || job.status === 'done'));
@@ -322,11 +343,13 @@ export function startDownload(
     patchJob(videoId, { step: 'Fetching lyrics', progress: 0.82 });
     let lyricsPath: string | null = null;
     let lyricsSynced = false;
+    let enriched = meta;
     try {
       let payload = meta;
       if (!payload?.lyrics?.synced && !payload?.lyrics?.unsynced) {
         payload = await apiGet(`/browsing/track/${videoId}`);
       }
+      enriched = payload;
       const synced = syncedLines(payload);
       const plain = plainLyrics(payload);
       if (synced) {
@@ -344,7 +367,7 @@ export function startDownload(
     // 5 — record everything in SQLite
     patchJob(videoId, { step: 'Updating library', progress: 0.9 });
     await insertDownload({
-      track,
+      track: withAlbumFrom(track, enriched),
       audioPath,
       artworkPath,
       lyricsPath,
@@ -352,6 +375,7 @@ export function startDownload(
       bytes: audioBytes.byteLength,
     });
     markDownloaded({ videoId, audioPath, artworkPath, lyricsPath, lyricsSynced, downloadedAt: Date.now() });
+    setFlag('downloaded', videoId, true);
 
     patchJob(videoId, { status: 'done', step: 'Saved', progress: 1 });
     setNotice(
@@ -409,5 +433,36 @@ export async function removeDownload(videoId: string): Promise<void> {
   await deleteDownloadRow(videoId);
   markRemoved(videoId);
   invalidateLocalCaches(videoId);
+  setFlag('downloaded', videoId, false);
   setNotice('success', 'Removed the offline copy');
+}
+
+/**
+ * One-off repair for downloads saved before the album backfill existed:
+ * rows grouped under "Unknown album" get their album fetched from
+ * `/browsing/track/{id}` and written back to `tracks`.
+ *
+ * Bounded (25 rows per launch, 4 at a time) so it never delays the UI — it
+ * runs fire-and-forget after bootstrap and converges over a few launches.
+ */
+export async function backfillAlbumNames(limit = 25): Promise<void> {
+  const songs = await listDownloads({ sort: 'title', dir: 'asc' });
+  const missing = songs.filter((song) => !song.albumName && song.videoId).slice(0, limit);
+  if (!missing.length) return;
+
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const song = missing[cursor++];
+      if (!song) return;
+      try {
+        const meta: TrackMeta = await apiGet(`/browsing/track/${song.videoId}`);
+        const enriched = withAlbumFrom(song, meta);
+        if (enriched.albumName) await upsertTrack(enriched);
+      } catch {
+        /* one bad id must not stall the rest */
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }

@@ -120,6 +120,10 @@ function readCover(url: string): Promise<string | null> {
  * cannot reach up for the player — this hook runs the other way round: it
  * reads the switch from the theme and hands the extracted colour back.
  *
+ * The switch it reads is the *effective* one: ThemeContext reports adaptive
+ * as off while high performance mode is on, so no cover is sampled then and
+ * the colour read for the last track is dropped instead.
+ *
  * @param track normalized track (the one playing, if any)
  */
 export function useAdaptiveAccent(track: Track | null): void {

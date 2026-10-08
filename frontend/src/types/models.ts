@@ -142,6 +142,11 @@ export interface AppSettings {
   lyricsProvider: LyricsProvider;
   /** Optional override of the FastAPI backend URL (empty = bundled default). */
   apiBase: string;
+  /**
+   * High performance mode — no artwork-derived theme, white accent, no blur /
+   * ambient effects. Trade visual richness for a lighter render load.
+   */
+  highPerformance: boolean;
 }
 
 export type SettingsKey = keyof AppSettings;

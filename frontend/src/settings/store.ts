@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   font: 'alexandria',
   lyricsProvider: 'auto',
   apiBase: '',
+  highPerformance: false,
 };
 
 const KEYS: SettingsKey[] = [
@@ -28,6 +29,7 @@ const KEYS: SettingsKey[] = [
   'font',
   'lyricsProvider',
   'apiBase',
+  'highPerformance',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -74,6 +76,8 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
         : DEFAULT_SETTINGS.lyricsProvider;
     case 'adaptiveAccent':
       return raw === '1' || raw === 'true';
+    case 'highPerformance':
+      return raw === '1' || raw === 'true';
     case 'accent':
       return /^#[0-9a-f]{6}$/i.test(raw) ? raw : DEFAULT_SETTINGS.accent;
     case 'apiBase':
@@ -84,7 +88,7 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
 }
 
 function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
-  if (key === 'adaptiveAccent') return value ? '1' : '0';
+  if (key === 'adaptiveAccent' || key === 'highPerformance') return value ? '1' : '0';
   return String(value ?? '');
 }
 
@@ -140,4 +144,16 @@ export function updateSettings(patch: Partial<AppSettings>): void {
 /** Live view of every persisted setting. */
 export function useSettings(): AppSettings {
   return useSyncExternalStore(subscribeSettings, getSettingsSnapshot, getSettingsSnapshot);
+}
+
+/**
+ * Whether the expensive visual effects should paint at all: blur and
+ * backdrop-filter, accent glows and the ambient artwork background.
+ *
+ * High performance mode switches them off app-wide, so every effectful
+ * component asks through this hook instead of reaching for the raw setting —
+ * the meaning lives in one place and the call sites read as intent.
+ */
+export function useEffectsEnabled(): boolean {
+  return !useSettings().highPerformance;
 }

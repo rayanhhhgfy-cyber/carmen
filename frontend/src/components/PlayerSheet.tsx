@@ -30,6 +30,8 @@ import { useNavigate } from 'react-router-dom';
 import { streamUrl } from '../api';
 import { localAssetSource } from '../offline/source';
 import { usePlayer } from '../player/PlayerContext';
+import { useEffectsEnabled } from '../settings/store';
+import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { lyricsOf } from '../utils/lyrics';
 import { pickArtwork } from '../utils/track';
 import Artwork from './Artwork';
@@ -90,8 +92,15 @@ const TAB_SX = { minHeight: 50, minWidth: 0, textTransform: 'none', fontWeight: 
 export default function PlayerSheet() {
   const player = usePlayer();
   const theme = useTheme();
+  // Line art on the sheet surface (focus ring, spinner, artist hover) needs
+  // the readable accent — white on a light sheet would be invisible.
+  const { accentFg } = useAppTheme();
   const navigate = useNavigate();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+  // The blurred artwork layers (glow behind the cover, wash behind the
+  // sheet) are the expensive part of this screen — high performance mode
+  // drops them and keeps the plain surfaces.
+  const effectsEnabled = useEffectsEnabled();
 
   const [tab, setTab] = useState<number>(LYRICS_TAB);
   /** Phone only: a panel (lyrics / queue / related) has taken the screen. */
@@ -249,7 +258,7 @@ export default function PlayerSheet() {
         touchAction: 'none',
         '&:focus-visible': {
           outline: '2px solid',
-          outlineColor: 'primary.main',
+          outlineColor: accentFg,
           outlineOffset: -2,
           borderRadius: 2,
         },
@@ -288,7 +297,9 @@ export default function PlayerSheet() {
   /**
    * The cover with its ambient glow: a blurred, slightly oversized copy of
    * the same artwork bleeding out from behind the sharp one — the room
-   * takes the colour of the sleeve without any extra chrome.
+   * takes the colour of the sleeve without any extra chrome. High
+   * performance mode renders only the sharp cover; without the glow the
+   * sheet's own background is the surface behind it.
    */
   const artworkBox = (
     <Box
@@ -299,7 +310,7 @@ export default function PlayerSheet() {
         mx: 'auto',
       }}
     >
-      {artwork && (
+      {artwork && effectsEnabled && (
         <Artwork
           src={artwork}
           alt=""
@@ -337,7 +348,7 @@ export default function PlayerSheet() {
             inset: 0,
             margin: 'auto',
             zIndex: 2,
-            color: 'primary.main',
+            color: accentFg,
           }}
         />
       )}
@@ -380,7 +391,7 @@ export default function PlayerSheet() {
           }}
           sx={{
             cursor: track.artist ? 'pointer' : 'default',
-            '&:hover': { color: 'primary.main' },
+            '&:hover': { color: accentFg },
           }}
         >
           {track.artist}
@@ -523,7 +534,7 @@ export default function PlayerSheet() {
     </Box>
   );
 
-  const backdrop = (
+  const backdrop = effectsEnabled ? (
     <Box
       aria-hidden
       sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
@@ -551,7 +562,7 @@ export default function PlayerSheet() {
         }}
       />
     </Box>
-  );
+  ) : null;
 
   // ── Phone: main view (artwork → info → controls → secondary row) ───────
   const mobileMain = (

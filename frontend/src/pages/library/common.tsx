@@ -1,7 +1,8 @@
 /**
- * Small building blocks shared by the four Library sections: the section
- * header, the empty-state hint and the two dialogs (playlist form and
- * destructive confirmation) used by both the grid and the detail view.
+ * Small building blocks shared by the Library pages: the page summary line
+ * (the tab bar owns the titles now), the empty-state hint and the two
+ * dialogs (playlist form and destructive confirmation) used by both the
+ * grid and the detail view.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import {
@@ -20,37 +21,29 @@ import {
 
 import { CloseIcon } from './glyphs';
 
-/* ── section header ───────────────────────────────────────────────────── */
+/* ── page summary ─────────────────────────────────────────────────────── */
 
-interface SectionHeaderProps {
-  title: string;
-  /** Small muted line under the title (counts, freshness, …). */
-  caption?: string;
-  /** Leading glyph, painted in the primary colour. */
-  icon?: ReactNode;
-  /** Anything rendered on the far right (buttons, filters, …). */
+interface PageSummaryProps {
+  /** Small muted status line under the tab bar (counts, freshness, …). */
+  children?: ReactNode;
+  /** Rendered on the far right (buttons, filters, …). */
   action?: ReactNode;
 }
 
-export function SectionHeader({ title, caption, icon, action }: SectionHeaderProps) {
+/**
+ * One quiet line introducing a Library page — the sticky tab bar already
+ * carries the title, so pages only need their caption and any page-level
+ * action (e.g. "New playlist").
+ */
+export function PageSummary({ children, action }: PageSummaryProps) {
   return (
-    <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mb: 1.5 }}>
-      {icon && (
-        <Box sx={{ color: 'primary.main', display: 'flex', flexShrink: 0 }} aria-hidden>
-          {icon}
-        </Box>
-      )}
-      <Box sx={{ minWidth: 0 }}>
-        <Typography variant="h6" sx={{ fontWeight: 800, lineHeight: 1.25 }}>
-          {title}
+    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5, minHeight: 28 }}>
+      {children && (
+        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
+          {children}
         </Typography>
-        {caption && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            {caption}
-          </Typography>
-        )}
-      </Box>
-      {action && <Box sx={{ ml: 'auto', flexShrink: 0 }}>{action}</Box>}
+      )}
+      {action && <Box sx={{ ml: 'auto', flexShrink: 0, display: 'flex', gap: 1 }}>{action}</Box>}
     </Stack>
   );
 }

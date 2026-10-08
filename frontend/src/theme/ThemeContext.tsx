@@ -21,8 +21,26 @@ export interface ThemeContextValue {
   /** Accent chosen in Settings. */
   accent: string;
   setAccent: (accent: string) => void;
-  /** The accent the theme actually wears (adaptive wins while it has one). */
+  /**
+   * The accent the theme actually wears: the adaptive colour while artwork
+   * theming has one, otherwise the chosen accent — and always white while
+   * high performance mode is on.
+   */
   accentInUse: string;
+  /**
+   * Accent for things painted **as text / line art** on the app background.
+   * Same as {@link accentInUse} except when that colour would disappear:
+   * white on a light surface reads as nothing, so light mode falls back to
+   * the text colour there (dark mode keeps white — it is perfectly legible).
+   * Filled surfaces (buttons, FABs) keep using `accentInUse` directly: their
+   * contrast text is computed by MUI and stays readable either way.
+   */
+  accentFg: string;
+  /**
+   * Whether artwork theming is *actually* running — the stored switch, but
+   * forced off while high performance mode is on (the stored choice itself
+   * is kept, so leaving the mode restores it).
+   */
   adaptiveAccent: boolean;
   setAdaptiveAccent: (enabled: boolean) => void;
   /** Colour read out of the playing cover — session state, never persisted. */
@@ -35,11 +53,39 @@ export interface ThemeContextValue {
 }
 
 /**
+ * Accent high performance mode pins the whole app to: no artwork theming,
+ * no hue of its own (see Settings).
+ */
+const HIGH_PERFORMANCE_ACCENT = '#ffffff';
+
+/**
+ * Relative luminance of a `#rrggbb` colour (0 = black, 1 = white).
+ * Used to decide whether an accent survives on a light surface — white does
+ * not, and neither does the pale adaptive colour some covers produce.
+ */
+function luminance(hex: string): number {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!match) return 1;
+  const value = parseInt(match[1], 16);
+  const channel = (shift: number) => {
+    const c = ((value >> shift) & 0xff) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+}
+
+/**
  * Theme engine: light / dark / system modes, an accent color (manually
  * picked, or taken from the cover of the song that is playing when
  * "Adaptive accent color" is on) and the interface font.  The choice lives
  * in the settings store (SQLite, hydrated in `main.tsx` before the first
  * render) and the system mode follows `prefers-color-scheme` live.
+ *
+ * High performance mode outranks both colour settings: it forces adaptive
+ * off and pins the accent to white, and because this component is the only
+ * place the accent is decided (it feeds `buildTheme`, i.e.
+ * `palette.primary.main`, and the theme-color meta tag), every consumer
+ * follows without knowing the mode exists.
  */
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -49,7 +95,13 @@ function systemPrefersDark(): boolean {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const { themeMode: mode, accent, adaptiveAccent, font } = useSettings();
+  const {
+    themeMode: mode,
+    accent,
+    adaptiveAccent: adaptiveSwitch,
+    font,
+    highPerformance,
+  } = useSettings();
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
   // Colour read out of the playing song's cover — session state, because it
   // is re-derived from the artwork every time a track starts (see
@@ -80,6 +132,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     updateSettings({ adaptiveAccent: Boolean(next) });
   }, []);
 
+  // High performance mode outranks the adaptive switch — artwork theming
+  // counts as off while it is on.  Everything downstream (this provider,
+  // the sampler in adaptiveAccent.ts, Settings) reads this effective value,
+  // never the stored switch.
+  const adaptiveAccent = adaptiveSwitch && !highPerformance;
+
   // Switching adaptive off goes back to the accent picked in Settings
   // straight away, whoever flipped the switch.
   useEffect(() => {
@@ -90,7 +148,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Adaptive only wins while it is switched on *and* a cover has actually
   // been read; otherwise the accent chosen in Settings is what the app wears.
-  const accentInUse = adaptiveAccent && adaptiveColor ? adaptiveColor : accent;
+  // High performance mode pins that to white, so neither ever shows.
+  const accentInUse = highPerformance
+    ? HIGH_PERFORMANCE_ACCENT
+    : adaptiveAccent && adaptiveColor
+      ? adaptiveColor
+      : accent;
+
+  // A white (or near-white) accent painted as text vanishes on the light
+  // surface — fall back to the readable text colour in that one case.
+  const accentFg =
+    resolved === 'light' && luminance(accentInUse) > 0.85
+      ? '#12160f'
+      : accentInUse;
 
   const theme = useMemo(
     () => buildTheme(resolved, accentInUse, font),
@@ -109,6 +179,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       accent,
       setAccent,
       accentInUse,
+      accentFg,
       adaptiveAccent,
       setAdaptiveAccent,
       adaptiveColor,
@@ -123,6 +194,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       accent,
       setAccent,
       accentInUse,
+      accentFg,
       adaptiveAccent,
       setAdaptiveAccent,
       adaptiveColor,

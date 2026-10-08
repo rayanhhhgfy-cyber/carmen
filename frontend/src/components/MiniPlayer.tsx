@@ -2,6 +2,7 @@ import { Box, IconButton, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import CircularProgress from '@mui/material/CircularProgress';
 import { usePlayer } from '../player/PlayerContext';
+import { useEffectsEnabled } from '../settings/store';
 import Artwork from './Artwork';
 import { ExpandLessIcon, PauseIcon, PlayArrowIcon, SkipNextIcon } from './icons';
 
@@ -26,6 +27,9 @@ export interface MiniPlayerProps {
 export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
   const player = usePlayer();
   const track = player.current;
+  // The glass card (blur + translucent fill) and the accent glow on the
+  // progress line are the first things high performance mode gives up.
+  const effectsEnabled = useEffectsEnabled();
 
   if (!track) return null;
 
@@ -44,7 +48,10 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
         bottom: bottomOffset,
         zIndex: (t) => t.zIndex.modal - 1,
         color: 'text.primary',
-        bgcolor: (t) => alpha(t.palette.background.paper, 0.86),
+        // solid paper without the glass effect: the fill has to carry the
+        // surface on its own once nothing blurs behind it
+        bgcolor: (t) =>
+          effectsEnabled ? alpha(t.palette.background.paper, 0.86) : t.palette.background.paper,
         borderRadius: 4,
         border: '1px solid',
         borderColor: 'divider',
@@ -52,8 +59,8 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
           '0 12px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08)',
         overflow: 'hidden',
         cursor: 'pointer',
-        backdropFilter: 'blur(20px) saturate(1.6)',
-        WebkitBackdropFilter: 'blur(20px) saturate(1.6)',
+        backdropFilter: effectsEnabled ? 'blur(20px) saturate(1.6)' : 'none',
+        WebkitBackdropFilter: effectsEnabled ? 'blur(20px) saturate(1.6)' : 'none',
         transition:
           'left 250ms ease, opacity 200ms ease, transform 160ms ease, box-shadow 160ms ease',
         '&:hover': {
@@ -94,7 +101,8 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             width: `${progress}%`,
             bgcolor: 'primary.main',
             borderRadius: '0 3px 3px 0',
-            boxShadow: (t) => `0 0 8px ${alpha(t.palette.primary.main, 0.65)}`,
+            boxShadow: (t) =>
+              effectsEnabled ? `0 0 8px ${alpha(t.palette.primary.main, 0.65)}` : 'none',
             transition: 'width 250ms linear',
           }}
         />

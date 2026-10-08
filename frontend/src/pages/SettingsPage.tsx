@@ -81,13 +81,23 @@ function Credit({ href, name, icon, iconColor, children }: CreditProps) {
  * Theme engine controls: color mode + accent color + interface font.
  *
  * Every persisted choice is written straight through the settings store;
- * the theme context only lends its session state (the resolved mode and the
- * color read from the playing cover).
+ * the theme context lends its session state (the resolved mode, the color
+ * read from the playing cover) and the effective accent / adaptive values,
+ * which high performance mode overrides.
  */
 export default function SettingsPage() {
-  const { themeMode, accent, adaptiveAccent, font, lyricsProvider, apiBase } = useSettings();
-  const { adaptiveColor, resolved } = useTheme();
+  const { themeMode, accent, font, lyricsProvider, apiBase, highPerformance } = useSettings();
+  // `adaptiveAccent` and `accentInUse` come from the theme context: they are
+  // the *effective* values, so high performance mode shows through here.
+  const { adaptiveColor, resolved, accentInUse, adaptiveAccent } = useTheme();
   const selectedFont = FONTS.find((option) => option.id === font) || FONTS[0];
+
+  // A white accent on the light theme would paint primary labels, borders
+  // and icons white on white — high performance mode pins the accent to
+  // white (and a black cover can make adaptive pick it too), so those few
+  // spots fall back to plain colours while it reads that way. The dark
+  // theme reads white perfectly and keeps them.
+  const whiteOnLight = resolved === 'light' && accentInUse.toLowerCase() === '#ffffff';
 
   return (
     <Container maxWidth="sm" sx={{ pt: { xs: 2, md: 3 }, pb: 4 }}>
@@ -109,7 +119,7 @@ export default function SettingsPage() {
                 <Chip
                   size="small"
                   label={`Currently ${resolved}`}
-                  color="primary"
+                  color={whiteOnLight ? 'default' : 'primary'}
                   variant="outlined"
                 />
               </Stack>
@@ -147,7 +157,12 @@ export default function SettingsPage() {
                 <Typography variant="body2" fontWeight={600}>
                   Interface font
                 </Typography>
-                <Chip size="small" label={selectedFont.name} color="primary" variant="outlined" />
+                <Chip
+                  size="small"
+                  label={selectedFont.name}
+                  color={whiteOnLight ? 'default' : 'primary'}
+                  variant="outlined"
+                />
               </Stack>
               <ToggleButtonGroup
                 exclusive
@@ -252,6 +267,7 @@ export default function SettingsPage() {
               </Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                 Defaults to Material Green ({DEFAULT_ACCENT}).
+                {highPerformance && ' High performance mode overrides it with white while it is on.'}
               </Typography>
             </Box>
 
@@ -267,9 +283,16 @@ export default function SettingsPage() {
                   the most used color of the artwork, or white when the cover
                   is black. Your chosen accent is used while nothing plays.
                 </Typography>
+                {highPerformance && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Paused while high performance mode is on — your choice is
+                    kept and returns when you turn it off.
+                  </Typography>
+                )}
               </Box>
               <Switch
                 checked={adaptiveAccent}
+                disabled={highPerformance}
                 onChange={(_, checked) => updateSettings({ adaptiveAccent: checked })}
                 inputProps={{ 'aria-label': 'Adaptive accent color' }}
                 sx={{ flexShrink: 0 }}
@@ -295,6 +318,26 @@ export default function SettingsPage() {
               </Stack>
             )}
 
+            <Divider />
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  High performance mode
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Disables artwork theming, blur and ambient effects for a
+                  lighter, faster interface. Accent color becomes white.
+                </Typography>
+              </Box>
+              <Switch
+                checked={highPerformance}
+                onChange={(_, checked) => updateSettings({ highPerformance: checked })}
+                inputProps={{ 'aria-label': 'High performance mode' }}
+                sx={{ flexShrink: 0 }}
+              />
+            </Stack>
+
             <Box
               sx={{
                 p: 1.5,
@@ -305,9 +348,23 @@ export default function SettingsPage() {
                 gap: 1.5,
               }}
             >
-              <Box sx={{ width: 36, height: 36, borderRadius: '50%', bgcolor: 'primary.main' }} />
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  bgcolor: 'primary.main',
+                  // a white accent needs an edge to be seen on this row
+                  border: whiteOnLight ? 1 : 0,
+                  borderColor: 'divider',
+                }}
+              />
               <Box>
-                <Typography variant="body2" fontWeight={600} color="primary.main">
+                <Typography
+                  variant="body2"
+                  fontWeight={600}
+                  color={whiteOnLight ? 'text.primary' : 'primary.main'}
+                >
                   Primary accent preview
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
@@ -356,7 +413,7 @@ export default function SettingsPage() {
                       </Typography>
                     )}
                   </Box>
-                  {selected && <CheckIcon color="primary" sx={{ fontSize: 18 }} />}
+                  {selected && <CheckIcon color={whiteOnLight ? 'action' : 'primary'} sx={{ fontSize: 18 }} />}
                 </Box>
               );
             })}

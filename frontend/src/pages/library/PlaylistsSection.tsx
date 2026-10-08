@@ -1,8 +1,10 @@
 /**
- * Playlists section — a responsive grid of playlist cards plus the create /
- * rename / delete flows. Opening a card swaps the whole Library content area
- * for the detail view (see `LibraryPage`), so coming back remounts this
- * section and its data is fresh again by construction.
+ * Playlists page — the Library's Playlists tab: a responsive grid of
+ * playlist cards plus the create / rename / delete flows. Opening a card
+ * swaps the whole Library content area for the detail view (see
+ * `LibraryPage`), so coming back remounts this page and its data is fresh
+ * again by construction. The tab bar owns the title; the "New playlist"
+ * action sits on the summary line.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Box, Button, IconButton, Menu, MenuItem, Skeleton, Tooltip, Typography } from '@mui/material';
@@ -16,8 +18,8 @@ import {
 } from '../../db/repos/playlists';
 import type { Playlist } from '../../types/models';
 import { cdnArtwork } from '../../utils/track';
-import { ConfirmDialog, EmptyHint, PlaylistFormDialog, SectionHeader } from './common';
-import { Artwork, EditIcon, LibraryIcon, MoreVertIcon, MusicNoteIcon, PlusIcon, TrashIcon } from './glyphs';
+import { ConfirmDialog, EmptyHint, PageSummary, PlaylistFormDialog } from './common';
+import { Artwork, EditIcon, MoreVertIcon, MusicNoteIcon, PlusIcon, TrashIcon } from './glyphs';
 
 interface PlaylistsSectionProps {
   /** Called with the playlist id — the parent opens the detail view. */
@@ -101,10 +103,7 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
 
   return (
     <Box component="section">
-      <SectionHeader
-        title="Playlists"
-        caption={loading ? 'Loading…' : `${playlists.length} playlist${playlists.length === 1 ? '' : 's'}`}
-        icon={<LibraryIcon />}
+      <PageSummary
         action={
           <Button
             size="small"
@@ -115,7 +114,11 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
             New playlist
           </Button>
         }
-      />
+      >
+        {loading
+          ? 'Loading…'
+          : `${playlists.length} playlist${playlists.length === 1 ? '' : 's'}`}
+      </PageSummary>
 
       {loading && playlists.length === 0 ? (
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 2 }}>

@@ -17,16 +17,26 @@ import type { Track, TrackMeta } from '../types/models';
 
 const YTIMG = 'https://i.ytimg.com';
 
+/**
+ * macOS maps `seekbackward` / `seekforward` to the widget's skip buttons and
+ * labels them "5 seconds back / forward", replacing the ⏮ ⏭ track buttons.
+ * Skipping those two registrations keeps previous/next track on the widget
+ * there, while Android / Windows still get their native seek buttons.
+ */
+const isMacOS = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || '');
+
 /** Actions the widget can send; unsupported ones are dropped one by one. */
-const ACTIONS: MediaSessionAction[] = [
-  'play',
-  'pause',
-  'previoustrack',
-  'nexttrack',
-  'seekto',
-  'seekbackward',
-  'seekforward',
-];
+const ACTIONS: MediaSessionAction[] = isMacOS
+  ? ['play', 'pause', 'previoustrack', 'nexttrack', 'seekto']
+  : [
+      'play',
+      'pause',
+      'previoustrack',
+      'nexttrack',
+      'seekto',
+      'seekbackward',
+      'seekforward',
+    ];
 
 /** Seconds `seekbackward` / `seekforward` jump when the OS names no step. */
 const SEEK_STEP = 10;
@@ -46,6 +56,34 @@ const IMMEDIATE_EVENTS = [
 
 function session(): MediaSession | undefined {
   return typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
+}
+
+/**
+ * Center-crops an image data URL to a 1:1 square.
+ *
+ * The sandboxed cover keeps the original aspect ratio (16:9 video thumbs
+ * included), which macOS renders with letterboxing in the media widget — so
+ * whatever we hand to the OS is squared first. Returns the input unchanged
+ * when the image is already square or cannot be decoded.
+ */
+async function squareArtwork(dataUrl: string): Promise<string> {
+  try {
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const { naturalWidth: w, naturalHeight: h } = image;
+    if (!w || !h || w === h) return dataUrl;
+    const side = Math.min(w, h);
+    const canvas = document.createElement('canvas');
+    canvas.width = side;
+    canvas.height = side;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.drawImage(image, (w - side) / 2, (h - side) / 2, side, side, 0, 0, side, side);
+    return canvas.toDataURL('image/jpeg', 0.9);
+  } catch {
+    return dataUrl;
+  }
 }
 
 function audioOf(audioRef: React.RefObject<HTMLAudioElement | null>): HTMLAudioElement | null {
@@ -170,6 +208,7 @@ export function useMediaSession({
       };
     }
     void localArtworkDataUrl(videoId)
+      .then((url) => (url ? squareArtwork(url) : null))
       .then((url) => {
         if (!cancelled) setLocalCover(url);
       })

@@ -12,10 +12,12 @@ import {
 } from '@mui/material';
 
 import { usePlayer } from '../player/PlayerContext';
+import { useTheme } from '../theme/ThemeContext';
 import type { Track } from '../types/models';
 import { formatTime } from '../utils/format';
+import { useFlag } from '../db/flags';
 import Artwork from './Artwork';
-import { CloseIcon, ExplicitIcon, ShuffleIcon, TrashIcon } from './icons';
+import { CloseIcon, DownloadIcon, ExplicitIcon, HeartFilledIcon, ShuffleIcon, TrashIcon } from './icons';
 
 /** One upcoming row: tap to jump here, ✕ to drop it from the queue. */
 function QueueRow({
@@ -28,6 +30,9 @@ function QueueRow({
   context: Track[];
 }) {
   const player = usePlayer();
+  // Per-row subscription: badges flip live as downloads / hearts change.
+  const downloaded = useFlag('downloaded', track.videoId);
+  const favorite = useFlag('favorite', track.videoId);
 
   return (
     <ListItem
@@ -73,6 +78,13 @@ function QueueRow({
           secondary={
             <Typography variant="caption" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               {track.isExplicit && <ExplicitIcon sx={{ fontSize: 13 }} />}
+              {/* Passive state badges, kept muted so the meta line stays quiet. */}
+              {downloaded && (
+                <DownloadIcon titleAccess="Downloaded" sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
+              )}
+              {favorite && (
+                <HeartFilledIcon titleAccess="Favorite" sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
+              )}
               {track.artist}
             </Typography>
           }
@@ -95,6 +107,9 @@ function QueueRow({
 export default function NPQueue() {
   const player = usePlayer();
   const { current, queue } = player;
+  // Readable accent for the "now playing" labels (white accent + light mode
+  // would make them invisible on the selected row).
+  const { accentFg } = useTheme();
   /** Full listening context so jumping to a row keeps the queue sensible. */
   const context = current ? [current, ...queue] : queue;
 
@@ -149,7 +164,7 @@ export default function NPQueue() {
               </ListItemIcon>
               <ListItemText
                 primary={
-                  <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: 'primary.main' }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: accentFg }}>
                     {current.title}
                   </Typography>
                 }
@@ -157,7 +172,7 @@ export default function NPQueue() {
                   <Typography
                     variant="caption"
                     noWrap
-                    sx={{ display: 'block', color: 'primary.main', opacity: 0.85 }}
+                    sx={{ display: 'block', color: accentFg, opacity: 0.85 }}
                   >
                     Now playing — {current.artist}
                   </Typography>

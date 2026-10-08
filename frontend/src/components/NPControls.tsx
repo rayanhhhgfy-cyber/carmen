@@ -2,6 +2,8 @@ import { CircularProgress, Fab, IconButton, Stack } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 
 import { usePlayer } from '../player/PlayerContext';
+import { useEffectsEnabled } from '../settings/store';
+import { useTheme } from '../theme/ThemeContext';
 import {
   PauseIcon,
   PlayArrowIcon,
@@ -25,6 +27,12 @@ import {
  */
 export default function NPControls() {
   const player = usePlayer();
+  // The FAB's accent glow is a painted effect — flat while high performance
+  // mode is on.
+  const effectsEnabled = useEffectsEnabled();
+  // Shuffle / repeat icons are line art on the sheet — the readable accent
+  // keeps them visible when the mode pins the accent to white.
+  const { accentFg } = useTheme();
 
   return (
     <Stack
@@ -43,14 +51,13 @@ export default function NPControls() {
         sx={{
           width: 44,
           height: 44,
-          color: player.shuffle ? 'primary.main' : 'text.secondary',
-          bgcolor: (t) =>
-            player.shuffle ? alpha(t.palette.primary.main, 0.14) : 'transparent',
+          color: player.shuffle ? accentFg : 'text.secondary',
+          bgcolor: player.shuffle ? alpha(accentFg, 0.14) : 'transparent',
           transition: 'background-color 160ms ease, color 160ms ease',
           '&:hover': {
             bgcolor: (t) =>
               player.shuffle
-                ? alpha(t.palette.primary.main, 0.22)
+                ? alpha(accentFg, 0.22)
                 : alpha(t.palette.text.primary, 0.08),
           },
         }}
@@ -80,12 +87,14 @@ export default function NPControls() {
           width: 66,
           height: 66,
           mx: 1,
-          boxShadow: (t) => `0 10px 26px ${alpha(t.palette.primary.main, 0.42)}`,
+          boxShadow: (t) =>
+            effectsEnabled ? `0 10px 26px ${alpha(t.palette.primary.main, 0.42)}` : 'none',
           transition:
             'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 160ms ease',
           '&:hover': {
             transform: 'scale(1.06)',
-            boxShadow: (t) => `0 14px 32px ${alpha(t.palette.primary.main, 0.55)}`,
+            boxShadow: (t) =>
+              effectsEnabled ? `0 14px 32px ${alpha(t.palette.primary.main, 0.55)}` : 'none',
           },
         }}
       >
@@ -119,17 +128,15 @@ export default function NPControls() {
         sx={{
           width: 44,
           height: 44,
-          color: player.repeat === 'off' ? 'text.secondary' : 'primary.main',
-          bgcolor: (t) =>
-            player.repeat === 'off'
-              ? 'transparent'
-              : alpha(t.palette.primary.main, 0.14),
+          color: player.repeat === 'off' ? 'text.secondary' : accentFg,
+          bgcolor:
+            player.repeat === 'off' ? 'transparent' : alpha(accentFg, 0.14),
           transition: 'background-color 160ms ease, color 160ms ease',
           '&:hover': {
             bgcolor: (t) =>
               player.repeat === 'off'
                 ? alpha(t.palette.text.primary, 0.08)
-                : alpha(t.palette.primary.main, 0.22),
+                : alpha(accentFg, 0.22),
           },
         }}
       >

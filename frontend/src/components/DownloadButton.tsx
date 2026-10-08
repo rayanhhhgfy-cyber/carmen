@@ -1,6 +1,7 @@
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 
 import { CheckCircleIcon, DownloadIcon } from './icons';
+import { useFlag } from '../db/flags';
 import { useDownloads } from '../hooks';
 import { startDownload } from '../utils/downloads';
 import type { Track, TrackMeta } from '../types/models';
@@ -29,7 +30,10 @@ export default function DownloadButton({
   const { jobs } = useDownloads();
   const job = jobs[track.videoId];
   const running = job?.status === 'running';
-  const done = job?.status === 'done';
+  // The persisted flag (not the in-session job) decides the saved state, so a
+  // song stays "saved" across re-plays and app restarts.
+  const downloaded = useFlag('downloaded', track.videoId);
+  const done = downloaded || job?.status === 'done';
 
   const label = running
     ? `${job?.step ?? 'Downloading'}${job?.progress ? ` — ${Math.round((job.progress || 0) * 100)}%` : ''}`

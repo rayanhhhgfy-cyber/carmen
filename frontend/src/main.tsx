@@ -3,7 +3,9 @@ import { createRoot } from 'react-dom/client';
 
 import App from './App';
 import { loadAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/appState';
-import { hydrateLocalLibrary } from './offline/source';
+import { favoriteIds } from './db/repos/favorites';
+import { hydrateFlags } from './db/flags';
+import { hydrateLocalLibrary, downloadedVideoIds } from './offline/source';
 import { bootstrapPlatform } from './platform/env';
 import { hydrateSettings } from './settings/store';
 import { hydrateLibrary } from './utils/library';
@@ -37,7 +39,17 @@ async function restoreRoute(): Promise<void> {
 async function bootstrap(): Promise<void> {
   await bootstrapPlatform();
   await Promise.allSettled([hydrateSettings(), hydrateLibrary(), hydrateLocalLibrary()]);
+  // Downloaded / favorited flags feed the badges + "already saved" state of
+  // every row, so they are seeded before the first render too.
+  try {
+    const [downloaded, favorites] = await Promise.all([downloadedVideoIds(), favoriteIds()]);
+    hydrateFlags(downloaded, favorites);
+  } catch {
+    /* badges simply start empty */
+  }
   await restoreRoute();
+  // Repair older downloads that were saved without an album — fire and forget.
+  void import('./utils/downloads').then((m) => m.backfillAlbumNames()).catch(() => {});
 
   const container = document.getElementById('root');
   if (!container) throw new Error('#root missing from index.html');

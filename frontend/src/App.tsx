@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import Layout from './components/Layout';
@@ -41,23 +41,28 @@ function RoutePersistence() {
  *
  * `main.tsx` seeds `window.location.hash` before rendering; this component
  * covers the case where the seeded value points at a route that vanished.
+ *
+ * The restore runs **exactly once per app launch**. React Router's `navigate`
+ * gets a new identity on every location change, so keying the effect on it
+ * (as an earlier version did) re-ran the restore after every navigation —
+ * clicking "Home" from Library then raced the 250ms route-save debounce,
+ * read the stale saved route and bounced straight back to Library.
  */
 function RouteGuard() {
   const navigate = useNavigate();
+  const restoredRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
     void loadAppState<NavigationState>(NAVIGATION_KEY, { pathname: '/', search: '' })
       .then((saved) => {
-        if (cancelled || !saved?.pathname) return;
+        if (!saved?.pathname) return;
         if (window.location.hash === '#/' || window.location.hash === '#') {
           navigate(`${saved.pathname}${saved.search ?? ''}`, { replace: true });
         }
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [navigate]);
 
   return null;

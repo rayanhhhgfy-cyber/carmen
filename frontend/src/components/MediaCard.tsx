@@ -1,9 +1,10 @@
-import { Box, Chip, Typography } from '@mui/material';
+import { Box, Chip, Stack, Typography } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useFlags } from '../db/flags';
 import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
-import { PlayArrowIcon } from './icons';
+import { DownloadIcon, HeartFilledIcon, PlayArrowIcon } from './icons';
 
 /** Route / action to run when a browse item is tapped. */
 export interface CardAction {
@@ -62,9 +63,15 @@ export default function MediaCard({
 }: MediaCardProps) {
   const navigate = useNavigate();
   const card = resolveCard(item);
+  // Badges on song tiles (home / search shelves): one store read per card,
+  // live like everywhere else.
+  const flags = useFlags();
   if (!card) return null;
 
   const record = (item ?? {}) as Record<string, unknown>;
+  const videoId = typeof record.videoId === 'string' ? record.videoId : null;
+  const isDownloaded = Boolean(videoId) && flags.downloaded.has(videoId as string);
+  const isFavorite = Boolean(videoId) && flags.favorite.has(videoId as string);
   const isFluid = typeof width !== 'number';
   const boxWidth = isFluid ? width : `${width}px`;
 
@@ -143,6 +150,26 @@ export default function MediaCard({
             boxShadow: 1,
           }}
         />
+        {(isDownloaded || isFavorite) && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            sx={{
+              position: 'absolute',
+              top: 6,
+              left: 6,
+              px: 0.75,
+              py: 0.25,
+              borderRadius: 999,
+              bgcolor: 'rgba(0,0,0,0.62)',
+              color: '#fff',
+              alignItems: 'center',
+            }}
+          >
+            {isDownloaded && <DownloadIcon sx={{ fontSize: 13 }} />}
+            {isFavorite && <HeartFilledIcon sx={{ fontSize: 13 }} />}
+          </Stack>
+        )}
         {card.kind === 'song' && (
           <Box
             className="card-play"

@@ -1,7 +1,8 @@
 /**
- * Recently Downloaded — a horizontally scrollable carousel of the last ten
- * downloads, newest first (`recentDownloads` orders by `downloaded_at`).
- * Tapping a card plays it in the context of the carousel.
+ * Recent page — the Library's Recent tab: a horizontally scrollable carousel
+ * of the last ten downloads, newest first (`recentDownloads` orders by
+ * `downloaded_at`). Tapping a card plays it in the context of the carousel.
+ * The tab bar owns the title, so only the freshness line stays.
  */
 import { useEffect, useState } from 'react';
 import { Box, Skeleton, Typography, useTheme } from '@mui/material';
@@ -9,8 +10,8 @@ import { Box, Skeleton, Typography, useTheme } from '@mui/material';
 import { recentDownloads } from '../../db/repos/downloads';
 import { usePlayer } from '../../player/PlayerContext';
 import type { DownloadedSong } from '../../types/models';
-import { EmptyHint, SectionHeader } from './common';
-import { Artwork, HistoryIcon, MusicNoteIcon } from './glyphs';
+import { EmptyHint, PageSummary } from './common';
+import { Artwork, MusicNoteIcon } from './glyphs';
 
 export default function RecentSection() {
   const player = usePlayer();
@@ -39,11 +40,7 @@ export default function RecentSection() {
 
   return (
     <Box component="section">
-      <SectionHeader
-        title="Recently Downloaded"
-        caption="Your last saves, newest first"
-        icon={<HistoryIcon />}
-      />
+      <PageSummary>Your last saves, newest first</PageSummary>
 
       {loading && !songs.length ? (
         <Box sx={{ display: 'flex', gap: 2, overflow: 'hidden' }}>

@@ -1,7 +1,8 @@
 /**
- * Songs section — every downloaded song, with sorting (title / release /
- * artist, each direction), the favorites quick-filter, Play All / Shuffle
- * All and per-row hearts + "add to playlist".
+ * Songs page — the Library's Songs tab: every downloaded song, with sorting
+ * (title / release / artist, each direction), the favorites quick-filter,
+ * Play All / Shuffle All and per-row hearts + "add to playlist". The tab bar
+ * owns the title, so the page opens with the summary line only.
  *
  * The repo owns the SQL, so each control is one `listDownloads` query; a
  * heart toggle only refetches when the favorites filter is active (the row
@@ -15,7 +16,7 @@ import type { SortDir, SortKey } from '../../db/repos/tracks';
 import { usePlayer } from '../../player/PlayerContext';
 import type { DownloadedSong } from '../../types/models';
 import { shuffleList } from '../../utils/library';
-import { EmptyHint, SectionHeader } from './common';
+import { EmptyHint, PageSummary } from './common';
 import {
   ChevronRightIcon,
   DownloadIcon,
@@ -92,15 +93,11 @@ export default function SongsSection() {
 
   return (
     <Box component="section">
-      <SectionHeader
-        title="Songs"
-        caption={
-          loading && !songs.length
-            ? 'Loading…'
-            : `${songs.length} downloaded song${songs.length === 1 ? '' : 's'} on this device`
-        }
-        icon={<DownloadIcon />}
-      />
+      <PageSummary>
+        {loading && !songs.length
+          ? 'Loading…'
+          : `${songs.length} downloaded song${songs.length === 1 ? '' : 's'} on this device`}
+      </PageSummary>
 
       <Stack
         direction="row"

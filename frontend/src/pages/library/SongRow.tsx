@@ -6,11 +6,13 @@
  * row body plays the track inside its list's context; every other control is
  * a sibling of the play button (never nested inside it).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 
+import { useFlag } from '../../db/flags';
 import { toggleFavorite } from '../../db/repos/favorites';
 import { usePlayer } from '../../player/PlayerContext';
+import { useTheme } from '../../theme/ThemeContext';
 import type { Track } from '../../types/models';
 import { formatTime } from '../../utils/format';
 import AddToPlaylistDialog from './AddToPlaylistDialog';
@@ -50,6 +52,8 @@ export interface SongRowProps {
 
 /** Bars shown while this row is the one actually playing. */
 function Equalizer() {
+  // Accent line art again — the readable accent, never the raw white one.
+  const { accentFg } = useTheme();
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.4, height: 14, pr: 1 }} aria-hidden>
       {[0.4, 1, 0.65].map((scale, position) => (
@@ -58,7 +62,7 @@ function Equalizer() {
           sx={{
             width: 3,
             borderRadius: 2,
-            bgcolor: 'primary.main',
+            bgcolor: accentFg,
             height: 14,
             transformOrigin: 'bottom',
             animation: `row-eq 900ms ${position * 140}ms ease-in-out infinite alternate`,
@@ -82,21 +86,23 @@ export default function SongRow({
   onFavoriteChange,
 }: SongRowProps) {
   const player = usePlayer();
-  const [favorite, setFavorite] = useState(track.isFavorite ?? false);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [addingToPlaylist, setAddingToPlaylist] = useState(false);
 
+  // Both indicators read the flags store instead of prop snapshots, so they
+  // flip the instant a download finishes or a heart is toggled anywhere —
+  // no parent refetch required (`toggleFavorite` patches the same store).
+  const favorite = useFlag('favorite', track.videoId);
+  const downloaded = useFlag('downloaded', track.videoId);
+
   const active = player.current?.videoId === track.videoId;
   const playing = active && player.isPlaying;
-
-  // Keep the heart in sync when the parent reloads with fresh rows.
-  useEffect(() => {
-    setFavorite(track.isFavorite ?? false);
-  }, [track.isFavorite]);
+  // Readable accent for active text / EQ bars (white accent + light mode
+  // would otherwise paint invisible highlights).
+  const { accentFg } = useTheme();
 
   const handleFavorite = async () => {
     const next = await toggleFavorite(track);
-    setFavorite(next);
     onFavoriteChange?.(track.videoId, next);
   };
 
@@ -145,7 +151,7 @@ export default function SongRow({
             noWrap
             sx={{
               fontWeight: active ? 700 : 500,
-              color: active ? 'primary.main' : 'text.primary',
+              color: active ? accentFg : 'text.primary',
             }}
           >
             {track.title}
@@ -174,7 +180,7 @@ export default function SongRow({
           </Typography>
         )}
 
-        {showDownloaded && (
+        {(showDownloaded || downloaded) && (
           <Tooltip title="Downloaded" placement="top">
             <CheckCircleIcon color="success" sx={{ fontSize: 18, display: { xs: 'none', sm: 'flex' } }} />
           </Tooltip>

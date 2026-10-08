@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Box, LinearProgress, Slider, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 
+import { useEffectsEnabled } from '../settings/store';
+import { useTheme } from '../theme/ThemeContext';
 import { formatTime } from '../utils/format';
 
 interface NPScrubberProps {
@@ -35,6 +37,13 @@ function scalar(value: number | number[], fallback = 0): number {
  */
 export default function NPScrubber({ currentTime, duration, buffered, onSeek }: NPScrubberProps) {
   const [scrub, setScrub] = useState<number | null>(null);
+  // The glowing accent track is a painted effect — flat while high
+  // performance mode is on.
+  const effectsEnabled = useEffectsEnabled();
+  // The rail, glow and thumb ring are line art on the sheet surface — use the
+  // readable accent so a white high-performance accent stays visible in light
+  // mode (filled surfaces can keep `primary.main`).
+  const { accentFg } = useTheme();
 
   const progress = duration ? Math.min(Math.max(scrub ?? currentTime, 0), duration) : 0;
   const bufferedFraction = duration ? Math.min(Math.max(buffered, 0) / duration, 1) : 0;
@@ -98,20 +107,20 @@ export default function NPScrubber({ currentTime, duration, buffered, onSeek }: 
             }}
             sx={{
               position: 'relative',
-              color: 'primary.main',
+              color: accentFg,
               py: 1.25,
               '& .MuiSlider-rail': { bgcolor: 'transparent', opacity: 1 },
               '& .MuiSlider-track': {
                 border: 0,
                 height: 4,
                 borderRadius: 3,
-                boxShadow: (t) => `0 0 10px ${alpha(t.palette.primary.main, 0.55)}`,
+                boxShadow: effectsEnabled ? `0 0 10px ${alpha(accentFg, 0.55)}` : 'none',
               },
               '& .MuiSlider-thumb': {
                 width: 12,
                 height: 12,
                 bgcolor: 'background.paper',
-                border: (t) => `3px solid ${t.palette.primary.main}`,
+                border: `3px solid ${accentFg}`,
                 boxShadow: 'none',
                 opacity: 0,
                 scale: '0.5',

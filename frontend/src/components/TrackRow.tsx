@@ -12,13 +12,17 @@ import {
   MenuItem,
   Typography,
 } from '@mui/material';
+import { useFlag } from '../db/flags';
 import { usePlayer } from '../player/PlayerContext';
+import { useTheme } from '../theme/ThemeContext';
 import type { Track, TrackMeta } from '../types/models';
 import { formatTime } from '../utils/format';
 import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
 import {
+  DownloadIcon,
   ExplicitIcon,
+  HeartFilledIcon,
   InfoIcon,
   MoreVertIcon,
   MusicNoteIcon,
@@ -38,6 +42,9 @@ export interface TrackRowProps {
 }
 
 function Equalizer() {
+  // The bars are accent-coloured line art — read the readable accent here so
+  // a white high-performance accent stays visible on a light row.
+  const { accentFg } = useTheme();
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.4, height: 16 }} aria-hidden>
       {[0.4, 1, 0.65].map((scale, position) => (
@@ -46,7 +53,7 @@ function Equalizer() {
           sx={{
             width: 3,
             borderRadius: 2,
-            bgcolor: 'primary.main',
+            bgcolor: accentFg,
             height: 16,
             transformOrigin: 'bottom',
             animation: `eq-bar 900ms ${position * 140}ms ease-in-out infinite alternate`,
@@ -76,7 +83,16 @@ export default function TrackRow({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  // Read the flags per row (not per list) so each badge flips live the moment
+  // a download finishes or a heart is toggled anywhere in the app.
+  const downloaded = useFlag('downloaded', track.videoId);
+  const favorite = useFlag('favorite', track.videoId);
+
   const active = player.current?.videoId === track.videoId;
+  // Accent used for text/lines painted on the row surface (active title,
+  // index, EQ bars) — never the raw white accent, which would disappear on
+  // a light background (see `accentFg` in ThemeContext).
+  const { accentFg } = useTheme();
   const artwork = track.artwork;
 
   return (
@@ -122,7 +138,7 @@ export default function TrackRow({
           ) : index !== null ? (
             <Typography
               variant="body2"
-              color={active ? 'primary.main' : 'text.secondary'}
+              color={active ? accentFg : 'text.secondary'}
               sx={{ width: 46, textAlign: 'center', fontWeight: 600 }}
             >
               {index + 1}
@@ -142,7 +158,7 @@ export default function TrackRow({
               <Typography
                 variant="body2"
                 noWrap
-                sx={{ fontWeight: active ? 700 : 500, color: active ? 'primary.main' : 'text.primary' }}
+                sx={{ fontWeight: active ? 700 : 500, color: active ? accentFg : 'text.primary' }}
               >
                 {track.title}
               </Typography>
@@ -150,6 +166,20 @@ export default function TrackRow({
             secondary={
               <Typography variant="caption" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {track.isExplicit && <ExplicitIcon sx={{ fontSize: 13 }} />}
+                {/* Passive badges on the meta line — the trailing slot keeps the ⋯ menu / duration only.
+                    `titleAccess` marks them meaningful for screen readers (SvgIcon is aria-hidden otherwise). */}
+                {downloaded && (
+                  <DownloadIcon
+                    titleAccess="Downloaded"
+                    sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }}
+                  />
+                )}
+                {favorite && (
+                  <HeartFilledIcon
+                    titleAccess="Favorite"
+                    sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }}
+                  />
+                )}
                 {track.artist}
               </Typography>
             }
