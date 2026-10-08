@@ -48,6 +48,18 @@
         { "url": "https://*" },
         { "url": "http://*" }
       ]
+    },
+
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "https://music.apple.com" },
+        { "url": "https://amp-api.music.apple.com" },
+        { "url": "https://mvod.itunes.apple.com" },
+        { "url": "https://*.itunes.apple.com" },
+        { "url": "https://*.mzstatic.com" }
+      ]
     }
   ]
 }

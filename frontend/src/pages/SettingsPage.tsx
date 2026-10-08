@@ -94,6 +94,7 @@ export default function SettingsPage() {
     lyricsProvider,
     apiBase,
     lowBatteryMode: lowBatteryManual,
+    animatedArtwork,
   } = useSettings();
   // The *effective* mode (manual toggle or the automatic low-battery
   // kick-in) and the reading behind its status line.
@@ -359,6 +360,31 @@ export default function SettingsPage() {
                 checked={lowBatteryManual}
                 onChange={(_, checked) => updateSettings({ lowBatteryMode: checked })}
                 inputProps={{ 'aria-label': 'Low battery mode' }}
+                sx={{ flexShrink: 0 }}
+              />
+            </Stack>
+
+            <Divider />
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  Animated artwork
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Album covers that move, fetched from Apple's iTunes catalogue.
+                  Downloads keep a copy for offline playback.
+                </Typography>
+                {animatedArtwork && lowBatteryActive && (
+                  <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                    Off automatically — low battery mode is on.
+                  </Typography>
+                )}
+              </Box>
+              <Switch
+                checked={animatedArtwork}
+                onChange={(_, checked) => updateSettings({ animatedArtwork: checked })}
+                inputProps={{ 'aria-label': 'Animated artwork' }}
                 sx={{ flexShrink: 0 }}
               />
             </Stack>

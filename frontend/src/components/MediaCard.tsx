@@ -1,6 +1,8 @@
 import { Box, Chip, Stack, Typography } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+
+import type { MotionArtworkRef } from '../artwork/motion';
 import { useFlags } from '../db/flags';
 import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
@@ -80,6 +82,25 @@ export default function MediaCard({
   const title =
     (typeof record.title === 'string' && record.title) || 'Untitled';
 
+  // Animated cover identity: a song tile looks its own album up, an album
+  // tile uses its title; artist and playlist tiles have no catalogue album
+  // and stay static (matching an artist name against Apple's *album* search
+  // would happily animate the wrong cover).
+  const rawAlbum = record.albumName ?? record.album;
+  const songAlbum =
+    typeof rawAlbum === 'string'
+      ? rawAlbum
+      : rawAlbum && typeof rawAlbum === 'object' &&
+          typeof (rawAlbum as { name?: unknown }).name === 'string'
+        ? (rawAlbum as { name: string }).name
+        : '';
+  let motionRef: MotionArtworkRef | null = null;
+  if (card.kind === 'song' && songAlbum) {
+    motionRef = { album: songAlbum, videoId };
+  } else if (card.kind === 'album') {
+    motionRef = { album: title };
+  }
+
   // Subtitle: explicit artist, joined artist list, or a fallback chain.
   let subtitle = '';
   if (typeof record.artist === 'string' && record.artist) {
@@ -145,6 +166,7 @@ export default function MediaCard({
         <Artwork
           className="card-art"
           src={artwork}
+          motion={motionRef}
           alt=""
           iconSize={44}
           sx={{

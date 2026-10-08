@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lyricsProvider: 'auto',
   apiBase: '',
   lowBatteryMode: false,
+  animatedArtwork: true,
 };
 
 const KEYS: SettingsKey[] = [
@@ -31,6 +32,7 @@ const KEYS: SettingsKey[] = [
   'lyricsProvider',
   'apiBase',
   'lowBatteryMode',
+  'animatedArtwork',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -87,6 +89,9 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
       return raw === '1' || raw === 'true';
     case 'lowBatteryMode':
       return raw === '1' || raw === 'true';
+    case 'animatedArtwork':
+      // Absent = on: only an explicit "0" turns the feature off.
+      return raw !== '0' && raw !== 'false';
     case 'accent':
       return /^#[0-9a-f]{6}$/i.test(raw) ? raw : DEFAULT_SETTINGS.accent;
     case 'apiBase':
@@ -97,7 +102,9 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
 }
 
 function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
-  if (key === 'adaptiveAccent' || key === 'lowBatteryMode') return value ? '1' : '0';
+  if (key === 'adaptiveAccent' || key === 'lowBatteryMode' || key === 'animatedArtwork') {
+    return value ? '1' : '0';
+  }
   return String(value ?? '');
 }
 
@@ -194,4 +201,14 @@ export function useLowBatteryMode(): boolean {
  */
 export function useEffectsEnabled(): boolean {
   return !useLowBatteryMode();
+}
+
+/**
+ * Whether animated (motion) artwork may resolve and play **right now**:
+ * the settings toggle, minus low battery mode — which switches the effect
+ * off entirely (see `artwork/motion.ts` for what it costs: a couple of
+ * catalogue requests and a small video per album, once).
+ */
+export function useAnimatedArtwork(): boolean {
+  return useSettings().animatedArtwork && !useLowBatteryMode();
 }

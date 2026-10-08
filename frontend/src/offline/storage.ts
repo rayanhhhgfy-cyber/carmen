@@ -8,6 +8,8 @@
  *   <app data>/songs/<videoId>/audio.<m4a|webm|ogg|mp3>
  *   <app data>/songs/<videoId>/artwork.<jpg|webp|png>
  *   <app data>/songs/<videoId>/lyrics.<lrc|txt>
+ *   <app data>/songs/<videoId>/motion.mp4   (animated cover, when there is one)
+ *   <app data>/motion/<key>.mp4     (animated covers of streamed albums)
  *   <app data>/artwork/…            (spare covers for OS media controls)
  */
 import { exists, mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs';
@@ -16,15 +18,18 @@ import { isTauri, storagePaths } from '../platform/env';
 
 let songsDirectory: string | null = null;
 let artworkDirectory: string | null = null;
+let motionDirectory: string | null = null;
 let init: Promise<void> | null = null;
 
 async function ensureDirs(): Promise<void> {
   const paths = await storagePaths();
   songsDirectory = paths.songsDir;
   artworkDirectory = paths.artworkDir;
+  motionDirectory = `${paths.appData}/motion`;
   if (isTauri) {
     await mkdir(paths.songsDir, { recursive: true }).catch(() => {});
     await mkdir(paths.artworkDir, { recursive: true }).catch(() => {});
+    await mkdir(motionDirectory, { recursive: true }).catch(() => {});
   }
 }
 
@@ -41,6 +46,12 @@ export async function songsDir(): Promise<string | null> {
 export async function artworkDir(): Promise<string | null> {
   await dirs();
   return artworkDirectory;
+}
+
+/** `<app data>/motion` — the animated-cover disk cache. */
+export async function motionDir(): Promise<string | null> {
+  await dirs();
+  return motionDirectory;
 }
 
 /** `<songs>/<videoId>` — created on demand. */

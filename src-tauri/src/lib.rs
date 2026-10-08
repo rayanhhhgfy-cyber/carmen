@@ -24,6 +24,10 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Motion artwork: the iTunes/amp-api hops are not CORS-reachable from
+        // the WebView (amp-api even checks the Origin header), so they go
+        // through Rust (see frontend/src/artwork/motion.ts).
+        .plugin(tauri_plugin_http::init())
         .setup(|app| {
             tray::init(app.handle())?;
             Ok(())

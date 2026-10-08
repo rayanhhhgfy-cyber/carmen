@@ -3,14 +3,16 @@
  *
  * There is no conversion and no tagging step anymore: the bytes that come out
  * of `/stream` are stored verbatim as `audio.<ext>` next to the high-res
- * cover (`artwork.<ext>`) and the lyrics (`lyrics.lrc` / `lyrics.txt`) inside
- * the app sandbox, and the SQLite row is written afterwards.
+ * cover (`artwork.<ext>`), the lyrics (`lyrics.lrc` / `lyrics.txt`) and the
+ * animated cover (`motion.mp4`, when the album has one) inside the app
+ * sandbox, and the SQLite row is written afterwards.
  *
- *   <app data>/songs/<videoId>/{audio.m4a, artwork.jpg, lyrics.lrc}
+ *   <app data>/songs/<videoId>/{audio.m4a, artwork.jpg, lyrics.lrc, motion.mp4}
  *
  * ffmpeg / MP3 / ID3 are deliberately gone — see DEVELOPMENT.md.
  */
 import { apiGet, streamUrl } from '../api';
+import { fetchMotionArtwork, saveMotionArtwork } from '../artwork/motion';
 import {
   deleteDownloadRow,
   getDownload,
@@ -364,10 +366,27 @@ export function startDownload(
       /* lyrics are best effort */
     }
 
+    // 4b — animated cover (Apple motion artwork), when the album has one.
+    // Best effort, like the cover and the lyrics: the catalogue may be slow
+    // or unreachable, but a song already on disk must still finish saving.
+    patchJob(videoId, { step: 'Fetching animated cover', progress: 0.87 });
+    const savedTrack = withAlbumFrom(track, enriched);
+    try {
+      const motionBytes = await fetchMotionArtwork(savedTrack.albumName);
+      if (motionBytes) {
+        await writeBinary(`${folder}/motion.mp4`, motionBytes);
+        // …and a copy in the shared cache, so tiles (which know no videoId)
+        // can play it offline too.
+        await saveMotionArtwork(savedTrack.albumName, motionBytes);
+      }
+    } catch {
+      /* motion artwork never fails a download */
+    }
+
     // 5 — record everything in SQLite
     patchJob(videoId, { step: 'Updating library', progress: 0.9 });
     await insertDownload({
-      track: withAlbumFrom(track, enriched),
+      track: savedTrack,
       audioPath,
       artworkPath,
       lyricsPath,

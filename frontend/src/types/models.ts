@@ -149,6 +149,12 @@ export interface AppSettings {
    * automatically below 20% battery (see `settings/battery.ts`).
    */
   lowBatteryMode: boolean;
+  /**
+   * Animated album artwork — covers that move, resolved through Apple's
+   * iTunes / amp-api catalogue (see `artwork/motion.ts`). On by default;
+   * low battery mode switches it off on top of this toggle.
+   */
+  animatedArtwork: boolean;
 }
 
 export type SettingsKey = keyof AppSettings;

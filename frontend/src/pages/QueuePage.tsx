@@ -56,6 +56,7 @@ export default function QueuePage() {
             src={track.artwork}
             alt=""
             iconSize={28}
+            motion={{ album: track.albumName, videoId: track.videoId }}
             sx={{ width: 64, height: 64, borderRadius: 2, flexShrink: 0 }}
           />
           <Box sx={{ flex: 1, minWidth: 0 }}>

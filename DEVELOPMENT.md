@@ -171,7 +171,17 @@ npm run dev:frontend        # = npm --prefix frontend run dev → vite
   routing breaks. Routes look like `http://localhost:1420/#/…`.
 - Web-only features degrade outside Tauri: the SQLite layer
   (`frontend/src/db/`) reports `dbAvailable === false` when not running under
-  Tauri, so library/offline features are shell-only.
+  Tauri, so library/offline features are shell-only. The same is true of
+  **animated artwork** (`frontend/src/artwork/motion.ts`): Apple's `amp-api`
+  is not CORS-reachable from a plain browser (it validates the `Origin`
+  header), so under `vite dev` covers simply stay static. Inside Tauri those
+  hops run through `tauri-plugin-http` (built with `unsafe-headers` for the
+  spoofed `Origin`; the URL scope lives in `capabilities/default.json`),
+  while the iTunes search and the MP4 CDN are `ACAO: *` and use the WebView's
+  own fetch. The feature resolves each album at most once (URLs persisted in
+  `app_state.motionUrls`, token in `app_state.motionToken`), caches the video
+  under `<app data>/motion/`, and is switched off by Settings →
+  *Animated artwork* or by low battery mode.
 
 ---
 
@@ -207,9 +217,10 @@ Details of what that does:
   (below) and `battery_status` (charge level for the low-battery auto mode —
   `supported: false` where no backend exists, e.g. Android webviews, which
   report through `navigator.getBattery` instead) — everything else goes
-  through the fs/sql/opener plugins, which are
+  through the fs/sql/opener/http plugins, which are
   gated by `src-tauri/capabilities/default.json` (fs scope `$APPDATA/**`,
-  opener limited to `http(s)://` URLs).
+  opener limited to `http(s)://` URLs, http fetch scoped to Apple's
+  motion-artwork endpoints — see §4).
 - **Where data lives** (per platform, all under the app-data dir):
 
   | OS | Path |
@@ -218,10 +229,12 @@ Details of what that does:
   | macOS | `~/Library/Application Support/com.samma3ni.carmen/` |
   | Linux | `~/.local/share/com.samma3ni.carmen/` (or `$XDG_DATA_HOME/…`) |
 
-  Contents: `songs/` (one folder per downloaded track), `artwork/` (cover art
-  cache for OS media controls), `carmen.db` (SQLite, managed by
-  `tauri-plugin-sql`). The frontend never hardcodes these — it calls
-  `storage_paths` once at boot.
+  Contents: `songs/` (one folder per downloaded track — `audio.<ext>`,
+  `artwork.<ext>`, `lyrics.<lrc|txt>` and, when the album has one,
+  `motion.mp4`), `motion/` (the animated-cover disk cache for streamed
+  albums), `artwork/` (cover art cache for OS media controls), `carmen.db`
+  (SQLite, managed by `tauri-plugin-sql`). The frontend never hardcodes these
+  — it calls `storage_paths` once at boot.
 
 ---
 
@@ -479,6 +492,12 @@ There is no test suite in CI — see §11.
   - [ ] battery under 20% **unplugged** → low battery mode turns itself on
         (white accent, no blur, Settings status line says *On automatically*)
         → plug in → effects return; the manual toggle survives restart
+  - [ ] animated artwork: a song with motion artwork moves in the player and
+        on cards (static cover shows first — never a blank tile); Settings →
+        *Animated artwork* off **or** low battery mode on → static again;
+        download such a song → `motion.mp4` next to the audio, plays in
+        airplane mode; stream it once → `<app data>/motion/<key>.mp4` exists
+        and the cover animates after a restart with no network
 - `AGENTS.md` still holds: verify changes by **running the server**, not via
   JS/TS tooling, when the change is server-side.
 
@@ -494,6 +513,7 @@ There is no test suite in CI — see §11.
 | `cargo` network timeouts, `error: failed to fetch` | crates.io flakiness — retry, or `export CARGO_HTTP_TIMEOUT=120 CARGO_NET_RETRY=5`; CI uses `Swatinem/rust-cache@v2`, locally just re-run. Sparse-index hiccups clear on re-run |
 | Linux: `webkit2gtk-4.1 not found`, `libayatana-appindicator` errors | Install the apt package list from §2 — required for **both** `tauri dev` and `cargo check` |
 | Windows: blank window / "WebView2 required" | Install the WebView2 Runtime (evergreen bootstrapper); VS Build Tools needed to compile |
+| Animated artwork never appears (Tauri build) | Check the `motion` console warnings: the first run scrapes Apple's ~3 MB web bundle for a ~60-day token (slow network → timeout, retry); `amp-api` 401s mean the `unsafe-headers` feature (`Cargo.toml`) or the `http:allow-fetch` scope (`capabilities/default.json`) went missing; plenty of albums simply have **no** Apple motion artwork and stay static by design. Under plain `vite dev` it is always static (no CORS path to `amp-api`) |
 | macOS: `xcrun: error: invalid active developer path` | `xcode-select --install` |
 | `vite errored ... port 1420 in use` / `strictPort` failure | Port **1420** is taken — kill the previous `npm run dev`/`tauri dev`, or another dev server. `strictPort: true` makes Vite refuse to move ports because `devUrl` expects 1420 |
 | `asset protocol ... not allowed` / `fs ... not authorized`, artwork/audio fails to load | The file is outside the **`$APPDATA/**` scope** (`tauri.conf.json` → `assetProtocol.scope`, `capabilities/default.json` → `fs:scope`). Move data under the app-data dir or extend the scope deliberately (it is a security boundary) |
