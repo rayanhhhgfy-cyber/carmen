@@ -39,6 +39,7 @@
     },
 
     "sql:default",
+    "sql:allow-execute",
 
     "opener:default",
     {
