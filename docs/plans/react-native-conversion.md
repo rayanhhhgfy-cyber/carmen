@@ -1,5 +1,7 @@
 # Samma3ni (Carmen) → React Native Cross-Platform Conversion — Implementation Plan
 
+> **STATUS — SUPERSEDED (2026-10-08). Do not execute this plan.** The project pivoted to a **Tauri v2 + React + TypeScript** implementation (see `src-tauri/`, the TS migration of `frontend/`, and `DEVELOPMENT.md`), which delivers the same specification. The RN work completed here (Tasks 1–4B: scaffold, fonts/icons, api utils, theme provider, native shells) lives on branch **`rn-work`**, and `app/` was removed in `9fe8e69`. Kept for historical reference only.
+
 > **For agentic workers:** Use subagent-driven-development or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert the existing Vite/React web audio frontend (`frontend/`) into a TypeScript React Native application shipping on Android, Windows, macOS and Linux — with close-to-tray background playback, a redesigned Now Playing experience, fully offline downloads (raw audio + synced lyrics + artwork, no ffmpeg/tagging), an embedded SQLite database for playlists/favorites/playback-state, a 4-section Library view, a Lyrics Provider setting, GitHub Actions builds for all four platforms, and a step-by-step `DEVELOPMENT.md`.
