@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Box, type BoxProps, type SxProps, type Theme } from '@mui/material';
 import type { SvgIconProps } from '@mui/material/SvgIcon';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import {
   artworkFallbacks,
@@ -9,6 +10,12 @@ import {
   paintedArtwork,
 } from '../utils/artwork';
 import { MusicNoteIcon } from './icons';
+
+/**
+ * Cross-fade duration: the new cover eases in as the old one eases out,
+ * so a track change never pops.
+ */
+const REVEAL_MS = 0.32;
 
 /** Artwork tile that goes through the throttled loader. */
 interface ArtworkProps extends BoxProps {
@@ -158,28 +165,37 @@ export default function Artwork({
       }}
       {...rest}
     >
-      {status === 'ready' && active ? (
-        <Box
-          component="img"
-          src={painted || active}
-          alt={alt}
-          onError={nextOrGiveUp}
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center',
-            animation: 'artwork-reveal 320ms ease',
-            '@keyframes artwork-reveal': {
-              from: { opacity: 0, transform: 'scale(1.04)' },
-              to: { opacity: 1, transform: 'scale(1)' },
-            },
-            ...imgSx,
-          }}
-        />
-      ) : (
+      {/* The layer stack stays mounted even while a cover is queued, so the
+          outgoing image can finish its exit fade underneath the shimmer.
+          framer animates a wrapper div; the <img> inside keeps its MUI sx
+          (including caller `imgSx`) untouched. */}
+      <AnimatePresence>
+        {status === 'ready' && active ? (
+          <motion.div
+            key={painted || active}
+            initial={{ opacity: 0, scale: 1.04 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, transition: { duration: REVEAL_MS } }}
+            transition={{ duration: REVEAL_MS, ease: 'easeOut' }}
+            style={{ position: 'absolute', inset: 0 }}
+          >
+            <Box
+              component="img"
+              src={painted || active}
+              alt={alt}
+              onError={nextOrGiveUp}
+              sx={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+                ...imgSx,
+              }}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      {status === 'ready' && active ? null : (
         <Box
           aria-hidden
           sx={{

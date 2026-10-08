@@ -1,17 +1,41 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Box, alpha, useTheme } from '@mui/material';
+import { AnimatePresence, motion } from 'framer-motion';
 
 import { usePlayer } from '../player/PlayerContext';
 import { pickArtwork, primaryArtwork } from '../utils/track';
 import { extractColor, loadArtwork } from '../utils/artwork';
 
 /**
+ * How long one cover washes out as the next washes in — inside the spec's
+ * 1–1.5s window for a background that reads as the room changing color.
+ */
+const WASH_MS = 1.2;
+
+/** Geometry of a wash layer: oversized + blurred so edges never show. */
+const LAYER_STYLE: CSSProperties = {
+  position: 'absolute',
+  top: '-15%',
+  left: '-15%',
+  width: '130%',
+  height: '130%',
+  objectFit: 'cover',
+  filter: 'blur(110px) saturate(1.7)',
+  transform: 'scale(1.06)',
+};
+
+/**
  * Site wide ambient background.
  *
  * A blurred copy of the artwork that is currently playing bleeds through the
- * whole interface, and its dominant color is pulled out (tiny canvas pass) to
- * tint a second layer on top.  Everything cross-fades so switching tracks
- * feels like the room changes color instead of the page reloading.
+ * whole interface, and its dominant color is pulled out (tiny canvas pass,
+ * cached per cover — see `extractColor`) to tint a second layer on top.
+ *
+ * **The wash cross-fades.**  The layer stack holds the outgoing and the
+ * incoming cover at once — same DOM node keyed by URL, so framer eases the
+ * old one to transparent while the new one eases in, 1.2s each, no pop and
+ * no flash of the placeholder underneath.  The tint layer slides its
+ * `background-color` on the same beat through a plain CSS transition.
  *
  * The artwork contribution runs at **50%** strength — image and tint are half
  * the opacity they would otherwise be — so the interface stays the thing you
@@ -29,19 +53,33 @@ export default function AmbientBackground() {
   const artwork =
     primaryArtwork(player.current) || pickArtwork({ thumbnails: player.meta?.thumbnails });
 
-  const [src, setSrc] = useState<string | null>(null);
+  /** The cover currently owning the top layer. */
+  const [wash, setWash] = useState<string | null>(null);
+  /** The cover the top layer replaced — kept mounted until it fades out. */
+  const [fading, setFading] = useState<string | null>(null);
+  /** What the DOM is actually showing — guards double-resolves and races. */
+  const paintedRef = useRef<string | null>(null);
   const [color, setColor] = useState<string | null>(null);
   const dark = theme.palette.mode === 'dark';
+  const washOpacity = dark ? 0.25 : 0.17;
 
   useEffect(() => {
     if (!artwork) {
-      setSrc(null);
+      paintedRef.current = null;
+      setWash(null);
+      setFading(null);
       setColor(null);
       return undefined;
     }
     let alive = true;
     loadArtwork(artwork).then((url) => {
-      if (alive) setSrc(url);
+      // A stale load must never paint over a newer track's wash, and the
+      // same bytes (revisit, StrictMode double run) are a no-op.
+      if (!alive || !url || url === paintedRef.current) return;
+      const outgoing = paintedRef.current;
+      paintedRef.current = url;
+      setFading(outgoing);
+      setWash(url);
     });
     // the color pass runs after the bytes are in the browser cache; the
     // extraction itself is cached per cover (extractColor), so coming back
@@ -57,6 +95,9 @@ export default function AmbientBackground() {
     };
   }, [artwork]);
 
+  /** Outgoing first (painted below), incoming on top; never the same URL twice. */
+  const layers = wash ? (fading && fading !== wash ? [fading, wash] : [wash]) : fading ? [fading] : [];
+
   return (
     <Box
       aria-hidden
@@ -66,31 +107,26 @@ export default function AmbientBackground() {
         zIndex: -1,
         overflow: 'hidden',
         pointerEvents: 'none',
-        opacity: src ? 1 : 0,
+        opacity: wash || fading ? 1 : 0,
         // 1.2s: slow enough to read as the room changing color when a new
         // track starts, fast enough to feel tied to it (spec window: 1–1.5s)
         transition: 'opacity 1200ms ease',
       }}
     >
-      {src && (
-        <Box
-          component="img"
-          src={src}
-          alt=""
-          sx={{
-            position: 'absolute',
-            top: '-15%',
-            left: '-15%',
-            width: '130%',
-            height: '130%',
-            objectFit: 'cover',
-            filter: 'blur(110px) saturate(1.7)',
-            // 50% of the artwork theme: half the wash, full readability
-            opacity: dark ? 0.25 : 0.17,
-            transform: 'scale(1.06)',
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {layers.map((url) => (
+          <motion.img
+            key={url}
+            src={url}
+            alt=""
+            initial={{ opacity: 0 }}
+            animate={{ opacity: url === wash ? washOpacity : 0 }}
+            exit={{ opacity: 0, transition: { duration: WASH_MS } }}
+            transition={{ duration: WASH_MS, ease: 'easeInOut' }}
+            style={LAYER_STYLE}
+          />
+        ))}
+      </AnimatePresence>
       <Box
         sx={{
           position: 'absolute',
