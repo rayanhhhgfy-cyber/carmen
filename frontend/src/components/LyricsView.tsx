@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Skeleton, Typography } from '@mui/material';
 import { Lrc, useRecoverAutoScrollImmediately, type LrcLine } from 'react-lrc';
 
-import { usePlayer } from '../player/PlayerContext';
+import { usePlayhead, usePlayer } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import type { LyricLine } from '../types/models';
 import { toLrc } from '../utils/lyrics';
@@ -55,7 +55,8 @@ const LOAD_TIMEOUT_MS = 6000;
  * when no timestamps exist, and to a quiet empty state otherwise.
  */
 export default function LyricsView({ synced, unsynced, source, loading = false }: LyricsViewProps) {
-  const { seek, currentTime, current } = usePlayer();
+  const { seek, current } = usePlayer();
+  const { currentTime } = usePlayhead();
   // Accent for the active line — `accentFg` stays legible even when the
   // white high-performance accent would vanish on a light surface.
   const { accentFg } = useTheme();

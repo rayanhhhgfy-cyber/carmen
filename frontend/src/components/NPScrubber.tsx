@@ -3,16 +3,11 @@ import { Box, LinearProgress, Slider, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 
 import { useEffectsEnabled } from '../settings/store';
+import { usePlayhead, usePlayer } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import { formatTime } from '../utils/format';
 
 interface NPScrubberProps {
-  /** Live playhead in seconds. */
-  currentTime: number;
-  /** Total length in seconds — `0` while metadata is still loading. */
-  duration: number;
-  /** How far the audio element has already buffered, in seconds. */
-  buffered: number;
   onSeek: (seconds: number) => void;
 }
 
@@ -35,7 +30,14 @@ function scalar(value: number | number[], fallback = 0): number {
  * `onChangeCommitted` also fires for keyboard changes (arrow / page / home
  * / end keys), so the bar stays fully keyboard operable.
  */
-export default function NPScrubber({ currentTime, duration, buffered, onSeek }: NPScrubberProps) {
+export default function NPScrubber({ onSeek }: NPScrubberProps) {
+  // The playhead lives in its own context (`usePlayhead`), so these
+  // per-tick updates repaint just this bar — never the whole player.
+  const { currentTime, duration: audioDuration, buffered } = usePlayhead();
+  // Until the audio reports its own length (metadata lands in
+  // milliseconds), fall back to what the track metadata already knows.
+  const { current } = usePlayer();
+  const duration = audioDuration || current?.durationSeconds || 0;
   const [scrub, setScrub] = useState<number | null>(null);
   // The glowing accent track is a painted effect — flat while high
   // performance mode is on.

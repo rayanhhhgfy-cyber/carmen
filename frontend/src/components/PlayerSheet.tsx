@@ -113,7 +113,6 @@ export default function PlayerSheet() {
   const track = player.current;
   const meta = player.meta;
   const videoId = track?.videoId;
-  const duration = player.duration || track?.durationSeconds || 0;
 
   // ── Swipe-to-dismiss bookkeeping (phone handle) ─────────────────────────
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -477,14 +476,7 @@ export default function PlayerSheet() {
     </Stack>
   );
 
-  const scrubber = (
-    <NPScrubber
-      currentTime={player.currentTime}
-      duration={duration}
-      buffered={player.buffered}
-      onSeek={player.seek}
-    />
-  );
+  const scrubber = <NPScrubber onSeek={player.seek} />;
 
   /** Lyrics / queue / related, shared by the phone panel and the desktop column. */
   const panel = (

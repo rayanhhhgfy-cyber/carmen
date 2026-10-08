@@ -51,9 +51,6 @@ export interface PlayerContextValue {
   buffering: boolean;
   error: string | null;
   dismissError: () => void;
-  currentTime: number;
-  duration: number;
-  buffered: number;
   shuffle: boolean;
   repeat: RepeatMode;
   sheetOpen: boolean;
@@ -74,6 +71,28 @@ export interface PlayerContextValue {
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
+
+/**
+ * Playback position — deliberately **not** part of `PlayerContext`.
+ *
+ * `timeupdate` fires several times a second while a song plays; if the
+ * playhead lived in the main context, every consumer (home grids, queue
+ * rows, the whole Now Playing sheet) would repaint on every tick, and
+ * that main-thread churn is what made the motion artwork video stutter
+ * *only while audio played*. Only the scrubber, the lyrics follow and
+ * the mini-player bar subscribe here — small trees, so a tick costs
+ * almost nothing.
+ */
+export interface PlayheadContextValue {
+  /** Current position in seconds. */
+  currentTime: number;
+  /** Audio length in seconds — `0` until metadata lands. */
+  duration: number;
+  /** How far the element has buffered ahead of the playhead (seconds). */
+  buffered: number;
+}
+
+const PlayheadContext = createContext<PlayheadContextValue | null>(null);
 
 const HISTORY_LIMIT = 100;
 
@@ -240,6 +259,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     setBuffered((previous) => (Math.abs(previous - end) > 0.2 ? end : previous));
   }
+
+  /**
+   * A stall earns the spinner — and a repaint of every `buffering`
+   * consumer — only once it *lasts*: streams flap `waiting`/`playing` in
+   * bursts while a song plays, and each flip used to repaint the whole
+   * app. Track starts set `buffering` directly (see the play paths), so
+   * the loading spinner still appears immediately there.
+   */
+  const stallTimer = useRef<number | null>(null);
+  const flagStall = useCallback(() => {
+    if (stallTimer.current !== null) return;
+    stallTimer.current = window.setTimeout(() => setBuffering(true), 250);
+  }, []);
+  const clearStall = useCallback(() => {
+    if (stallTimer.current !== null) {
+      window.clearTimeout(stallTimer.current);
+      stallTimer.current = null;
+    }
+    setBuffering(false);
+  }, []);
 
   // ── Queue / track selection ─────────────────────────────────────────────
 
@@ -680,9 +719,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       buffering,
       error,
       dismissError,
-      currentTime,
-      duration,
-      buffered,
       shuffle,
       repeat,
       sheetOpen,
@@ -712,9 +748,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       buffering,
       error,
       dismissError,
-      currentTime,
-      duration,
-      buffered,
       shuffle,
       repeat,
       sheetOpen,
@@ -734,9 +767,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  /** The per-tick position value, kept apart from the stable one above. */
+  const playhead = useMemo<PlayheadContextValue>(
+    () => ({ currentTime, duration, buffered }),
+    [currentTime, duration, buffered],
+  );
+
   return (
     <PlayerContext.Provider value={value}>
-      {children}
+      <PlayheadContext.Provider value={playhead}>
+        {children}
+      </PlayheadContext.Provider>
       {/* No volume control: the element plays at full level and the OS mixer
           owns loudness, so the player keeps no volume state at all. */}
       <audio
@@ -744,9 +785,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         preload="auto"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onPlaying={() => setBuffering(false)}
-        onWaiting={() => setBuffering(true)}
-        onCanPlay={() => setBuffering(false)}
+        onPlaying={clearStall}
+        onWaiting={flagStall}
+        onCanPlay={clearStall}
         onProgress={syncBuffered}
         onTimeUpdate={(event) => {
           positionRef.current = event.currentTarget.currentTime;
@@ -780,5 +821,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 export function usePlayer(): PlayerContextValue {
   const context = useContext(PlayerContext);
   if (!context) throw new Error('usePlayer must be used inside PlayerProvider');
+  return context;
+}
+
+/**
+ * Live playback position (see `PlayheadContextValue`). Subscribe here —
+ * not through `usePlayer` — when a component only needs the moving
+ * playhead, so per-tick updates repaint just that component.
+ */
+export function usePlayhead(): PlayheadContextValue {
+  const context = useContext(PlayheadContext);
+  if (!context) throw new Error('usePlayhead must be used inside PlayerProvider');
   return context;
 }

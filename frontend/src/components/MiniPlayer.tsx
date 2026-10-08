@@ -1,7 +1,7 @@
 import { Box, IconButton, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import CircularProgress from '@mui/material/CircularProgress';
-import { usePlayer } from '../player/PlayerContext';
+import { usePlayhead, usePlayer } from '../player/PlayerContext';
 import { useEffectsEnabled } from '../settings/store';
 import Artwork from './Artwork';
 import MarqueeText from './MarqueeText';
@@ -27,6 +27,9 @@ export interface MiniPlayerProps {
  */
 export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
   const player = usePlayer();
+  // Progress ticks come from the playhead context — the mini bar re-renders
+  // per tick, nothing else does (see `usePlayhead`).
+  const { currentTime, duration, buffered: bufferedSecs } = usePlayhead();
   const track = player.current;
   // The glass card (blur + translucent fill) and the accent glow on the
   // progress line are the first things low battery mode gives up.
@@ -34,9 +37,9 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
 
   if (!track) return null;
 
-  const progress = player.duration ? (player.currentTime / player.duration) * 100 : 0;
-  const buffered = player.duration
-    ? Math.min((player.buffered / player.duration) * 100, 100)
+  const progress = duration ? (currentTime / duration) * 100 : 0;
+  const buffered = duration
+    ? Math.min((bufferedSecs / duration) * 100, 100)
     : 0;
 
   return (
