@@ -1,3 +1,23 @@
+import Artwork from "./Artwork";
+import DownloadButton from "./DownloadButton";
+import LyricsView from "./LyricsView";
+import MarqueeText from "./MarqueeText";
+import NPControls from "./NPControls";
+import NPFavorite from "./NPFavorite";
+import NPQueue from "./NPQueue";
+import NPScrubber from "./NPScrubber";
+import PlayerMenu from "./PlayerMenu";
+import RelatedTab from "./RelatedTab";
+import { alpha } from "@mui/material/styles";
+import { useNavigate } from "react-router-dom";
+import { streamUrl } from "../api";
+import { localAssetSource } from "../offline/source";
+import { usePlayer } from "../player/PlayerContext";
+import { useEffectsEnabled } from "../settings/store";
+import { useTheme as useAppTheme } from "../theme/ThemeContext";
+import { lyricsOf } from "../utils/lyrics";
+import { pickArtwork } from "../utils/track";
+
 import {
   forwardRef,
   useEffect,
@@ -24,26 +44,7 @@ import {
   useTheme,
   type SlideProps,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import { useNavigate } from 'react-router-dom';
 
-import { streamUrl } from '../api';
-import { localAssetSource } from '../offline/source';
-import { usePlayer } from '../player/PlayerContext';
-import { useEffectsEnabled } from '../settings/store';
-import { useTheme as useAppTheme } from '../theme/ThemeContext';
-import { lyricsOf } from '../utils/lyrics';
-import { pickArtwork } from '../utils/track';
-import Artwork from './Artwork';
-import DownloadButton from './DownloadButton';
-import LyricsView from './LyricsView';
-import MarqueeText from './MarqueeText';
-import NPControls from './NPControls';
-import NPFavorite from './NPFavorite';
-import NPQueue from './NPQueue';
-import NPScrubber from './NPScrubber';
-import PlayerMenu from './PlayerMenu';
-import RelatedTab from './RelatedTab';
 import {
   CloseIcon,
   ExpandMoreIcon,
@@ -309,7 +310,7 @@ export default function PlayerSheet() {
       <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
         {isDesktop ? <CloseIcon /> : <ExpandMoreIcon />}
       </IconButton>
-      <Typography
+      {/* <Typography
         variant="caption"
         sx={{
           letterSpacing: '0.14em',
@@ -319,7 +320,7 @@ export default function PlayerSheet() {
         }}
       >
         Now playing
-      </Typography>
+      </Typography> */}
       <Box sx={{ flex: 1 }} />
       <PlayerMenu track={track} meta={meta} />
     </Stack>
