@@ -67,7 +67,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <PlayerProvider>
-        <HashRouter>
+        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <RoutePersistence />
           <RouteGuard />
           <Routes>
