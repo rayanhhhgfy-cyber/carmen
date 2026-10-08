@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Box, type BoxProps, type SxProps, type Theme } from '@mui/material';
 import type { SvgIconProps } from '@mui/material/SvgIcon';
 
-import { useMotionArtwork, type MotionArtworkRef } from '../artwork/motion';
-import { useAnimatedArtwork } from '../settings/store';
 import {
   artworkFallbacks,
   isArtworkReady,
@@ -22,14 +20,6 @@ interface ArtworkProps extends BoxProps {
   iconSize?: number;
   /** Styles of the `<img>` itself (blur, scale, …). */
   imgSx?: SxProps<Theme>;
-  /**
-   * Animated (motion) cover identity: the album title (+ artist, for a
-   * precise catalogue match), plus the track id when it is downloaded (so
-   * an offline copy plays from the song folder). Songs that carry no album
-   * pass their `title`/`artist` instead — they resolve through an iTunes
-   * *song* search. `null` / absent keeps the tile static.
-   */
-  motion?: MotionArtworkRef | null;
 }
 
 /**
@@ -60,11 +50,9 @@ export default function Artwork({
   iconSize = 40,
   sx,
   imgSx,
-  motion,
   ...rest
 }: ArtworkProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   // Ordered candidates for this artwork; index 0 is the one we want.
   const chain = useMemo(() => (src ? [src, ...artworkFallbacks(src)] : []), [src]);
@@ -84,40 +72,6 @@ export default function Artwork({
 
   const active = chain[Math.min(step, Math.max(chain.length - 1, 0))] || null;
   const painted = paint.key === active ? paint.url : null;
-
-  // Animated cover: gated on the settings toggle (low battery mode turns it
-  // off on top) *and* on the tile being near the viewport — the same gate
-  // the image loader uses, so off-screen grids resolve nothing.
-  const animatedArtwork = useAnimatedArtwork();
-  const motionUrl = useMotionArtwork(motion, animatedArtwork && near);
-  // The video swaps in only once it can actually play: until then the
-  // static cover is exactly what the user sees.
-  const [videoReady, setVideoReady] = useState(false);
-
-  useEffect(() => {
-    setVideoReady(false);
-  }, [motionUrl]);
-
-  // The loop must not decode offscreen — pause whenever the artwork box
-  // leaves the viewport, resume (autoplay) when it returns.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!motionUrl || !video || typeof IntersectionObserver === 'undefined') return undefined;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            void video.play().catch(() => {});
-          } else {
-            video.pause();
-          }
-        }
-      },
-      { threshold: 0.02 },
-    );
-    observer.observe(video);
-    return () => observer.disconnect();
-  }, [motionUrl]);
 
   // A new artwork restarts the chain at its best size.
   useEffect(() => {
@@ -255,32 +209,6 @@ export default function Artwork({
             <Icon sx={{ fontSize: iconSize }} />
           ) : null}
         </Box>
-      )}
-      {motionUrl && (
-        <Box
-          component="video"
-          ref={videoRef}
-          src={motionUrl}
-          autoPlay
-          loop
-          muted
-          playsInline
-          onCanPlay={() => setVideoReady(true)}
-          onError={() => setVideoReady(false)}
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 2,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center',
-            pointerEvents: 'none',
-            opacity: videoReady ? 1 : 0,
-            transition: 'opacity 400ms ease',
-          }}
-        />
       )}
     </Box>
   );

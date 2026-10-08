@@ -727,7 +727,8 @@ export async function saveMotionArtwork(
 }
 
 /**
- * Resolves the animated cover for one tile.
+ * Resolves the animated cover for one consumer — `PlayerSheet` renders it
+ * either across the whole card (desktop) or behind the lyrics (phone).
  *
  * Returns the URL once it is *playable-or-remotely-available* — the caller
  * keeps the static cover on screen until then. `null` means "stay static",

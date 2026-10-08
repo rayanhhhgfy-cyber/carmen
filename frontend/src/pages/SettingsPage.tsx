@@ -381,9 +381,9 @@ export default function SettingsPage() {
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   Album covers that move in the Now Playing screen, fetched
-                  from Apple's iTunes catalogue — the lyrics view plays the
-                  same loop as its background. Downloads keep a copy for
-                  offline playback.
+                  from Apple's iTunes catalogue — the whole card on
+                  desktop, the lyrics page on a phone. Downloads keep a
+                  copy for offline playback.
                 </Typography>
                 {animatedArtwork && lowBatteryActive && (
                   <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>

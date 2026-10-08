@@ -130,11 +130,11 @@ export default function PlayerSheet() {
 
   const lyrics = useMemo(() => lyricsOf(meta), [meta]);
 
-  // Animated cover identity for this track — the sheet's own artwork and
-  // the lyrics background both resolve through it (memoised in
-  // `artwork/motion`, so the two consumers share one lookup). Now Playing
-  // is the only screen that animates; every grid stays static (Apple
-  // Music does the same).
+  // Animated cover identity for this track — the sheet resolves it once
+  // (memoised in `artwork/motion`) and renders it as the video layers
+  // below: the whole card on desktop, only the lyrics page on a phone.
+  // Now Playing is the only screen that animates; every cover tile and
+  // grid stays static (Apple Music does the same).
   const motionRef = track
     ? {
         album: track.albumName,
@@ -151,6 +151,12 @@ export default function PlayerSheet() {
   useEffect(() => {
     setMotionReady(false);
   }, [motionUrl]);
+  // Readability scrim shared by both motion layers — theme-coloured so the
+  // light mode sheet stays light and the dark one stays dark.
+  const motionScrim =
+    theme.palette.mode === 'dark'
+      ? 'linear-gradient(180deg, rgba(10,13,11,0.48) 0%, rgba(10,13,11,0.72) 100%)'
+      : 'linear-gradient(180deg, rgba(246,247,246,0.62) 0%, rgba(246,247,246,0.82) 100%)';
 
   const handleClose = () => {
     setPanelOpen(false);
@@ -357,7 +363,6 @@ export default function PlayerSheet() {
         src={artwork}
         alt={track.albumName || track.title}
         iconSize={72}
-        motion={motionRef}
         sx={{
           position: 'relative',
           zIndex: 1,
@@ -544,12 +549,12 @@ export default function PlayerSheet() {
           overflow: 'hidden',
         }}
       >
-        {/* The animated cover, fitted edge-to-edge behind the lyrics: the
-            same loop the Now Playing artwork plays, under a theme-coloured
-            scrim so every line stays readable on top of moving pixels.
-            It mounts only with the lyrics tab — queue and related keep the
-            plain surface. */}
-        {tab === LYRICS_TAB && motionUrl && (
+        {/* Phone only: the animated cover, fitted edge-to-edge behind the
+            lyrics under a theme-coloured scrim, so every line stays
+            readable on top of moving pixels. A phone animates nowhere else
+            — on desktop the whole card carries the loop instead, and queue
+            and related keep the plain surface. */}
+        {tab === LYRICS_TAB && motionUrl && !isDesktop && (
           <>
             <Box
               component="video"
@@ -580,10 +585,9 @@ export default function PlayerSheet() {
                 inset: 0,
                 zIndex: 1,
                 pointerEvents: 'none',
-                background:
-                  theme.palette.mode === 'dark'
-                    ? 'linear-gradient(180deg, rgba(10,13,11,0.48) 0%, rgba(10,13,11,0.72) 100%)'
-                    : 'linear-gradient(180deg, rgba(246,247,246,0.62) 0%, rgba(246,247,246,0.82) 100%)',
+                background: motionScrim,
+                opacity: motionReady ? 1 : 0,
+                transition: 'opacity 400ms ease',
               }}
             />
           </>
@@ -704,7 +708,6 @@ export default function PlayerSheet() {
           src={artwork}
           alt=""
           iconSize={20}
-          motion={motionRef}
           sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0 }}
         />
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -812,6 +815,50 @@ export default function PlayerSheet() {
         }}
       >
         {backdrop}
+        {/* Desktop: the motion cover spans the whole Now Playing card —
+            one fitted video under the shared scrim, painted above the
+            backdrop but below every piece of content (the body and header
+            carry their own z-index). The static cover tile and the controls
+            sit on top of it; on a phone this layer never mounts — there the
+            loop plays only behind the lyrics panel. */}
+        {isDesktop && motionUrl && (
+          <>
+            <Box
+              component="video"
+              src={motionUrl}
+              autoPlay
+              loop
+              muted
+              playsInline
+              onCanPlay={() => setMotionReady(true)}
+              onError={() => setMotionReady(false)}
+              aria-hidden
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                opacity: motionReady ? 1 : 0,
+                transition: 'opacity 400ms ease',
+                pointerEvents: 'none',
+              }}
+            />
+            <Box
+              aria-hidden
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 1,
+                pointerEvents: 'none',
+                background: motionScrim,
+                opacity: motionReady ? 1 : 0,
+                transition: 'opacity 400ms ease',
+              }}
+            />
+          </>
+        )}
         {!isDesktop && strip}
         {showHeader && header}
         {isDesktop ? desktopBody : panelOpen ? mobilePanel : mobileMain}

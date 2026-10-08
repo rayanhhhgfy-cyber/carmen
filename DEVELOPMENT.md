@@ -182,8 +182,10 @@ npm run dev:frontend        # = npm --prefix frontend run dev → vite
   `app_state.motionUrls`, token in `app_state.motionToken`), caches the video
   under `<app data>/motion/`, and is switched off by Settings →
   *Animated artwork* or by low battery mode. It renders **only in the Now
-  Playing sheet** (home/search/queue cards stay static, Apple-Music style);
-  the lyrics tab plays the same loop, fitted, as its background. Resolution
+  Playing sheet** (home/search/queue cards *and* the cover tiles stay
+  static, Apple-Music style): on desktop the loop is fitted over the whole
+  card — video + scrim behind every piece of content — while a phone plays
+  it only behind the lyrics panel. Resolution
   starts only while the sheet is open, so plain listening costs no catalogue
   calls. Settings → *Blur effects* and *Artwork background* independently
   switch off the glass surfaces and the ambient artwork wash.
@@ -497,10 +499,11 @@ There is no test suite in CI — see §11.
   - [ ] battery under 20% **unplugged** → low battery mode turns itself on
         (white accent, no blur, Settings status line says *On automatically*)
         → plug in → effects return; the manual toggle survives restart
-  - [ ] animated artwork: **only** the Now Playing sheet animates (home /
-        search / queue cards stay static), and the lyrics tab plays the same
-        loop fitted as its background (static cover shows first — never a
-        blank tile); Settings → *Animated artwork* off **or** low battery mode
+  - [ ] animated artwork: **only** the Now Playing sheet animates —
+        desktop: the loop covers the whole card (fitted + scrimmed, cover
+        tiles static); phone: only the lyrics page animates (home / search
+        / queue cards static); static cover shows first — never a
+        blank tile; Settings → *Animated artwork* off **or** low battery mode
         on → static again; download such a song → `motion.mp4` next to the
         audio, plays in airplane mode; stream it once →
         `<app data>/motion/<key>.mp4` exists and the cover animates after a

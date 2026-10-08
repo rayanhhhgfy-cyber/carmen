@@ -152,8 +152,8 @@ export interface AppSettings {
   /**
    * Animated album artwork — covers that move in the Now Playing screen,
    * resolved through Apple's iTunes / amp-api catalogue (see
-   * `artwork/motion.ts`); the lyrics view plays the same loop as its
-   * background. On by default; low battery mode switches it off on top of
+   * `artwork/motion.ts`): the whole card on desktop, only the lyrics page
+   * on a phone. On by default; low battery mode switches it off on top of
    * this toggle.
    */
   animatedArtwork: boolean;
