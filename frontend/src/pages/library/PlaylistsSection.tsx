@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Box, Button, IconButton, Menu, MenuItem, Skeleton, Tooltip, Typography } from '@mui/material';
 
+import MarqueeText from '../../components/MarqueeText';
 import {
   createPlaylist,
   deletePlaylist,
@@ -147,6 +148,9 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                 onClick={() => onOpen(playlist.id)}
                 sx={{
                   width: '100%',
+                  // No automatic minimum: a long playlist name clips +
+                  // scrolls inside the cell instead of inflating the card.
+                  minWidth: 0,
                   p: 0,
                   m: 0,
                   border: 0,
@@ -174,9 +178,7 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                   }}
                 />
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                    {playlist.name}
-                  </Typography>
+                  <MarqueeText text={playlist.name} variant="body2" sx={{ fontWeight: 600 }} />
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                     {playlist.trackCount} song{playlist.trackCount === 1 ? '' : 's'}
                   </Typography>

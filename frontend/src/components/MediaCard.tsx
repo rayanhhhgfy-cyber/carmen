@@ -121,6 +121,10 @@ export default function MediaCard({
   const buttonSx: SxProps<Theme> = {
     width: boxWidth as never,
     flex: isFluid ? 'auto' : `0 0 ${boxWidth}`,
+    // Grid/flex children default to an automatic minimum of their
+    // min-content width — a nowrap title would inflate the card over its
+    // neighbours and defeat MarqueeText's overflow measurement.
+    minWidth: 0,
     p: 0,
     m: 0,
     border: 'none',

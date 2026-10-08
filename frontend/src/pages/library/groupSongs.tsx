@@ -83,6 +83,9 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
       }}
       sx={{
         width: '100%',
+        // Opt out of the automatic (min-content) minimum so a long name
+        // clips + scrolls inside the cell instead of inflating the card.
+        minWidth: 0,
         p: 0,
         m: 0,
         border: 0,

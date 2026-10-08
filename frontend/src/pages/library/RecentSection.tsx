@@ -73,6 +73,9 @@ export default function RecentSection() {
                 sx={{
                   width: 136,
                   flex: '0 0 136px',
+                  // No automatic minimum: a long title must clip + scroll
+                  // inside the tile, not widen it over its neighbours.
+                  minWidth: 0,
                   p: 0,
                   m: 0,
                   border: 0,
