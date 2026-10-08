@@ -63,6 +63,44 @@ export const FONTS: FontOption[] = [
 
 export const DEFAULT_FONT: FontId = 'alexandria';
 
+/**
+ * The two surface palettes — **single source of truth** for both theme
+ * engines: MUI wears it through `buildTheme`, Tailwind through the `--app-*`
+ * custom properties `ThemeProvider` publishes on `<html>` (see
+ * `styles.css`).  Editing a colour here restyles the whole migration.
+ */
+const PALETTE = {
+  dark: {
+    bg: '#0a0d0b',
+    paper: '#121714',
+    text: '#f1f4f2',
+    textSecondary: 'rgba(241,244,242,0.62)',
+    divider: 'rgba(255,255,255,0.09)',
+  },
+  light: {
+    bg: '#f6f7f6',
+    paper: '#ffffff',
+    text: '#12160f',
+    textSecondary: 'rgba(18,22,15,0.62)',
+    divider: 'rgba(0,0,0,0.09)',
+  },
+} as const;
+
+/**
+ * The palette of a resolved mode as CSS custom properties — the Tailwind
+ * twin of `buildTheme`'s `palette` block, applied on `documentElement`.
+ */
+export function cssPalette(mode: 'light' | 'dark'): Record<string, string> {
+  const colors = PALETTE[mode];
+  return {
+    '--app-bg': colors.bg,
+    '--app-paper': colors.paper,
+    '--app-text': colors.text,
+    '--app-text-secondary': colors.textSecondary,
+    '--app-divider': colors.divider,
+  };
+}
+
 /** Resolve a font id into a CSS font stack (unknown ids fall back to system). */
 export function fontStack(fontId: FontId): string {
   const match = FONTS.find((font) => font.id === fontId);
@@ -77,23 +115,15 @@ export function fontStack(fontId: FontId): string {
  * @param fontId selected font id (see {@link FONTS})
  */
 export function buildTheme(mode: 'light' | 'dark', accent: string, fontId: FontId = DEFAULT_FONT) {
-  const dark = mode === 'dark';
+  const colors = PALETTE[mode];
 
   return createTheme({
     palette: {
       mode,
       primary: { main: accent },
-      ...(dark
-        ? {
-            background: { default: '#0a0d0b', paper: '#121714' },
-            text: { primary: '#f1f4f2', secondary: 'rgba(241,244,242,0.62)' },
-            divider: 'rgba(255,255,255,0.09)',
-          }
-        : {
-            background: { default: '#f6f7f6', paper: '#ffffff' },
-            text: { primary: '#12160f', secondary: 'rgba(18,22,15,0.62)' },
-            divider: 'rgba(0,0,0,0.09)',
-          }),
+      background: { default: colors.bg, paper: colors.paper },
+      text: { primary: colors.text, secondary: colors.textSecondary },
+      divider: colors.divider,
     },
     shape: { borderRadius: 14 },
     typography: {

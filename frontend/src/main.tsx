@@ -11,6 +11,7 @@ import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
 import { hydrateLibrary } from './utils/library';
 import './fonts';
+import './styles.css';
 
 /**
  * Bootstrap runs **before** the first render so the app never paints with the

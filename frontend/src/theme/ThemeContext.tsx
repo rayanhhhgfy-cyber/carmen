@@ -10,7 +10,7 @@ import {
 import { CssBaseline, ThemeProvider as MuiThemeProvider } from '@mui/material';
 
 import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
-import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme } from '../theme';
+import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme, cssPalette, fontStack } from '../theme';
 import type { FontId, ThemeMode } from '../types/models';
 
 /** What {@link useTheme} answers — one entry per theme engine setting. */
@@ -173,6 +173,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', accentInUse);
   }, [accentInUse]);
+
+  /**
+   * Publish the live theme onto `<html>` for the Tailwind side of the app:
+   * `data-theme` drives the `dark:` variant, the `--app-*` properties feed
+   * the `@theme` tokens in `styles.css`.  Mirrors `buildTheme` exactly (the
+   * palette itself is single-sourced in `theme.ts`), so both engines wear
+   * the same colours while MUI and Tailwind coexist.
+   */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = resolved;
+    const tokens: Record<string, string> = {
+      ...cssPalette(resolved),
+      '--app-accent': accentInUse,
+      '--app-accent-fg': accentFg,
+      '--app-font': fontStack(font),
+    };
+    for (const [name, value] of Object.entries(tokens)) {
+      root.style.setProperty(name, value);
+    }
+  }, [resolved, accentInUse, accentFg, font]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({

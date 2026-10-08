@@ -1,0 +1,41 @@
+/*
+ * Tailwind v4 entry.
+ *
+ * **Preflight is deliberately skipped.**  MUI's `CssBaseline` still owns the
+ * base layer while the migration runs; two resets fighting over the same
+ * elements would turn every transition into double debugging.  The two
+ * imports below are exactly what `@import "tailwindcss"` expands to minus
+ * `preflight.css` — once the last `@mui/material` import is gone, collapse
+ * them into that single line.
+ *
+ * **Theme bridge.**  `ThemeProvider` writes the live theme onto `<html>`:
+ * `data-theme="light|dark"` plus `--app-*` custom properties (accent,
+ * accent-fg, font, palette).  The `@theme` block maps those onto Tailwind's
+ * namespace, so `bg-surface`, `text-muted`, `border-line`, `font-ui` and
+ * `bg-accent` track the Settings choices — accent included, which still
+ * changes per track while adaptive accenting is on.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* The app's own dark switch: `data-theme` on <html>, not the OS preference
+   (Settings has a light/dark/system tri-state and the first two must win). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  /* Published by ThemeProvider — dynamic at runtime. */
+  --color-accent: var(--app-accent, #4caf50);
+  --color-accent-fg: var(--app-accent-fg, #ffffff);
+  --color-bg: var(--app-bg, #f6f7f6);
+  --color-surface: var(--app-paper, #ffffff);
+  --color-body: var(--app-text, #12160f);
+  --color-muted: var(--app-text-secondary, rgba(18, 22, 15, 0.62));
+  --color-line: var(--app-divider, rgba(0, 0, 0, 0.09));
+  --font-ui: var(--app-font, "Alexandria", system-ui, sans-serif);
+
+  /* Static design tokens of the Carmen identity (match `buildTheme`). */
+  --radius-card: 14px;
+  --radius-tile: 16px;
+  --shadow-glass: 0 12px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
+}
