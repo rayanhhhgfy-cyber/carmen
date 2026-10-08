@@ -24,6 +24,13 @@ tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Battery reading for the low-battery auto mode (macOS / Linux WebKit has no
+# Battery Status API). Android is excluded on purpose: the crate has no
+# backend there (`compile_error!`) — its webview is Chromium and reports the
+# battery through `navigator.getBattery` instead.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+battery = "0.7"
+
 [profile.release]
 codegen-units = 1
 lto = true

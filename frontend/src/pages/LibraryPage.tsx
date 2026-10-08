@@ -120,7 +120,7 @@ export default function LibraryPage() {
 
       {/* Sticky under the app bar's Toolbar (56/64px); translucent + blurred
           like the bar itself so rows fade away beneath it while scrolling —
-          the blur drops out in high performance mode (the tint alone still
+          the blur drops out in low battery mode (the tint alone still
           separates it from the rows underneath). */}
       <Tabs
         value={tab}

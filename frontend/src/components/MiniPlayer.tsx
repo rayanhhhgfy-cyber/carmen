@@ -29,7 +29,7 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
   const player = usePlayer();
   const track = player.current;
   // The glass card (blur + translucent fill) and the accent glow on the
-  // progress line are the first things high performance mode gives up.
+  // progress line are the first things low battery mode gives up.
   const effectsEnabled = useEffectsEnabled();
 
   if (!track) return null;

@@ -46,6 +46,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
             commands::app::storage_paths,
+            commands::battery::battery_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Carmen")

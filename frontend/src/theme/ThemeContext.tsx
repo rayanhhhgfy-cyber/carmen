@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { CssBaseline, ThemeProvider as MuiThemeProvider } from '@mui/material';
 
-import { updateSettings, useSettings } from '../settings/store';
+import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
 import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme } from '../theme';
 import type { FontId, ThemeMode } from '../types/models';
 
@@ -24,7 +24,7 @@ export interface ThemeContextValue {
   /**
    * The accent the theme actually wears: the adaptive colour while artwork
    * theming has one, otherwise the chosen accent — and always white while
-   * high performance mode is on.
+   * low battery mode is on.
    */
   accentInUse: string;
   /**
@@ -38,7 +38,7 @@ export interface ThemeContextValue {
   accentFg: string;
   /**
    * Whether artwork theming is *actually* running — the stored switch, but
-   * forced off while high performance mode is on (the stored choice itself
+   * forced off while low battery mode is on (the stored choice itself
    * is kept, so leaving the mode restores it).
    */
   adaptiveAccent: boolean;
@@ -53,10 +53,10 @@ export interface ThemeContextValue {
 }
 
 /**
- * Accent high performance mode pins the whole app to: no artwork theming,
+ * Accent low battery mode pins the whole app to: no artwork theming,
  * no hue of its own (see Settings).
  */
-const HIGH_PERFORMANCE_ACCENT = '#ffffff';
+const LOW_BATTERY_ACCENT = '#ffffff';
 
 /**
  * Relative luminance of a `#rrggbb` colour (0 = black, 1 = white).
@@ -81,11 +81,12 @@ function luminance(hex: string): number {
  * in the settings store (SQLite, hydrated in `main.tsx` before the first
  * render) and the system mode follows `prefers-color-scheme` live.
  *
- * High performance mode outranks both colour settings: it forces adaptive
- * off and pins the accent to white, and because this component is the only
- * place the accent is decided (it feeds `buildTheme`, i.e.
- * `palette.primary.main`, and the theme-color meta tag), every consumer
- * follows without knowing the mode exists.
+ * Low battery mode outranks both colour settings: it forces adaptive
+ * off and pins the accent to white — manually, or by itself below 20%
+ * battery — and because this component is the only place the accent is
+ * decided (it feeds `buildTheme`, i.e. `palette.primary.main`, and the
+ * theme-color meta tag), every consumer follows without knowing the mode
+ * exists.
  */
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -100,8 +101,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     accent,
     adaptiveAccent: adaptiveSwitch,
     font,
-    highPerformance,
   } = useSettings();
+  // Effective mode — the manual toggle or the automatic low-battery kick-in.
+  const lowBatteryMode = useLowBatteryMode();
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
   // Colour read out of the playing song's cover — session state, because it
   // is re-derived from the artwork every time a track starts (see
@@ -132,11 +134,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     updateSettings({ adaptiveAccent: Boolean(next) });
   }, []);
 
-  // High performance mode outranks the adaptive switch — artwork theming
+  // Low battery mode outranks the adaptive switch — artwork theming
   // counts as off while it is on.  Everything downstream (this provider,
   // the sampler in adaptiveAccent.ts, Settings) reads this effective value,
   // never the stored switch.
-  const adaptiveAccent = adaptiveSwitch && !highPerformance;
+  const adaptiveAccent = adaptiveSwitch && !lowBatteryMode;
 
   // Switching adaptive off goes back to the accent picked in Settings
   // straight away, whoever flipped the switch.
@@ -148,9 +150,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Adaptive only wins while it is switched on *and* a cover has actually
   // been read; otherwise the accent chosen in Settings is what the app wears.
-  // High performance mode pins that to white, so neither ever shows.
-  const accentInUse = highPerformance
-    ? HIGH_PERFORMANCE_ACCENT
+  // Low battery mode pins that to white, so neither ever shows.
+  const accentInUse = lowBatteryMode
+    ? LOW_BATTERY_ACCENT
     : adaptiveAccent && adaptiveColor
       ? adaptiveColor
       : accent;

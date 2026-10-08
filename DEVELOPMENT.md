@@ -21,7 +21,7 @@ Carmen is three cooperating pieces:
         │  Tauri v2 shell — src-tauri/ (Rust)                      │
         │  identifier: com.samma3ni.carmen                         │
         │  · close-to-tray lifecycle + system tray (src/tray.rs)   │
-        │  · commands: app_info, storage_paths (src/commands/)     │
+        │  · commands: app_info, storage_paths, battery_status     │
         │  · plugins: fs · sql (SQLite) · opener · window-state    │
         │  · asset protocol + fs scope: $APPDATA/**                │
         │                                                          │
@@ -203,8 +203,11 @@ Details of what that does:
   right click opens the menu — *Open Carmen*, *Play / Pause* (label kept in
   sync by the frontend through `tray://state`), *Next track* (`tray://action`
   events), *Quit Carmen* (the only path that exits the process).
-- **Commands**: `app_info` (name/version/platform/arch) and `storage_paths`
-  (below) — everything else goes through the fs/sql/opener plugins, which are
+- **Commands**: `app_info` (name/version/platform/arch), `storage_paths`
+  (below) and `battery_status` (charge level for the low-battery auto mode —
+  `supported: false` where no backend exists, e.g. Android webviews, which
+  report through `navigator.getBattery` instead) — everything else goes
+  through the fs/sql/opener plugins, which are
   gated by `src-tauri/capabilities/default.json` (fs scope `$APPDATA/**`,
   opener limited to `http(s)://` URLs).
 - **Where data lives** (per platform, all under the app-data dir):
@@ -473,6 +476,9 @@ There is no test suite in CI — see §11.
   - [ ] download a song → plays offline (airplane mode), artwork/title from local files
   - [ ] create/add/favorite a playlist → survives restart (`playlists`/`playlist_tracks`/`favorites`)
   - [ ] a lyrics-provider setting persists and changes the lyrics source
+  - [ ] battery under 20% **unplugged** → low battery mode turns itself on
+        (white accent, no blur, Settings status line says *On automatically*)
+        → plug in → effects return; the manual toggle survives restart
 - `AGENTS.md` still holds: verify changes by **running the server**, not via
   JS/TS tooling, when the change is server-side.
 

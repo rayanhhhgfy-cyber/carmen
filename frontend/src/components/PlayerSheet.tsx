@@ -99,7 +99,7 @@ export default function PlayerSheet() {
   const navigate = useNavigate();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
   // The blurred artwork layers (glow behind the cover, wash behind the
-  // sheet) are the expensive part of this screen — high performance mode
+  // sheet) are the expensive part of this screen — low battery mode
   // drops them and keeps the plain surfaces.
   const effectsEnabled = useEffectsEnabled();
 

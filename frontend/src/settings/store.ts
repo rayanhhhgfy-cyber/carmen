@@ -11,6 +11,7 @@ import { useSyncExternalStore } from 'react';
 
 import { getSetting, setSetting } from '../db/repos/settings';
 import type { AppSettings, FontId, LyricsProvider, SettingsKey, ThemeMode } from '../types/models';
+import { isBatteryLow, useBattery } from './battery';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   themeMode: 'system',
@@ -19,7 +20,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   font: 'alexandria',
   lyricsProvider: 'auto',
   apiBase: '',
-  highPerformance: false,
+  lowBatteryMode: false,
 };
 
 const KEYS: SettingsKey[] = [
@@ -29,7 +30,7 @@ const KEYS: SettingsKey[] = [
   'font',
   'lyricsProvider',
   'apiBase',
-  'highPerformance',
+  'lowBatteryMode',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -38,6 +39,14 @@ const LEGACY_KEYS: Partial<Record<SettingsKey, string[]>> = {
   accent: ['carmen:accent', 'samma3ni:accent'],
   adaptiveAccent: ['carmen:adaptiveAccent'],
   font: ['carmen:font.v2'],
+};
+
+/**
+ * SQLite keys renamed after the setting shipped — read once so an existing
+ * choice survives under its new name (the value is re-persisted there).
+ */
+const RENAMED_KEYS: Partial<Record<SettingsKey, string>> = {
+  lowBatteryMode: 'highPerformance',
 };
 
 const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
@@ -76,7 +85,7 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
         : DEFAULT_SETTINGS.lyricsProvider;
     case 'adaptiveAccent':
       return raw === '1' || raw === 'true';
-    case 'highPerformance':
+    case 'lowBatteryMode':
       return raw === '1' || raw === 'true';
     case 'accent':
       return /^#[0-9a-f]{6}$/i.test(raw) ? raw : DEFAULT_SETTINGS.accent;
@@ -88,7 +97,7 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
 }
 
 function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
-  if (key === 'adaptiveAccent' || key === 'highPerformance') return value ? '1' : '0';
+  if (key === 'adaptiveAccent' || key === 'lowBatteryMode') return value ? '1' : '0';
   return String(value ?? '');
 }
 
@@ -109,6 +118,22 @@ export async function hydrateSettings(): Promise<void> {
       if (legacy !== null) {
         raw = legacy;
         void setSetting(key, legacy).catch(() => {});
+      }
+    }
+    if (raw === null || raw === undefined) {
+      // Renamed key (e.g. `highPerformance` → `lowBatteryMode`): carry the
+      // stored choice over under its new name.
+      const previousKey = RENAMED_KEYS[key];
+      if (previousKey) {
+        try {
+          const previous = await getSetting(previousKey);
+          if (previous !== null && previous !== undefined) {
+            raw = previous;
+            void setSetting(key, previous).catch(() => {});
+          }
+        } catch {
+          /* no previous value */
+        }
       }
     }
     if (raw !== null && raw !== undefined) {
@@ -147,13 +172,26 @@ export function useSettings(): AppSettings {
 }
 
 /**
+ * Whether the low-battery mode is active **right now**: the manual toggle,
+ * or the automatic kick-in below 20% battery (see `settings/battery.ts`).
+ * Every consumer that changes appearance reads this — not the raw setting —
+ * so manual and automatic activation are indistinguishable downstream.
+ */
+export function useLowBatteryMode(): boolean {
+  const manual = useSettings().lowBatteryMode;
+  const battery = useBattery();
+  return manual || isBatteryLow(battery);
+}
+
+/**
  * Whether the expensive visual effects should paint at all: blur and
  * backdrop-filter, accent glows and the ambient artwork background.
  *
- * High performance mode switches them off app-wide, so every effectful
- * component asks through this hook instead of reaching for the raw setting —
- * the meaning lives in one place and the call sites read as intent.
+ * Low battery mode switches them off app-wide — manually or automatically —
+ * so every effectful component asks through this hook instead of reaching
+ * for the raw setting: the meaning lives in one place and the call sites
+ * read as intent.
  */
 export function useEffectsEnabled(): boolean {
-  return !useSettings().highPerformance;
+  return !useLowBatteryMode();
 }

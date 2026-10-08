@@ -27,7 +27,7 @@ import {
  */
 export default function NPControls() {
   const player = usePlayer();
-  // The FAB's accent glow is a painted effect — flat while high performance
+  // The FAB's accent glow is a painted effect — flat while low battery
   // mode is on.
   const effectsEnabled = useEffectsEnabled();
   // Shuffle / repeat icons are line art on the sheet — the readable accent

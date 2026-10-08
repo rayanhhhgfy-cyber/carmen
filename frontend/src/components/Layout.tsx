@@ -55,7 +55,7 @@ const NAV_ITEMS: NavItem[] = [
 
 function SideNav() {
   const location = useLocation();
-  // Glass only while the ambient tint can bleed through: high performance
+  // Glass only while the ambient tint can bleed through: low battery
   // mode paints the solid paper colour instead (no backdrop-filter).
   const effectsEnabled = useEffectsEnabled();
   return (
@@ -161,7 +161,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const isDesktop = useMediaQuery(muiTheme.breakpoints.up('md'));
   const showMini = Boolean(player.current);
-  // High performance mode: no ambient artwork layer, no glass surfaces —
+  // Low battery mode: no ambient artwork layer, no glass surfaces —
   // plain solid ones instead (see useEffectsEnabled).
   const effectsEnabled = useEffectsEnabled();
   // A white accent painted straight onto the light bar would be white on
@@ -184,7 +184,7 @@ export default function Layout() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {/* artwork driven ambient tint (painted behind every surface) —
-          high performance mode skips the layer entirely */}
+          low battery mode skips the layer entirely */}
       {effectsEnabled && <AmbientBackground />}
 
       {isDesktop && <SideNav />}

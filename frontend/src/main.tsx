@@ -7,6 +7,7 @@ import { favoriteIds } from './db/repos/favorites';
 import { hydrateFlags } from './db/flags';
 import { hydrateLocalLibrary, downloadedVideoIds } from './offline/source';
 import { bootstrapPlatform } from './platform/env';
+import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
 import { hydrateLibrary } from './utils/library';
 import './fonts';
@@ -38,7 +39,14 @@ async function restoreRoute(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   await bootstrapPlatform();
-  await Promise.allSettled([hydrateSettings(), hydrateLibrary(), hydrateLocalLibrary()]);
+  await Promise.allSettled([
+    hydrateSettings(),
+    hydrateLibrary(),
+    hydrateLocalLibrary(),
+    // Battery reading for the low-battery auto mode — a device without one
+    // simply keeps the mode manual (settings/battery.ts).
+    startBatteryTracking(),
+  ]);
   // Downloaded / favorited flags feed the badges + "already saved" state of
   // every row, so they are seeded before the first render too.
   try {

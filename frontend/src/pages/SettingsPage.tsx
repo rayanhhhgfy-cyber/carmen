@@ -15,7 +15,8 @@ import {
 import type { ReactElement, ReactNode } from 'react';
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
-import { updateSettings, useSettings } from '../settings/store';
+import { useBattery } from '../settings/battery';
+import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
 import { LYRICS_PROVIDERS } from '../types/models';
 import type { FontId, ThemeMode } from '../types/models';
 import {
@@ -83,17 +84,28 @@ function Credit({ href, name, icon, iconColor, children }: CreditProps) {
  * Every persisted choice is written straight through the settings store;
  * the theme context lends its session state (the resolved mode, the color
  * read from the playing cover) and the effective accent / adaptive values,
- * which high performance mode overrides.
+ * which low battery mode overrides.
  */
 export default function SettingsPage() {
-  const { themeMode, accent, font, lyricsProvider, apiBase, highPerformance } = useSettings();
+  const {
+    themeMode,
+    accent,
+    font,
+    lyricsProvider,
+    apiBase,
+    lowBatteryMode: lowBatteryManual,
+  } = useSettings();
+  // The *effective* mode (manual toggle or the automatic low-battery
+  // kick-in) and the reading behind its status line.
+  const lowBatteryActive = useLowBatteryMode();
+  const battery = useBattery();
   // `adaptiveAccent` and `accentInUse` come from the theme context: they are
-  // the *effective* values, so high performance mode shows through here.
+  // the *effective* values, so low battery mode shows through here.
   const { adaptiveColor, resolved, accentInUse, adaptiveAccent } = useTheme();
   const selectedFont = FONTS.find((option) => option.id === font) || FONTS[0];
 
   // A white accent on the light theme would paint primary labels, borders
-  // and icons white on white — high performance mode pins the accent to
+  // and icons white on white — low battery mode pins the accent to
   // white (and a black cover can make adaptive pick it too), so those few
   // spots fall back to plain colours while it reads that way. The dark
   // theme reads white perfectly and keeps them.
@@ -267,7 +279,7 @@ export default function SettingsPage() {
               </Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
                 Defaults to Material Green ({DEFAULT_ACCENT}).
-                {highPerformance && ' High performance mode overrides it with white while it is on.'}
+                {lowBatteryActive && ' Low battery mode overrides it with white while it is on.'}
               </Typography>
             </Box>
 
@@ -283,16 +295,16 @@ export default function SettingsPage() {
                   the most used color of the artwork, or white when the cover
                   is black. Your chosen accent is used while nothing plays.
                 </Typography>
-                {highPerformance && (
+                {lowBatteryActive && (
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    Paused while high performance mode is on — your choice is
+                    Paused while low battery mode is on — your choice is
                     kept and returns when you turn it off.
                   </Typography>
                 )}
               </Box>
               <Switch
                 checked={adaptiveAccent}
-                disabled={highPerformance}
+                disabled={lowBatteryActive}
                 onChange={(_, checked) => updateSettings({ adaptiveAccent: checked })}
                 inputProps={{ 'aria-label': 'Adaptive accent color' }}
                 sx={{ flexShrink: 0 }}
@@ -323,17 +335,30 @@ export default function SettingsPage() {
             <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="body2" fontWeight={600}>
-                  High performance mode
+                  Low battery mode
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  Disables artwork theming, blur and ambient effects for a
-                  lighter, faster interface. Accent color becomes white.
+                  Saves power by disabling artwork theming, blur and ambient
+                  effects — the accent turns white.
                 </Typography>
+                {battery.level !== null && (
+                  <Typography
+                    variant="caption"
+                    color={lowBatteryActive && !lowBatteryManual ? 'warning.main' : 'text.secondary'}
+                    sx={{ display: 'block' }}
+                  >
+                    {lowBatteryActive && !lowBatteryManual
+                      ? `On automatically — battery at ${Math.round(battery.level * 100)}%.`
+                      : `Battery at ${Math.round(battery.level * 100)}%${
+                          battery.charging ? ', charging' : ''
+                        } — turns itself on below 20% while on battery.`}
+                  </Typography>
+                )}
               </Box>
               <Switch
-                checked={highPerformance}
-                onChange={(_, checked) => updateSettings({ highPerformance: checked })}
-                inputProps={{ 'aria-label': 'High performance mode' }}
+                checked={lowBatteryManual}
+                onChange={(_, checked) => updateSettings({ lowBatteryMode: checked })}
+                inputProps={{ 'aria-label': 'Low battery mode' }}
                 sx={{ flexShrink: 0 }}
               />
             </Stack>

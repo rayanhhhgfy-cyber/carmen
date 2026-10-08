@@ -143,10 +143,12 @@ export interface AppSettings {
   /** Optional override of the FastAPI backend URL (empty = bundled default). */
   apiBase: string;
   /**
-   * High performance mode — no artwork-derived theme, white accent, no blur /
-   * ambient effects. Trade visual richness for a lighter render load.
+   * Low battery mode — no artwork-derived theme, white accent, no blur /
+   * ambient effects: trade visual richness for a lighter, power-saving
+   * render load. The manual toggle; the mode can also switch itself on
+   * automatically below 20% battery (see `settings/battery.ts`).
    */
-  highPerformance: boolean;
+  lowBatteryMode: boolean;
 }
 
 export type SettingsKey = keyof AppSettings;
