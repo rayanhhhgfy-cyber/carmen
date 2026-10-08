@@ -98,8 +98,8 @@ export default function Artwork({
     setVideoReady(false);
   }, [motionUrl]);
 
-  // A grid of moving covers must not decode offscreen — pause whenever the
-  // tile leaves the viewport, resume (autoplay) when it returns.
+  // The loop must not decode offscreen — pause whenever the artwork box
+  // leaves the viewport, resume (autoplay) when it returns.
   useEffect(() => {
     const video = videoRef.current;
     if (!motionUrl || !video || typeof IntersectionObserver === 'undefined') return undefined;

@@ -95,6 +95,8 @@ export default function SettingsPage() {
     apiBase,
     lowBatteryMode: lowBatteryManual,
     animatedArtwork,
+    blurEffects,
+    artworkBackground,
   } = useSettings();
   // The *effective* mode (manual toggle or the automatic low-battery
   // kick-in) and the reading behind its status line.
@@ -260,13 +262,19 @@ export default function SettingsPage() {
                           width: '100%',
                           aspectRatio: '1 / 1',
                           borderRadius: '50%',
-                          border: selected ? '3px solid' : '2px solid transparent',
-                          borderColor: selected ? 'text.primary' : 'transparent',
+                          border: selected ? '3px solid' : '2px solid',
+                          borderColor: selected
+                            ? 'text.primary'
+                            : // white on white paper needs an edge to be seen
+                              option.color.toLowerCase() === '#ffffff'
+                              ? 'divider'
+                              : 'transparent',
                           bgcolor: option.color,
                           cursor: 'pointer',
                           display: 'grid',
                           placeItems: 'center',
-                          color: '#fff',
+                          // a white swatch would hide a white checkmark
+                          color: option.color.toLowerCase() === '#ffffff' ? '#12160f' : '#fff',
                           p: 0,
                           transition: 'transform 150ms ease',
                           '&:hover': { transform: 'scale(1.08)' },
@@ -372,8 +380,10 @@ export default function SettingsPage() {
                   Animated artwork
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  Album covers that move, fetched from Apple's iTunes catalogue.
-                  Downloads keep a copy for offline playback.
+                  Album covers that move in the Now Playing screen, fetched
+                  from Apple's iTunes catalogue — the lyrics view plays the
+                  same loop as its background. Downloads keep a copy for
+                  offline playback.
                 </Typography>
                 {animatedArtwork && lowBatteryActive && (
                   <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
@@ -385,6 +395,57 @@ export default function SettingsPage() {
                 checked={animatedArtwork}
                 onChange={(_, checked) => updateSettings({ animatedArtwork: checked })}
                 inputProps={{ 'aria-label': 'Animated artwork' }}
+                sx={{ flexShrink: 0 }}
+              />
+            </Stack>
+
+            <Divider />
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  Blur effects
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Glass backdrops, accent glows and the ambient wash — off
+                  gives flat, lighter surfaces.
+                </Typography>
+                {lowBatteryActive && !blurEffects && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Low battery mode is on as well — both choices are
+                    respected when it leaves.
+                  </Typography>
+                )}
+              </Box>
+              <Switch
+                checked={blurEffects}
+                onChange={(_, checked) => updateSettings({ blurEffects: checked })}
+                inputProps={{ 'aria-label': 'Blur effects' }}
+                sx={{ flexShrink: 0 }}
+              />
+            </Stack>
+
+            <Divider />
+
+            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  Artwork background
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  Wash the app background with the colors of the artwork that
+                  is playing. Off keeps the plain theme background.
+                </Typography>
+                {artworkBackground && lowBatteryActive && (
+                  <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                    Hidden automatically — low battery mode is on.
+                  </Typography>
+                )}
+              </Box>
+              <Switch
+                checked={artworkBackground}
+                onChange={(_, checked) => updateSettings({ artworkBackground: checked })}
+                inputProps={{ 'aria-label': 'Artwork background' }}
                 sx={{ flexShrink: 0 }}
               />
             </Stack>

@@ -101,9 +101,6 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
       <Artwork
         className="group-art"
         src={group.artwork}
-        // Disc tiles are albums (a real catalogue lookup); the round ones
-        // are artists, which have no album of their own to animate.
-        motion={shape === 'square' ? { album: group.name } : null}
         alt=""
         icon={shape === 'circle' ? UserIcon : AlbumIcon}
         iconSize={40}

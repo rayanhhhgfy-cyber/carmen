@@ -54,6 +54,9 @@ import {
   RefreshIcon,
 } from './icons';
 
+import { useMotionArtwork } from '../artwork/motion';
+import { useAnimatedArtwork } from '../settings/store';
+
 /** Tab order inside the player: 0 lyrics · 1 queue · 2 related. */
 const LYRICS_TAB = 0;
 const QUEUE_TAB = 1;
@@ -126,6 +129,28 @@ export default function PlayerSheet() {
   }, [videoId]);
 
   const lyrics = useMemo(() => lyricsOf(meta), [meta]);
+
+  // Animated cover identity for this track — the sheet's own artwork and
+  // the lyrics background both resolve through it (memoised in
+  // `artwork/motion`, so the two consumers share one lookup). Now Playing
+  // is the only screen that animates; every grid stays static (Apple
+  // Music does the same).
+  const motionRef = track
+    ? {
+        album: track.albumName,
+        videoId: track.videoId,
+        title: track.title,
+        artist: track.artist,
+      }
+    : null;
+  const animatedArtwork = useAnimatedArtwork();
+  // Resolves only while the sheet is open: listening without looking at the
+  // player costs no catalogue calls at all.
+  const motionUrl = useMotionArtwork(motionRef, animatedArtwork && player.sheetOpen);
+  const [motionReady, setMotionReady] = useState(false);
+  useEffect(() => {
+    setMotionReady(false);
+  }, [motionUrl]);
 
   const handleClose = () => {
     setPanelOpen(false);
@@ -332,12 +357,7 @@ export default function PlayerSheet() {
         src={artwork}
         alt={track.albumName || track.title}
         iconSize={72}
-        motion={{
-          album: track.albumName,
-          videoId: track.videoId,
-          title: track.title,
-          artist: track.artist,
-        }}
+        motion={motionRef}
         sx={{
           position: 'relative',
           zIndex: 1,
@@ -514,11 +534,64 @@ export default function PlayerSheet() {
           sx={TAB_SX}
         />
       </Tabs>
-      <Box sx={{ flex: 1, minHeight: 220, position: 'relative', mt: 1 }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 220,
+          position: 'relative',
+          mt: 1,
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}
+      >
+        {/* The animated cover, fitted edge-to-edge behind the lyrics: the
+            same loop the Now Playing artwork plays, under a theme-coloured
+            scrim so every line stays readable on top of moving pixels.
+            It mounts only with the lyrics tab — queue and related keep the
+            plain surface. */}
+        {tab === LYRICS_TAB && motionUrl && (
+          <>
+            <Box
+              component="video"
+              src={motionUrl}
+              autoPlay
+              loop
+              muted
+              playsInline
+              onCanPlay={() => setMotionReady(true)}
+              onError={() => setMotionReady(false)}
+              aria-hidden
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                opacity: motionReady ? 1 : 0,
+                transition: 'opacity 400ms ease',
+                pointerEvents: 'none',
+              }}
+            />
+            <Box
+              aria-hidden
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 1,
+                pointerEvents: 'none',
+                background:
+                  theme.palette.mode === 'dark'
+                    ? 'linear-gradient(180deg, rgba(10,13,11,0.48) 0%, rgba(10,13,11,0.72) 100%)'
+                    : 'linear-gradient(180deg, rgba(246,247,246,0.62) 0%, rgba(246,247,246,0.82) 100%)',
+              }}
+            />
+          </>
+        )}
         {/* Lyrics mounts only while its tab is open: it measures real layout
             to centre the active line, which a display:none box cannot do. */}
         {tab === LYRICS_TAB && (
-          <Box sx={{ height: '100%' }}>
+          <Box sx={{ height: '100%', position: 'relative', zIndex: 2 }}>
             <LyricsView
               synced={lyrics.synced}
               unsynced={lyrics.unsynced}
@@ -631,12 +704,7 @@ export default function PlayerSheet() {
           src={artwork}
           alt=""
           iconSize={20}
-          motion={{
-            album: track.albumName,
-            videoId: track.videoId,
-            title: track.title,
-            artist: track.artist,
-          }}
+          motion={motionRef}
           sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0 }}
         />
         <Box sx={{ flex: 1, minWidth: 0 }}>

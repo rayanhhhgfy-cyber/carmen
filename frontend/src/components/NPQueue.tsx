@@ -160,12 +160,6 @@ export default function NPQueue() {
                   src={current.artwork}
                   alt=""
                   iconSize={20}
-                  motion={{
-                    album: current.albumName,
-                    videoId: current.videoId,
-                    title: current.title,
-                    artist: current.artist,
-                  }}
                   sx={{ width: 46, height: 46, borderRadius: 1.5 }}
                 />
               </ListItemIcon>

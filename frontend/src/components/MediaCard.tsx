@@ -2,7 +2,6 @@ import { Box, Chip, Stack, Typography } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
-import type { MotionArtworkRef } from '../artwork/motion';
 import { useFlags } from '../db/flags';
 import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
@@ -82,41 +81,6 @@ export default function MediaCard({
   const title =
     (typeof record.title === 'string' && record.title) || 'Untitled';
 
-  // Animated cover identity: a song tile looks its own album up — and when
-  // a flat search/queue record carries none (the common case), falls back
-  // to its own `"Title - Artist"` identity via an iTunes *song* search. An
-  // album tile uses its title. Artist and playlist tiles have no catalogue
-  // album and stay static (an artist name is no album to match).
-  const rawAlbum = record.albumName ?? record.album;
-  const songAlbum =
-    typeof rawAlbum === 'string'
-      ? rawAlbum
-      : rawAlbum && typeof rawAlbum === 'object' &&
-          typeof (rawAlbum as { name?: unknown }).name === 'string'
-        ? (rawAlbum as { name: string }).name
-        : '';
-  // Just the artist fields — the subtitle's author/description fallbacks
-  // below are display-only noise that Apple would happily match on.
-  const motionArtist =
-    typeof record.artist === 'string' && record.artist
-      ? record.artist
-      : Array.isArray(record.artists)
-        ? record.artists
-            .map((artist) =>
-              artist && typeof artist === 'object'
-                ? (artist as Record<string, unknown>).name
-                : undefined,
-            )
-            .filter((name): name is string => typeof name === 'string' && Boolean(name))
-            .join(', ')
-        : '';
-  let motionRef: MotionArtworkRef | null = null;
-  if (card.kind === 'song') {
-    motionRef = { album: songAlbum, videoId, title, artist: motionArtist };
-  } else if (card.kind === 'album') {
-    motionRef = { album: title, artist: motionArtist };
-  }
-
   // Subtitle: explicit artist, joined artist list, or a fallback chain.
   let subtitle = '';
   if (typeof record.artist === 'string' && record.artist) {
@@ -182,7 +146,6 @@ export default function MediaCard({
         <Artwork
           className="card-art"
           src={artwork}
-          motion={motionRef}
           alt=""
           iconSize={44}
           sx={{

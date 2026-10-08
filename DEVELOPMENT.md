@@ -181,7 +181,12 @@ npm run dev:frontend        # = npm --prefix frontend run dev → vite
   own fetch. The feature resolves each album at most once (URLs persisted in
   `app_state.motionUrls`, token in `app_state.motionToken`), caches the video
   under `<app data>/motion/`, and is switched off by Settings →
-  *Animated artwork* or by low battery mode.
+  *Animated artwork* or by low battery mode. It renders **only in the Now
+  Playing sheet** (home/search/queue cards stay static, Apple-Music style);
+  the lyrics tab plays the same loop, fitted, as its background. Resolution
+  starts only while the sheet is open, so plain listening costs no catalogue
+  calls. Settings → *Blur effects* and *Artwork background* independently
+  switch off the glass surfaces and the ambient artwork wash.
 
 ---
 
@@ -492,12 +497,18 @@ There is no test suite in CI — see §11.
   - [ ] battery under 20% **unplugged** → low battery mode turns itself on
         (white accent, no blur, Settings status line says *On automatically*)
         → plug in → effects return; the manual toggle survives restart
-  - [ ] animated artwork: a song with motion artwork moves in the player and
-        on cards (static cover shows first — never a blank tile); Settings →
-        *Animated artwork* off **or** low battery mode on → static again;
-        download such a song → `motion.mp4` next to the audio, plays in
-        airplane mode; stream it once → `<app data>/motion/<key>.mp4` exists
-        and the cover animates after a restart with no network
+  - [ ] animated artwork: **only** the Now Playing sheet animates (home /
+        search / queue cards stay static), and the lyrics tab plays the same
+        loop fitted as its background (static cover shows first — never a
+        blank tile); Settings → *Animated artwork* off **or** low battery mode
+        on → static again; download such a song → `motion.mp4` next to the
+        audio, plays in airplane mode; stream it once →
+        `<app data>/motion/<key>.mp4` exists and the cover animates after a
+        restart with no network
+  - [ ] Settings → *Blur effects* off → no backdrop blur / glows app-wide;
+        *Artwork background* off → plain theme background (both persist);
+        *Accent color* → **White** → light mode stays readable (labels and
+        line art fall back to the text colour)
 - `AGENTS.md` still holds: verify changes by **running the server**, not via
   JS/TS tooling, when the change is server-side.
 

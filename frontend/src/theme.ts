@@ -23,6 +23,7 @@ export const ACCENTS: AccentOption[] = [
   { id: 'red', name: 'Red', color: '#F44336' },
   { id: 'orange', name: 'Orange', color: '#FF5722' },
   { id: 'amber', name: 'Amber', color: '#FF9800' },
+  { id: 'white', name: 'White', color: '#ffffff' },
 ];
 
 export const DEFAULT_ACCENT = '#4CAF50';

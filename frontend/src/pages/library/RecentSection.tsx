@@ -92,12 +92,6 @@ export default function RecentSection() {
                 <Artwork
                   className="recent-art"
                   src={song.artwork}
-                  motion={{
-                    album: song.albumName,
-                    videoId: song.videoId,
-                    title: song.title,
-                    artist: song.artist,
-                  }}
                   alt=""
                   icon={MusicNoteIcon}
                   iconSize={40}

@@ -22,7 +22,7 @@ import type { ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { usePlayer } from '../player/PlayerContext';
-import { useEffectsEnabled } from '../settings/store';
+import { useArtworkBackground, useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloads';
 import AmbientBackground from './AmbientBackground';
@@ -162,8 +162,10 @@ export default function Layout() {
   const isDesktop = useMediaQuery(muiTheme.breakpoints.up('md'));
   const showMini = Boolean(player.current);
   // Low battery mode: no ambient artwork layer, no glass surfaces —
-  // plain solid ones instead (see useEffectsEnabled).
+  // plain solid ones instead (see useEffectsEnabled). The ambient wash
+  // additionally has its own Settings choice (artwork background).
   const effectsEnabled = useEffectsEnabled();
+  const artworkBackground = useArtworkBackground();
   // A white accent painted straight onto the light bar would be white on
   // white, so the selected label falls back to the plain text colour there.
   const whiteAccentOnLightBar =
@@ -184,8 +186,8 @@ export default function Layout() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {/* artwork driven ambient tint (painted behind every surface) —
-          low battery mode skips the layer entirely */}
-      {effectsEnabled && <AmbientBackground />}
+          low battery mode and the Settings choice skip it entirely */}
+      {effectsEnabled && artworkBackground && <AmbientBackground />}
 
       {isDesktop && <SideNav />}
 

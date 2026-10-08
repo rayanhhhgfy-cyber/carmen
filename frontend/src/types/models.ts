@@ -150,11 +150,26 @@ export interface AppSettings {
    */
   lowBatteryMode: boolean;
   /**
-   * Animated album artwork — covers that move, resolved through Apple's
-   * iTunes / amp-api catalogue (see `artwork/motion.ts`). On by default;
-   * low battery mode switches it off on top of this toggle.
+   * Animated album artwork — covers that move in the Now Playing screen,
+   * resolved through Apple's iTunes / amp-api catalogue (see
+   * `artwork/motion.ts`); the lyrics view plays the same loop as its
+   * background. On by default; low battery mode switches it off on top of
+   * this toggle.
    */
   animatedArtwork: boolean;
+  /**
+   * Blur & glass effects — backdrop blur on the navigation and player
+   * surfaces, accent glows and the ambient artwork wash. Off gives flat,
+   * lighter surfaces. Low battery mode forces them off on top of this
+   * toggle (see `useEffectsEnabled`).
+   */
+  blurEffects: boolean;
+  /**
+   * Artwork background — the ambient wash that tints the whole app with
+   * the colors of the playing artwork (see `AmbientBackground`). Off keeps
+   * the plain theme background. Low battery mode hides it too.
+   */
+  artworkBackground: boolean;
 }
 
 export type SettingsKey = keyof AppSettings;

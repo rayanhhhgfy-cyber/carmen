@@ -22,6 +22,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   apiBase: '',
   lowBatteryMode: false,
   animatedArtwork: true,
+  blurEffects: true,
+  artworkBackground: true,
 };
 
 const KEYS: SettingsKey[] = [
@@ -33,6 +35,8 @@ const KEYS: SettingsKey[] = [
   'apiBase',
   'lowBatteryMode',
   'animatedArtwork',
+  'blurEffects',
+  'artworkBackground',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -90,6 +94,8 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
     case 'lowBatteryMode':
       return raw === '1' || raw === 'true';
     case 'animatedArtwork':
+    case 'blurEffects':
+    case 'artworkBackground':
       // Absent = on: only an explicit "0" turns the feature off.
       return raw !== '0' && raw !== 'false';
     case 'accent':
@@ -102,7 +108,13 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
 }
 
 function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
-  if (key === 'adaptiveAccent' || key === 'lowBatteryMode' || key === 'animatedArtwork') {
+  if (
+    key === 'adaptiveAccent' ||
+    key === 'lowBatteryMode' ||
+    key === 'animatedArtwork' ||
+    key === 'blurEffects' ||
+    key === 'artworkBackground'
+  ) {
     return value ? '1' : '0';
   }
   return String(value ?? '');
@@ -195,12 +207,23 @@ export function useLowBatteryMode(): boolean {
  * backdrop-filter, accent glows and the ambient artwork background.
  *
  * Low battery mode switches them off app-wide — manually or automatically —
- * so every effectful component asks through this hook instead of reaching
- * for the raw setting: the meaning lives in one place and the call sites
- * read as intent.
+ * and so does the manual "Blur effects" choice in Settings; every
+ * effectful component asks through this hook instead of reaching for the
+ * raw setting: the meaning lives in one place and the call sites read as
+ * intent.
  */
 export function useEffectsEnabled(): boolean {
-  return !useLowBatteryMode();
+  return !useLowBatteryMode() && useSettings().blurEffects;
+}
+
+/**
+ * Whether the app background may wear the playing artwork's colors (the
+ * ambient wash in `AmbientBackground`). The Settings choice, minus low
+ * battery mode — and the wash itself also needs `useEffectsEnabled`, since
+ * it *is* a giant blur.
+ */
+export function useArtworkBackground(): boolean {
+  return useSettings().artworkBackground && !useLowBatteryMode();
 }
 
 /**
