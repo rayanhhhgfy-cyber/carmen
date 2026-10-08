@@ -78,14 +78,14 @@ const TAB_SX = { minHeight: 50, minWidth: 0, textTransform: 'none', fontWeight: 
  *
  * * **Phone** — a full-screen sheet that slides up. A grab *handle* sits on
  *   the top edge: tap it or swipe it down to dismiss (the sheet follows the
- *   finger while the swipe is in flight). Below it: artwork with its
- *   ambient glow, title / artist / album, scrubber, transport, and the
+ *   finger while the swipe is in flight). Below it: artwork,
+ *   title / artist / album, scrubber, transport, and the
  *   secondary row — lyrics · queue · related · favorite · download — all of
  *   it inside thumb reach. The three panels take the screen over from a
  *   compact now-playing card when one of those buttons is tapped.
  * * **Desktop / tablet** — a *centred* modal sized inside the window
  *   (`min(1120px, 100vw − 64px)` × `min(760px, 100vh − 64px)`), split into
- *   two columns: the cover with its ambient glow on the left, and
+ *   two columns: the cover on the left, and
  *   info → scrubber → transport → lyrics / queue / related on the right.
  *   Both columns manage their own overflow, so nothing spills even when the
  *   window is short.
@@ -101,9 +101,9 @@ export default function PlayerSheet() {
   const { accentFg } = useAppTheme();
   const navigate = useNavigate();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
-  // The blurred artwork layers (glow behind the cover, wash behind the
-  // sheet) are the expensive part of this screen — low battery mode
-  // drops them and keeps the plain surfaces.
+  // The blurred artwork layer (the wash behind the sheet) is the expensive
+  // part of this screen — low battery mode
+  // drops it and keeps the plain surfaces.
   const effectsEnabled = useEffectsEnabled();
 
   const [tab, setTab] = useState<number>(LYRICS_TAB);
@@ -327,11 +327,10 @@ export default function PlayerSheet() {
   );
 
   /**
-   * The cover with its ambient glow: a blurred, slightly oversized copy of
-   * the same artwork bleeding out from behind the sharp one — the room
-   * takes the colour of the sleeve without any extra chrome. High
-   * performance mode renders only the sharp cover; without the glow the
-   * sheet's own background is the surface behind it.
+   * The cover — a sharp, square thumbnail centred in its column. The
+   * blurred circular halo that used to bleed out from behind it is gone;
+   * the sheet's backdrop (and, on desktop, the motion loop) carries the
+   * colour instead.
    */
   const artworkBox = (
     <Box
@@ -342,23 +341,6 @@ export default function PlayerSheet() {
         mx: 'auto',
       }}
     >
-      {artwork && effectsEnabled && (
-        <Artwork
-          src={artwork}
-          alt=""
-          icon={null}
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            inset: { xs: '-2%', md: '-7%' },
-            borderRadius: '50%',
-            bgcolor: 'transparent',
-            filter: 'blur(46px) saturate(1.6)',
-            opacity: 0.55,
-            zIndex: 0,
-          }}
-        />
-      )}
       <Artwork
         src={artwork}
         alt={track.albumName || track.title}
@@ -742,12 +724,12 @@ export default function PlayerSheet() {
         rowGap: 2,
         px: { md: 4 },
         pb: 3,
-        // the columns handle their own overflow — the glow may bleed into
-        // the gap, but nothing ever escapes the dialog itself
+        // the columns handle their own overflow — nothing ever escapes the
+        // dialog itself
         overflow: 'hidden',
       }}
     >
-      {/* ── Left: cover + ambient glow, centred in its column ───────── */}
+      {/* ── Left: cover, centred in its column ─────────────────────── */}
       <Box
         sx={{
           display: 'flex',
