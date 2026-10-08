@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Skeleton, Typography } from '@mui/material';
-import { Lrc, useRecoverAutoScrollImmediately, type LrcLine } from 'react-lrc';
 
-import { usePlayhead, usePlayer } from '../player/PlayerContext';
-import { useTheme } from '../theme/ThemeContext';
+import { usePlayer } from '../player/PlayerContext';
 import type { LyricLine } from '../types/models';
-import { toLrc } from '../utils/lyrics';
+import SyncedLyrics from './SyncedLyrics';
 
 interface LyricsViewProps {
   /** Timestamped lines of the playing song, or `null` when there are none. */
@@ -18,33 +16,25 @@ interface LyricsViewProps {
   loading?: boolean;
 }
 
-/** How long the reader's own scrolling pauses the follow (ms). */
-const RESUME_FOLLOW_MS = 2500;
-
 /** Metadata that has not arrived by then counts as "no lyrics". */
 const LOAD_TIMEOUT_MS = 6000;
 
 /**
  * Lyrics panel — a synced karaoke view with a plain-text fallback.
  *
- * **Following the song.** The synced view hands the whole job to `react-lrc`
- * (`Lrc`): the payload lines are serialised to LRC text with the shared
- * `toLrc()` helper, the playhead is fed in as `currentMillisecond`, and the
- * library re-centres the active line itself — a native smooth scroll that
- * only fires when the line index changes, never on every `timeupdate`.
- * That hand-off is what keeps the panel responsive; the previous
- * hand-rolled version measured offsets and restarted CSS animations on its
- * own and could not keep up. A wheel, finger or scrollbar drag from the
- * reader suspends the follow for `RESUME_FOLLOW_MS`, and a tapped line
- * resumes it immediately (`recoverAutoScrollImmediately`) while it seeks the
- * song there (`line.startMillisecond / 1000`).
+ * **Following the song.**  The synced view is handed to `SyncedLyrics`, the
+ * in-house engine: a playhead probe feeds a binary search, React state only
+ * changes when the *line* changes, a self-stopping rAF loop eases the
+ * scroller to the centred line, and the rows themselves are windowed by
+ * `@tanstack/react-virtual` and `React.memo`'d — so a tick costs an
+ * `O(log n)` search and nothing else, and only the lines whose highlight
+ * actually changed repaint.  A wheel, finger or scrollbar drag from the
+ * reader suspends the follow for 2.5s (`SyncedLyrics`), and a tapped line
+ * resumes it immediately while it seeks the song there.
  *
  * **Highlight.** The active line wears the accent colour plus a slight
  * scale and weight — a transform, so nothing in the list reflows while the
- * song plays — while past lines dim and upcoming lines stay readable. The
- * active flag comes straight from `Lrc`'s `lineRenderer`; the "already
- * sung" dimming follows the index reported through `onLineUpdate`, which
- * only fires when the line changes, so it costs nothing per tick.
+ * song plays — while past lines dim and upcoming lines stay readable.
  *
  * Typography follows the theme, which is built from the interface font
  * setting (see `settings/store` + `buildTheme`), and lines use a comfortable
@@ -56,41 +46,31 @@ const LOAD_TIMEOUT_MS = 6000;
  */
 export default function LyricsView({ synced, unsynced, source, loading = false }: LyricsViewProps) {
   const { seek, current } = usePlayer();
-  const { currentTime } = usePlayhead();
-  // Accent for the active line — `accentFg` stays legible even when the
-  // white high-performance accent would vanish on a light surface.
-  const { accentFg } = useTheme();
 
-  /** Only the plain-text fallback scrolls by hand — `Lrc` owns its own box. */
+  /** Only the plain-text fallback scrolls by hand — the engine owns its box. */
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [timedOut, setTimedOut] = useState(false);
-  /** Index `Lrc` last reported as active — drives the "past lines" dimming. */
-  const [activeIndex, setActiveIndex] = useState(-1);
 
-  /** Flipping `signal` tells `Lrc` to start following again right now. */
-  const { signal, recoverAutoScrollImmediately } = useRecoverAutoScrollImmediately();
-
-  /** Defensive copy of the payload lines (bad timestamps become `0`). */
+  /** Defensive copy of the payload lines (bad timestamps become `0`), in
+   *  timestamp order — the engine's binary search depends on it. */
   const lines = useMemo<LyricLine[]>(() => {
     if (!Array.isArray(synced)) return [];
-    return synced.map((line) => ({
-      timeMs: Number(line?.timeMs) || 0,
-      // an embedded newline would split the LRC line we serialise below and
-      // silently drop the rest of the text, so flatten line breaks first
-      text: String(line?.text ?? '')
-        .replace(/[\r\n]+/g, ' ')
-        .trim(),
-    }));
+    return (
+      synced.map((line) => ({
+        timeMs: Number(line?.timeMs) || 0,
+        // an embedded newline would split a row's layout, so flatten breaks first
+        text: String(line?.text ?? '')
+          .replace(/[\r\n]+/g, ' ')
+          .trim(),
+      }))
+        // stable sort: sorted payloads (the normal case) keep their order
+        .sort((a, b) => a.timeMs - b.timeMs)
+    );
   }, [synced]);
-
-  /** The same lines in the `[mm:ss.xx]text` dialect `Lrc` parses. */
-  const lrc = useMemo(() => toLrc(lines), [lines]);
 
   const hasSynced = lines.length > 0;
   const stillLoading = loading && !timedOut;
-  /** React-side form of the playhead, handed straight to `Lrc`. */
-  const currentMillisecond = Math.max(0, currentTime) * 1000;
 
   // Metadata that never arrives (offline, provider down) must not spin
   // forever — after the deadline the panel reports the song as lyricless.
@@ -102,77 +82,6 @@ export default function LyricsView({ synced, unsynced, source, loading = false }
     const timer = setTimeout(() => setTimedOut(true), LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [loading]);
-
-  /** Called only when `Lrc` moves to a different line — cheap by design. */
-  const handleLineUpdate = useCallback(({ index }: { index: number; line: LrcLine | null }) => {
-    setActiveIndex(index);
-  }, []);
-
-  const handleLineClick = useCallback(
-    (line: LrcLine) => {
-      // the tap *is* the decision — resume following this line immediately
-      recoverAutoScrollImmediately();
-      seek(line.startMillisecond / 1000);
-    },
-    [recoverAutoScrollImmediately, seek],
-  );
-
-  // Memoised so `Lrc` can skip re-rendering its lines between ticks; only a
-  // change of the active line gives it a fresh renderer.
-  const lineRenderer = useCallback(
-    ({ index, active, line }: { index: number; active: boolean; line: LrcLine }) => {
-      // `onLineUpdate` reports a line only after this render, so the stored
-      // index lags by one frame — `<=` keeps the line we just sang marked as
-      // past instead of letting it flicker back to "upcoming".
-      const past = !active && index <= activeIndex;
-      return (
-        <Typography
-          component="button"
-          type="button"
-          aria-current={active || undefined}
-          onClick={() => handleLineClick(line)}
-          sx={{
-            border: 'none',
-            background: 'none',
-            p: 1.25,
-            m: 0,
-            display: 'block',
-            width: '100%',
-            borderRadius: 2,
-            textAlign: 'center',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            // unitless line height: every row keeps the same height even
-            // as the active line changes weight — nothing reflows mid-song
-            lineHeight: 1.8,
-            fontSize: { xs: '1.1rem', md: '1.15rem' },
-            fontWeight: active ? 700 : 600,
-            color: active ? accentFg : 'text.primary',
-            opacity: active ? 1 : past ? 0.42 : 0.7,
-            // a transform never touches layout, so the highlight cannot
-            // shift the lines around it while the song plays
-            transform: active ? 'scale(1.05)' : 'scale(1)',
-            transformOrigin: 'center',
-            transition:
-              'color 200ms ease, opacity 200ms ease, transform 240ms cubic-bezier(.2,.8,.2,1)',
-            // a line the reader tapped keeps :hover (and focus) on touch
-            // screens — the highlight has to follow the song, not the
-            // finger, so only focus-visible still draws a ring
-            '&:hover': { opacity: active ? 1 : past ? 0.5 : 0.85 },
-            '&:focus:not(:focus-visible)': { outline: 'none' },
-            '&:focus-visible': {
-              outline: '2px solid',
-              outlineColor: accentFg,
-              outlineOffset: 2,
-            },
-          }}
-        >
-          {line.content || '♪'}
-        </Typography>
-      );
-    },
-    [activeIndex, handleLineClick],
-  );
 
   // A plain-text page always opens at the first verse.
   useEffect(() => {
@@ -279,34 +188,7 @@ export default function LyricsView({ synced, unsynced, source, loading = false }
   // ── Synced karaoke view ────────────────────────────────────────────────
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {/* `Lrc` is a plain div component, so it borrows Box's `component`
-          slot to receive the sx styling. `position: relative` is load-bearing:
-          react-lrc centres a line from its `offsetTop`, which must be measured
-          against this scroller rather than the sheet behind it. Overflow and
-          smooth scrolling come from the library's own root styles. */}
-      <Box
-        component={Lrc}
-        lrc={lrc}
-        currentMillisecond={currentMillisecond}
-        lineRenderer={lineRenderer}
-        onLineUpdate={handleLineUpdate}
-        recoverAutoScrollInterval={RESUME_FOLLOW_MS}
-        recoverAutoScrollSingal={signal}
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          position: 'relative',
-          px: { xs: 2, sm: 3 },
-          py: 1,
-          // room below the last line so it can still travel to the middle
-          pb: '30vh',
-          // the head and tail of the viewport fade instead of cutting off
-          maskImage:
-            'linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 96px), transparent 100%)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 96px), transparent 100%)',
-        }}
-      />
+      <SyncedLyrics lines={lines} onSeek={seek} />
       {source && (
         <Typography
           variant="caption"
