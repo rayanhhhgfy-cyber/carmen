@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Skeleton, Typography, useTheme } from '@mui/material';
 
+import MarqueeText from '../../components/MarqueeText';
 import { recentDownloads } from '../../db/repos/downloads';
 import { usePlayer } from '../../player/PlayerContext';
 import type { DownloadedSong } from '../../types/models';
@@ -100,9 +101,7 @@ export default function RecentSection() {
                   }}
                 />
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                    {song.title}
-                  </Typography>
+                  <MarqueeText text={song.title} variant="body2" sx={{ fontWeight: 600 }} />
                   <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
                     {song.artist}
                   </Typography>

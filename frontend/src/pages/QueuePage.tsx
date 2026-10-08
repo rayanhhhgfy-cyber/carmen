@@ -1,4 +1,5 @@
 import Artwork from "../components/Artwork";
+import MarqueeText from "../components/MarqueeText";
 import QueueTab from "../components/QueueTab";
 import RelatedTab from "../components/RelatedTab";
 import { Box, Chip, Container, Stack, Typography } from "@mui/material";
@@ -58,9 +59,7 @@ export default function QueuePage() {
             sx={{ width: 64, height: 64, borderRadius: 2, flexShrink: 0 }}
           />
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" noWrap>
-              {track.title}
-            </Typography>
+            <MarqueeText text={track.title} variant="subtitle1" />
             <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
               {track.artist}
             </Typography>

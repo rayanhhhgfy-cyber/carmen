@@ -17,6 +17,7 @@ import type { Track } from '../types/models';
 import { formatTime } from '../utils/format';
 import { useFlag } from '../db/flags';
 import Artwork from './Artwork';
+import MarqueeText from './MarqueeText';
 import { CloseIcon, DownloadIcon, ExplicitIcon, HeartFilledIcon, ShuffleIcon, TrashIcon } from './icons';
 
 /** One upcoming row: tap to jump here, ✕ to drop it from the queue. */
@@ -164,9 +165,11 @@ export default function NPQueue() {
               </ListItemIcon>
               <ListItemText
                 primary={
-                  <Typography variant="body2" noWrap sx={{ fontWeight: 700, color: accentFg }}>
-                    {current.title}
-                  </Typography>
+                  <MarqueeText
+                    text={current.title}
+                    variant="body2"
+                    sx={{ fontWeight: 700, color: accentFg }}
+                  />
                 }
                 secondary={
                   <Typography

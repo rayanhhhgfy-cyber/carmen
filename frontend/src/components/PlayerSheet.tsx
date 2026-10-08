@@ -37,6 +37,7 @@ import { pickArtwork } from '../utils/track';
 import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
 import LyricsView from './LyricsView';
+import MarqueeText from './MarqueeText';
 import NPControls from './NPControls';
 import NPFavorite from './NPFavorite';
 import NPQueue from './NPQueue';
@@ -369,9 +370,7 @@ export default function PlayerSheet() {
           justifyContent={{ xs: 'center', md: 'flex-start' }}
           spacing={0.75}
         >
-          <Typography variant="h6" noWrap>
-            {track.title}
-          </Typography>
+          <MarqueeText text={track.title} variant="h6" />
           {track.isExplicit && (
             <ExplicitIcon
               aria-label="Explicit"
@@ -629,9 +628,7 @@ export default function PlayerSheet() {
           sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0 }}
         />
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2" noWrap>
-            {track.title}
-          </Typography>
+          <MarqueeText text={track.title} variant="subtitle2" />
           <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
             {track.artist}
           </Typography>

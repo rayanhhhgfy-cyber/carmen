@@ -10,6 +10,7 @@
 import { Box, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
+import MarqueeText from '../../components/MarqueeText';
 import type { DownloadedSong } from '../../types/models';
 import { AlbumIcon, Artwork, UserIcon } from './glyphs';
 
@@ -109,9 +110,7 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
         }}
       />
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-          {group.name}
-        </Typography>
+        <MarqueeText text={group.name} variant="body2" sx={{ fontWeight: 600 }} />
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
           {group.count} song{group.count === 1 ? '' : 's'}
         </Typography>

@@ -5,6 +5,7 @@ import { useFlags } from '../db/flags';
 import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
 import { DownloadIcon, HeartFilledIcon, PlayArrowIcon } from './icons';
+import MarqueeText from './MarqueeText';
 
 /** Route / action to run when a browse item is tapped. */
 export interface CardAction {
@@ -195,9 +196,7 @@ export default function MediaCard({
         )}
       </Box>
       <Box sx={{ minWidth: 0 }}>
-        <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-          {title}
-        </Typography>
+        <MarqueeText text={title} variant="body2" sx={{ fontWeight: 600 }} />
         <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
           {subtitle || (card.kind === 'song' ? 'Song' : card.kind)}
         </Typography>

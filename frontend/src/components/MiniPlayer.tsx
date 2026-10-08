@@ -4,6 +4,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { usePlayer } from '../player/PlayerContext';
 import { useEffectsEnabled } from '../settings/store';
 import Artwork from './Artwork';
+import MarqueeText from './MarqueeText';
 import { ExpandLessIcon, PauseIcon, PlayArrowIcon, SkipNextIcon } from './icons';
 
 /** Props for the docked mini player. */
@@ -124,9 +125,11 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="body2" noWrap sx={{ fontWeight: 600, lineHeight: 1.2 }}>
-            {track.title}
-          </Typography>
+          <MarqueeText
+            text={track.title}
+            variant="body2"
+            sx={{ fontWeight: 600, lineHeight: 1.2 }}
+          />
           <Typography variant="caption" noWrap sx={{ display: 'block', color: 'text.secondary' }}>
             {track.artist}
           </Typography>
