@@ -1,0 +1,88 @@
+import { useEffect } from 'react';
+import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+
+import Layout from './components/Layout';
+import CollectionPage from './pages/CollectionPage';
+import HomePage from './pages/HomePage';
+import LibraryPage from './pages/LibraryPage';
+import QueuePage from './pages/QueuePage';
+import SearchPage from './pages/SearchPage';
+import SettingsPage from './pages/SettingsPage';
+import { loadAppState, saveAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/appState';
+import { PlayerProvider } from './player/PlayerContext';
+import { ThemeProvider } from './theme/ThemeContext';
+
+/**
+ * Persists the active route (path + query) on every navigation.
+ *
+ * This is what makes "close → reopen from the tray / launcher" land on the
+ * exact same page: the write is debounced, and the last navigation before a
+ * close is always flushed by the time the window is gone (see DEVEL
+ * — the window is hidden, not destroyed, and a full relaunch reads the row).
+ */
+function RoutePersistence() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void saveAppState(NAVIGATION_KEY, {
+        pathname: location.pathname,
+        search: location.search,
+      } satisfies NavigationState).catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
+/**
+ * Redirects to the saved route when the window was opened without one.
+ *
+ * `main.tsx` seeds `window.location.hash` before rendering; this component
+ * covers the case where the seeded value points at a route that vanished.
+ */
+function RouteGuard() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadAppState<NavigationState>(NAVIGATION_KEY, { pathname: '/', search: '' })
+      .then((saved) => {
+        if (cancelled || !saved?.pathname) return;
+        if (window.location.hash === '#/' || window.location.hash === '#') {
+          navigate(`${saved.pathname}${saved.search ?? ''}`, { replace: true });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
+  return null;
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <PlayerProvider>
+        <HashRouter>
+          <RoutePersistence />
+          <RouteGuard />
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<HomePage />} />
+              <Route path="search" element={<SearchPage />} />
+              <Route path="queue" element={<QueuePage />} />
+              <Route path="library" element={<LibraryPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="collection/:kind/:id" element={<CollectionPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </HashRouter>
+      </PlayerProvider>
+    </ThemeProvider>
+  );
+}
