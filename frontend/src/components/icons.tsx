@@ -1,4 +1,4 @@
-import SvgIcon, { type SvgIconProps } from '@mui/material/SvgIcon';
+import SvgIcon, { type SvgIconProps } from './SvgIcon';
 
 /**
  * Interface icons — [Heroicons](https://heroicons.com) 24px solid.

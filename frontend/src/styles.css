@@ -24,6 +24,13 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme {
+  /* MUI's breakpoints, kept verbatim so `sm:`/`md:`/`lg:` cut exactly where
+     the old sx responsive keys did (xs < 600 ≤ sm < 900 ≤ md < 1200 ≤ lg). */
+  --breakpoint-sm: 600px;
+  --breakpoint-md: 900px;
+  --breakpoint-lg: 1200px;
+  --breakpoint-xl: 1536px;
+
   /* Published by ThemeProvider — dynamic at runtime. */
   --color-accent: var(--app-accent, #4caf50);
   --color-accent-fg: var(--app-accent-fg, #ffffff);
@@ -32,10 +39,28 @@
   --color-body: var(--app-text, #12160f);
   --color-muted: var(--app-text-secondary, rgba(18, 22, 15, 0.62));
   --color-line: var(--app-divider, rgba(0, 0, 0, 0.09));
+  --color-disabled: var(--app-text-disabled, rgba(0, 0, 0, 0.26));
+  --color-action: var(--app-action-active, rgba(0, 0, 0, 0.54));
+  --color-success: var(--app-success, #2e7d32);
+  --color-hover: var(--app-hover, rgba(0, 0, 0, 0.04));
   --font-ui: var(--app-font, "Alexandria", system-ui, sans-serif);
 
   /* Static design tokens of the Carmen identity (match `buildTheme`). */
   --radius-card: 14px;
   --radius-tile: 16px;
   --shadow-glass: 0 12px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+@layer base {
+  /* MUI's `SvgIcon` root, ported verbatim — kept in `base` so utility
+     classes (e.g. `hidden sm:flex` for a responsive icon) can override the
+     default display, which an inline style never could. */
+  .svg-icon {
+    width: 1em;
+    height: 1em;
+    display: inline-block;
+    fill: currentColor;
+    user-select: none;
+    flex-shrink: 0;
+  }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Box, type BoxProps, type SxProps, type Theme } from '@mui/material';
-import type { SvgIconProps } from '@mui/material/SvgIcon';
+import type { SvgIconProps } from './SvgIcon';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import {

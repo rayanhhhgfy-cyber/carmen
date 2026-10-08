@@ -182,7 +182,7 @@ export default function SongRow({
 
         {(showDownloaded || downloaded) && (
           <Tooltip title="Downloaded" placement="top">
-            <CheckCircleIcon color="success" sx={{ fontSize: 18, display: { xs: 'none', sm: 'flex' } }} />
+            <CheckCircleIcon color="success" sx={{ fontSize: 18 }} className="hidden sm:flex" />
           </Tooltip>
         )}
 

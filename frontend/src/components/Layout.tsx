@@ -16,7 +16,7 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import type { SvgIconProps } from '@mui/material/SvgIcon';
+import type { SvgIconProps } from './SvgIcon';
 import { useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';

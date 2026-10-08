@@ -14,7 +14,7 @@
  * app builds, and the facade hides which format they ship in.
  */
 import type { ComponentType } from 'react';
-import type { SvgIconProps } from '@mui/material';
+import type { SvgIconProps } from '../../components/SvgIcon';
 import type { SxProps, Theme } from '@mui/material/styles';
 
 // @ts-ignore — silences TS7016 while this resolves to the `.jsx` original.

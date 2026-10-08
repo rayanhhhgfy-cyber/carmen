@@ -98,6 +98,13 @@ export function cssPalette(mode: 'light' | 'dark'): Record<string, string> {
     '--app-text': colors.text,
     '--app-text-secondary': colors.textSecondary,
     '--app-divider': colors.divider,
+    // MUI default theme values the Tailwind tokens mirror: disabled text is
+    // identical to action.disabled, action.active and success come from the
+    // stock light/dark palettes, hover is the stock action.hover.
+    '--app-text-disabled': mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.26)',
+    '--app-action-active': mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.54)',
+    '--app-success': mode === 'dark' ? '#4caf50' : '#2e7d32',
+    '--app-hover': mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
   };
 }
 
