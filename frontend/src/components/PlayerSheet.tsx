@@ -56,6 +56,7 @@ import {
 } from './icons';
 
 import { useMotionArtwork } from '../artwork/motion';
+import { useVideoPowerGuard } from '../artwork/useVideoPowerGuard';
 import { useAnimatedArtwork } from '../settings/store';
 
 /** Tab order inside the player: 0 lyrics · 1 queue · 2 related. */
@@ -151,6 +152,14 @@ export default function PlayerSheet() {
   useEffect(() => {
     setMotionReady(false);
   }, [motionUrl]);
+  // The loops are decorative — when nobody can see them they must not cost
+  // a single decoded frame. The guard pauses each element on minimize,
+  // hide, focus loss or scroll-out and resumes it only when every signal
+  // allows again (see artwork/useVideoPowerGuard).
+  const cardVideoRef = useRef<HTMLVideoElement | null>(null);
+  const panelVideoRef = useRef<HTMLVideoElement | null>(null);
+  useVideoPowerGuard(cardVideoRef, Boolean(motionUrl));
+  useVideoPowerGuard(panelVideoRef, Boolean(motionUrl));
   // Readability scrim shared by both motion layers — theme-coloured so the
   // light mode sheet stays light and the dark one stays dark.
   const motionScrim =
@@ -533,11 +542,13 @@ export default function PlayerSheet() {
           <>
             <Box
               component="video"
+              ref={panelVideoRef}
               src={motionUrl}
               autoPlay
               loop
               muted
               playsInline
+              preload="metadata"
               onCanPlay={() => setMotionReady(true)}
               onError={() => setMotionReady(false)}
               aria-hidden
@@ -800,11 +811,13 @@ export default function PlayerSheet() {
           <>
             <Box
               component="video"
+              ref={cardVideoRef}
               src={motionUrl}
               autoPlay
               loop
               muted
               playsInline
+              preload="metadata"
               onCanPlay={() => setMotionReady(true)}
               onError={() => setMotionReady(false)}
               aria-hidden

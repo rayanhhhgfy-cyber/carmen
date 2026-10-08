@@ -43,7 +43,9 @@ export default function AmbientBackground() {
     loadArtwork(artwork).then((url) => {
       if (alive) setSrc(url);
     });
-    // the color pass runs after the bytes are in the browser cache
+    // the color pass runs after the bytes are in the browser cache; the
+    // extraction itself is cached per cover (extractColor), so coming back
+    // to a track is instant and costs no canvas work at all
     const timer = setTimeout(() => {
       extractColor(artwork).then((value) => {
         if (alive && value) setColor(value);
@@ -65,7 +67,9 @@ export default function AmbientBackground() {
         overflow: 'hidden',
         pointerEvents: 'none',
         opacity: src ? 1 : 0,
-        transition: 'opacity 700ms ease',
+        // 1.2s: slow enough to read as the room changing color when a new
+        // track starts, fast enough to feel tied to it (spec window: 1–1.5s)
+        transition: 'opacity 1200ms ease',
       }}
     >
       {src && (
@@ -93,7 +97,8 @@ export default function AmbientBackground() {
           inset: 0,
           // half the extracted cover colour as well — 50% artwork theme
           bgcolor: color ? alpha(color, dark ? 0.08 : 0.06) : 'transparent',
-          transition: 'background-color 700ms ease',
+          // same 1.2s beat as the wash above, so both move as one
+          transition: 'background-color 1200ms ease',
         }}
       />
       <Box

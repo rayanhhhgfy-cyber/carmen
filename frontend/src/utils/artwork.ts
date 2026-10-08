@@ -277,6 +277,15 @@ export function warmArtwork(url?: unknown): void {
 /**
  * Average color of an artwork, used to tint the ambient background.
  *
+ * **The canvas pass runs once per cover, for the lifetime of the session.**
+ * The promise (not just the value) is what gets cached, so a track revisited
+ * — or two components asking at once — never re-extracts: the 8×8 downscale,
+ * the `getImageData` read and (on a cold cache) the fetch all happen a
+ * single time per unique artwork URL, which is the artwork identity of a
+ * track.  The map is capped like the other session caches, and a *failed*
+ * extraction is dropped instead of remembered, so a cold CDN never freezes
+ * a cover into a colourless tint.
+ *
  * Reads the stored copy first — the `<img>` already pulled those bytes — so
  * this rarely costs a network request.  Returns `null` when the CDN does not
  * allow reading the pixels.
@@ -284,8 +293,28 @@ export function warmArtwork(url?: unknown): void {
  * @param url image URL
  * @returns `#rrggbb`
  */
+const colorCache = new Map<string, Promise<string | null>>();
+/** Covers remembered; the oldest insertion drops when the cap is passed. */
+const COLOR_CACHE_LIMIT = 300;
+
 export async function extractColor(url?: string | null): Promise<string | null> {
   if (!url) return null;
+  const remembered = colorCache.get(url);
+  if (remembered) return remembered;
+  const pass = sampleColor(url);
+  colorCache.set(url, pass);
+  if (colorCache.size > COLOR_CACHE_LIMIT) {
+    colorCache.delete(colorCache.keys().next().value as string);
+  }
+  // A miss stays a miss only until the next try — never cache a failure.
+  void pass.then((value) => {
+    if (!value) colorCache.delete(url);
+  });
+  return pass;
+}
+
+/** The uncached extraction pass behind {@link extractColor}. */
+async function sampleColor(url: string): Promise<string | null> {
   try {
     let blob = await readStored(url);
     if (!blob) {
