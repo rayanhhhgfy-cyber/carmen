@@ -372,12 +372,18 @@ export function startDownload(
     patchJob(videoId, { step: 'Fetching animated cover', progress: 0.87 });
     const savedTrack = withAlbumFrom(track, enriched);
     try {
-      const motionBytes = await fetchMotionArtwork(savedTrack.albumName);
+      const motionRef = {
+        album: savedTrack.albumName,
+        videoId: savedTrack.videoId,
+        title: savedTrack.title,
+        artist: savedTrack.artist,
+      };
+      const motionBytes = await fetchMotionArtwork(motionRef);
       if (motionBytes) {
         await writeBinary(`${folder}/motion.mp4`, motionBytes);
         // …and a copy in the shared cache, so tiles (which know no videoId)
         // can play it offline too.
-        await saveMotionArtwork(savedTrack.albumName, motionBytes);
+        await saveMotionArtwork(motionRef, motionBytes);
       }
     } catch {
       /* motion artwork never fails a download */

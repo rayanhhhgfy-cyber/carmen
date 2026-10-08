@@ -127,7 +127,7 @@ export default function CollectionPage() {
           src={artwork}
           alt=""
           iconSize={64}
-          motion={kind === 'album' ? { album: title } : null}
+          motion={kind === 'album' ? { album: title, artist: artists } : null}
           sx={{
             width: { xs: 160, sm: 220 },
             height: { xs: 160, sm: 220 },

@@ -332,7 +332,12 @@ export default function PlayerSheet() {
         src={artwork}
         alt={track.albumName || track.title}
         iconSize={72}
-        motion={{ album: track.albumName, videoId: track.videoId }}
+        motion={{
+          album: track.albumName,
+          videoId: track.videoId,
+          title: track.title,
+          artist: track.artist,
+        }}
         sx={{
           position: 'relative',
           zIndex: 1,
@@ -626,7 +631,12 @@ export default function PlayerSheet() {
           src={artwork}
           alt=""
           iconSize={20}
-          motion={{ album: track.albumName, videoId: track.videoId }}
+          motion={{
+            album: track.albumName,
+            videoId: track.videoId,
+            title: track.title,
+            artist: track.artist,
+          }}
           sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0 }}
         />
         <Box sx={{ flex: 1, minWidth: 0 }}>

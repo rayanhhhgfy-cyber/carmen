@@ -23,9 +23,11 @@ interface ArtworkProps extends BoxProps {
   /** Styles of the `<img>` itself (blur, scale, …). */
   imgSx?: SxProps<Theme>;
   /**
-   * Animated (motion) cover identity: the album title, plus the track id
-   * when it is downloaded (so an offline copy plays from the song folder).
-   * `null` / absent keeps the tile static.
+   * Animated (motion) cover identity: the album title (+ artist, for a
+   * precise catalogue match), plus the track id when it is downloaded (so
+   * an offline copy plays from the song folder). Songs that carry no album
+   * pass their `title`/`artist` instead — they resolve through an iTunes
+   * *song* search. `null` / absent keeps the tile static.
    */
   motion?: MotionArtworkRef | null;
 }

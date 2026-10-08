@@ -5,8 +5,13 @@
  * (`CoverPy().get_cover()` + `get_motion_artwork()`), running entirely in the
  * client:
  *
- *   1. the public **iTunes Search API** turns an album title into its
- *      `collectionId` (`access-control-allow-origin: *` — plain fetch);
+ *   1. the public **iTunes Search API** turns `"Album - Artist"` (the term
+ *      style `test.py` drives coverpy with — an album title alone matches
+ *      the wrong record all too often) into its `collectionId`
+ *      (`access-control-allow-origin: *` — plain fetch). Songs that arrive
+ *      without an album — flat search/queue records — fall back to an
+ *      iTunes **song** search, whose first result points straight at the
+ *      collection to animate;
  *   2. Apple's own **music.apple.com web token** — scraped from the web
  *      bundle once and persisted in `app_state` (it lives ~60 days) — unlocks
  *      `amp-api.music.apple.com/v1/catalog/…?extend=editorialVideo`, which
@@ -21,8 +26,12 @@
  * Steps 2–3 go through `@tauri-apps/plugin-http` (Rust-backed): the WebView
  * cannot make them — `amp-api` requires a spoofed
  * `Origin: https://music.apple.com`, which browsers forbid as a header.
- * That also means the feature only exists inside the Tauri shell; a plain
- * `vite dev` session simply keeps static covers.
+ * The flip side: the plugin auto-stamps every request with the WebView's
+ * own origin, and Apple's edge answers *that* with a 403 on the bootstrap
+ * page — so the plain GETs deliberately send an empty Origin (coverpy sends
+ * none either), which the plugin strips before sending. That also means
+ * the feature only exists inside the Tauri shell; a plain `vite dev`
+ * session simply keeps static covers.
  *
  * The bytes are cached so nothing is ever fetched twice:
  *
@@ -45,10 +54,19 @@ import { isTauri, localFileUrl } from '../platform/env';
 
 /** What an `<Artwork>` needs to find (or fetch) an animated cover. */
 export interface MotionArtworkRef {
-  /** Album title — also the iTunes search term and the cache key. */
+  /** Album title — the preferred identity and iTunes *album* search term. */
   album?: string | null;
   /** Downloaded track — prefers `<songs>/<id>/motion.mp4`, offline-safe. */
   videoId?: string | null;
+  /**
+   * Track title + artist: the fallback identity for songs whose flat
+   * search/queue records carry no album (the common case for playback
+   * started from search). An iTunes *song* search for `"Title - Artist"`
+   * returns the collection the track belongs to — that collection is what
+   * gets animated.
+   */
+  title?: string | null;
+  artist?: string | null;
 }
 
 // ── Plumbing ─────────────────────────────────────────────────────────────────
@@ -111,12 +129,23 @@ interface PluginJsonResult {
   payload: unknown;
 }
 
-/** Text hop through the Rust-backed fetch: no CORS, any header allowed. */
+/**
+ * Text hop through the Rust-backed fetch: no CORS, any header allowed.
+ *
+ * The plugin auto-stamps every request with the WebView's own
+ * `Origin: http://localhost:1420`, which Apple's edge answers with **403**
+ * on `music.apple.com` (verified: curl with that Origin → `403`,20-byte
+ * body; none → `200`). coverpy sends no Origin on these GETs, so default to
+ * an empty one — with `unsafe-headers` the plugin *removes* `Origin: ''`
+ * before sending. Callers may still pass their own Origin (amp-api needs
+ * `https://music.apple.com`).
+ */
 async function pluginText(
   url: string,
   headers: Record<string, string> = {},
 ): Promise<PluginTextResult> {
-  const response = (await tauriFetch(url, { headers })) as unknown as {
+  const merged: Record<string, string> = { Origin: '', ...headers };
+  const response = (await tauriFetch(url, { headers: merged })) as unknown as {
     ok: boolean;
     status: number;
     text(): Promise<string>;
@@ -162,6 +191,20 @@ function motionKey(album: string): string {
     backward = Math.imul(backward ^ normalized.charCodeAt(index), 0x85ebca6b) >>> 0;
   }
   return `m${forward.toString(36)}${backward.toString(36)}`;
+}
+
+/**
+ * What a reference resolves (and caches) under: the album title when one is
+ * known, else `"Title - Artist"` for songs that arrive without an album.
+ * `null` means the reference carries no usable identity — stay static.
+ */
+function referenceIdentity(reference: MotionArtworkRef | null | undefined): string | null {
+  const album = reference?.album?.trim();
+  if (album) return album;
+  const title = reference?.title?.trim();
+  if (!title) return null;
+  const artist = reference?.artist?.trim();
+  return artist ? `${title} - ${artist}` : title;
 }
 
 // ── Apple web token (persisted — the bundle scrape happens rarely) ──────────
@@ -245,17 +288,30 @@ async function webToken(): Promise<string> {
 
 // ── iTunes search → Apple Music album → editorial video ─────────────────────
 
-/** iTunes Search API — returns the first album's catalog id, or `null`. */
-async function searchAlbumId(album: string): Promise<number | null> {
+/**
+ * iTunes Search API — the first result's `collectionId`, or `null`.
+ *
+ * `test.py` drives coverpy with `"Justice - Justin Bieber"` — album *and*
+ * artist — because an album title alone matches the wrong record all the
+ * time (`Justice` → the electronic duo, `After Hours` → some random
+ * single). Callers compose the term the same way.
+ */
+async function searchCollectionId(
+  term: string,
+  entity: 'album' | 'song',
+): Promise<number | null> {
   const url =
-    `https://itunes.apple.com/search?term=${encodeURIComponent(album)}` +
-    '&country=US&media=music&entity=album&limit=1';
+    `https://itunes.apple.com/search?term=${encodeURIComponent(term)}` +
+    `&country=US&media=music&entity=${entity}&limit=1`;
   const response = await withTimeout(
     fetch(url, { headers: { Accept: 'application/json' } }),
     RESOLVE_TIMEOUT_MS,
   );
   if (!response.ok) return null;
-  const payload = (await response.json()) as { results?: Array<{ collectionId?: unknown }> };
+  const payload = (await response.json()) as {
+    results?: Array<{ collectionId?: unknown }>;
+    resultCount?: number;
+  };
   const id = payload?.results?.[0]?.collectionId;
   return typeof id === 'number' ? id : null;
 }
@@ -280,7 +336,9 @@ async function editorialVideoUrl(collectionId: number): Promise<string | null> {
       poisonedToken = token;
       continue; // scrape a fresh token and try exactly once more
     }
-    if (!response.ok) return null;
+    if (!response.ok) {
+      return null;
+    }
     const payload = response.payload as {
       data?: Array<{
         attributes?: {
@@ -289,7 +347,9 @@ async function editorialVideoUrl(collectionId: number): Promise<string | null> {
       }>;
     };
     const editorial = payload?.data?.[0]?.attributes?.editorialVideo;
-    if (!editorial) return null;
+    if (!editorial) {
+      return null;
+    }
     const square = editorial.motionSquareVideo1x1 ?? editorial.motionDetailSquare;
     const video = square?.video;
     return typeof video === 'string' && video ? video : null;
@@ -390,15 +450,23 @@ function directVideoUrl(playlistUrl: string, text: string): string | null {
 /** Master playlist → chosen variant → direct, self-contained MP4 URL. */
 async function resolveVideoUrl(hlsUrl: string): Promise<string | null> {
   const master = await withTimeout(pluginText(hlsUrl), RESOLVE_TIMEOUT_MS);
-  if (!master.ok) return null;
+  if (!master.ok) {
+    return null;
+  }
   const variants = parseMasterPlaylist(hlsUrl, master.body);
-  if (!variants.length) return directVideoUrl(hlsUrl, master.body);
+  if (!variants.length) {
+    const direct = directVideoUrl(hlsUrl, master.body);
+    return direct;
+  }
   const compatible = variants.filter((variant) => variant.codecs.toLowerCase().includes('avc1'));
   const candidates = compatible.length ? compatible : variants;
   const chosen = standardVariant(candidates);
   const variant = await withTimeout(pluginText(chosen.playlistUrl), RESOLVE_TIMEOUT_MS);
-  if (!variant.ok) return null;
-  return directVideoUrl(chosen.playlistUrl, variant.body);
+  if (!variant.ok) {
+    return null;
+  }
+  const direct = directVideoUrl(chosen.playlistUrl, variant.body);
+  return direct;
 }
 
 // ── Resolution cache (session) + URL store (persisted) ──────────────────────
@@ -433,9 +501,11 @@ function scheduleUrlSave(): void {
   }, 600);
 }
 
-/** Resolves the direct MP4 URL for an album — pooled, memoized, persisted. */
-async function resolvedUrl(album: string): Promise<string | null> {
-  const key = motionKey(album);
+/** Resolves the direct MP4 URL for a reference — pooled, memoized, persisted. */
+async function resolvedUrl(reference: MotionArtworkRef): Promise<string | null> {
+  const identity = referenceIdentity(reference);
+  if (!identity) return null;
+  const key = motionKey(identity);
   const cached = resolutionCache.get(key);
   if (cached !== undefined) return cached;
   const inFlight = pendingResolutions.get(key);
@@ -449,7 +519,22 @@ async function resolvedUrl(album: string): Promise<string | null> {
         resolutionCache.set(key, stored);
         return stored;
       }
-      const collectionId = await searchAlbumId(album);
+      const album = reference.album?.trim();
+      const title = reference.title?.trim();
+      const artist = reference.artist?.trim();
+      // Album first ("Album - Artist", like test.py); a song with no album
+      // — or one iTunes has never heard of — falls back to a *song* search,
+      // whose first result points straight at the collection to animate.
+      let collectionId: number | null = null;
+      if (album) {
+        collectionId = await searchCollectionId(artist ? `${album} - ${artist}` : album, 'album');
+      }
+      if (!collectionId && title) {
+        collectionId = await searchCollectionId(
+          artist ? `${title} - ${artist}` : title,
+          'song',
+        );
+      }
       if (!collectionId) {
         resolutionCache.set(key, null);
         return null;
@@ -467,7 +552,7 @@ async function resolvedUrl(album: string): Promise<string | null> {
       }
       return videoUrl;
     } catch (error) {
-      console.warn('[motion] resolve failed', album, error);
+      console.warn('[motion] resolve failed', identity, error);
       // Session-scoped negative: one blip costs this album until relaunch,
       // never the whole shelf (each album fails independently).
       resolutionCache.set(key, null);
@@ -529,8 +614,8 @@ async function downloadVideo(url: string): Promise<Uint8Array> {
 }
 
 /** Writes bytes into the shared cache and returns the path written. */
-async function storeMotionVideo(album: string, bytes: Uint8Array): Promise<string | null> {
-  const path = await cachedMotionPath(motionKey(album));
+async function storeMotionVideo(identity: string, bytes: Uint8Array): Promise<string | null> {
+  const path = await cachedMotionPath(motionKey(identity));
   if (!path) return null;
   try {
     if (await fileExists(path)) return path;
@@ -584,8 +669,10 @@ async function cachedVideo(key: string, url: string): Promise<string | null> {
 export async function motionSource(
   reference: MotionArtworkRef | null | undefined,
 ): Promise<string | null> {
-  const album = reference?.album?.trim();
-  if (!album || !isTauri) return null; // plain-web sessions stay static
+  const identity = referenceIdentity(reference);
+  if (!reference || !identity || !isTauri) {
+    return null; // plain-web sessions stay static
+  }
 
   const videoId = reference?.videoId ?? null;
   if (videoId && isDownloaded(videoId)) {
@@ -596,11 +683,11 @@ export async function motionSource(
     }
   }
 
-  const key = motionKey(album);
+  const key = motionKey(identity);
   const cached = await cachedMotionPath(key);
   if (cached && (await fileExists(cached))) return localFileUrl(cached);
 
-  const url = await resolvedUrl(album);
+  const url = await resolvedUrl(reference);
   if (!url) return null;
   const path = await cachedVideo(key, url);
   return path ? localFileUrl(path) : url;
@@ -611,12 +698,12 @@ export async function motionSource(
  * none. Best effort: a slow catalogue must never fail the download.
  */
 export async function fetchMotionArtwork(
-  album: string | null | undefined,
+  reference: MotionArtworkRef | null | undefined,
 ): Promise<Uint8Array | null> {
-  const trimmed = album?.trim();
-  if (!trimmed || !isTauri) return null;
+  const identity = referenceIdentity(reference);
+  if (!reference || !identity || !isTauri) return null;
   try {
-    const url = await resolvedUrl(trimmed);
+    const url = await resolvedUrl(reference);
     if (!url) return null;
     return await downloadVideo(url);
   } catch (error) {
@@ -631,12 +718,12 @@ export async function fetchMotionArtwork(
  * even when the song folder copy is what plays.
  */
 export async function saveMotionArtwork(
-  album: string | null | undefined,
+  reference: MotionArtworkRef | null | undefined,
   bytes: Uint8Array,
 ): Promise<void> {
-  const trimmed = album?.trim();
-  if (!trimmed || !isTauri) return;
-  await storeMotionVideo(trimmed, bytes);
+  const identity = referenceIdentity(reference);
+  if (!identity || !isTauri) return;
+  await storeMotionVideo(identity, bytes);
 }
 
 /**
@@ -651,13 +738,13 @@ export function useMotionArtwork(
   reference: MotionArtworkRef | null | undefined,
   enabled: boolean,
 ): string | null {
-  const album = reference?.album?.trim() || null;
+  const identity = referenceIdentity(reference);
   const videoId = reference?.videoId ?? null;
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    if (!enabled || !album) {
+    if (!enabled || !identity || !reference) {
       setUrl(null);
       return () => {
         alive = false;
@@ -665,7 +752,7 @@ export function useMotionArtwork(
     }
     // Back to the static cover while the new identity resolves.
     setUrl(null);
-    motionSource({ album, videoId }).then(
+    motionSource(reference).then(
       (result) => {
         if (alive) setUrl(result);
       },
@@ -676,7 +763,11 @@ export function useMotionArtwork(
     return () => {
       alive = false;
     };
-  }, [album, videoId, enabled]);
+    // `identity`/`videoId` fully describe the reference; depending on the
+    // object itself would restart resolution on every render (call sites
+    // pass literals). A same-identity reference resolves identically anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity, videoId, enabled]);
 
   return url;
 }
