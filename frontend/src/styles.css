@@ -43,6 +43,7 @@
   --color-action: var(--app-action-active, rgba(0, 0, 0, 0.54));
   --color-success: var(--app-success, #2e7d32);
   --color-hover: var(--app-hover, rgba(0, 0, 0, 0.04));
+  --color-error: var(--app-error, #d32f2f);
   --font-ui: var(--app-font, "Alexandria", system-ui, sans-serif);
 
   /* Static design tokens of the Carmen identity (match `buildTheme`). */
@@ -62,5 +63,56 @@
     fill: currentColor;
     user-select: none;
     flex-shrink: 0;
+  }
+}
+
+@layer components {
+  /* MUI `Skeleton` — 11% of the text colour (its stock 0.11 alpha), pulse
+     on the wave cadence. Utilities can still repaint it via `bg-*`. */
+  .skeleton {
+    background-color: color-mix(in srgb, var(--app-text) 11%, transparent);
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* MUI `LinearProgress` (indeterminate) — the bar sweeps, the track sits
+     on `bg-hover` at the call site. */
+  .progress-indeterminate {
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-indeterminate > i {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: 40%;
+    background-color: var(--app-accent, #4caf50);
+    border-radius: inherit;
+    animation: progress-slide 2.1s cubic-bezier(0.65, 0.8, 0.5, 0.9) infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @keyframes progress-slide {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(350%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton,
+    .progress-indeterminate > i {
+      animation: none;
+    }
   }
 }

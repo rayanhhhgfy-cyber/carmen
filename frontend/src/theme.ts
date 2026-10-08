@@ -105,6 +105,8 @@ export function cssPalette(mode: 'light' | 'dark'): Record<string, string> {
     '--app-action-active': mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.54)',
     '--app-success': mode === 'dark' ? '#4caf50' : '#2e7d32',
     '--app-hover': mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+    // MUI error.main — the one severity colour `buildTheme` never overrode.
+    '--app-error': mode === 'dark' ? '#f44336' : '#d32f2f',
   };
 }
 
