@@ -24,8 +24,12 @@ import {
  *
  * Repeat cycles `off → all → one` through `cycleRepeat`; the "one" state
  * wears the dedicated `RepeatOneIcon` so the mode is readable at a glance.
+ *
+ * `phone` widens the whole row for thumbs: shuffle/repeat spread to the
+ * edges, the skips grow to 56px targets and the FAB to 74px — the desktop
+ * metrics stay exactly as they were.
  */
-export default function NPControls() {
+export default function NPControls({ phone = false }: { phone?: boolean }) {
   const player = usePlayer();
   // The FAB's accent glow is a painted effect — flat while low battery
   // mode is on.
@@ -38,14 +42,18 @@ export default function NPControls() {
     <div
       role="group"
       aria-label="Playback controls"
-      className="mx-auto mt-3 flex w-full max-w-[440px] items-center justify-center gap-[2px] sm:gap-[6px]"
+      className={cn(
+        'mx-auto mt-3 flex w-full max-w-[440px] items-center',
+        phone ? 'justify-between gap-1 px-1' : 'justify-center gap-[2px] sm:gap-[6px]',
+      )}
     >
       <IconButton
         aria-label={player.shuffle ? 'Shuffle on' : 'Shuffle off'}
         aria-pressed={player.shuffle}
         onClick={player.toggleShuffle}
         className={cn(
-          'size-11 ![transition:background-color_160ms_ease,color_160ms_ease]',
+          '![transition:background-color_160ms_ease,color_160ms_ease]',
+          phone ? 'size-12' : 'size-11',
           player.shuffle
             ? '!bg-accent-fg/14 !text-accent-fg hover:!bg-accent-fg/22'
             : '!text-muted hover:!bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]',
@@ -57,16 +65,16 @@ export default function NPControls() {
       <IconButton
         aria-label="Previous"
         onClick={player.previous}
-        className="size-12 !text-body"
+        className={cn('!text-body', phone ? 'size-14' : 'size-12')}
       >
-        <SkipPreviousIcon sx={{ fontSize: 32 }} />
+        <SkipPreviousIcon sx={{ fontSize: phone ? 36 : 32 }} />
       </IconButton>
 
       <Fab
         aria-label={player.isPlaying ? 'Pause' : 'Play'}
         onClick={player.togglePlay}
         className={cn(
-          'mx-2 size-[66px]',
+          phone ? 'mx-1 size-[74px]' : 'mx-2 size-[66px]',
           '![transition:transform_160ms_cubic-bezier(.2,.8,.2,1),box-shadow_160ms_ease]',
           'hover:[transform:scale(1.06)]',
           effectsEnabled &&
@@ -79,20 +87,20 @@ export default function NPControls() {
         }}
       >
         {player.buffering ? (
-          <Spinner size={26} color="inherit" />
+          <Spinner size={phone ? 30 : 26} color="inherit" />
         ) : player.isPlaying ? (
-          <PauseIcon sx={{ fontSize: 34 }} />
+          <PauseIcon sx={{ fontSize: phone ? 38 : 34 }} />
         ) : (
-          <PlayArrowIcon sx={{ fontSize: 36 }} />
+          <PlayArrowIcon sx={{ fontSize: phone ? 40 : 36 }} />
         )}
       </Fab>
 
       <IconButton
         aria-label="Next"
         onClick={() => player.next()}
-        className="size-12 !text-body"
+        className={cn('!text-body', phone ? 'size-14' : 'size-12')}
       >
-        <SkipNextIcon sx={{ fontSize: 32 }} />
+        <SkipNextIcon sx={{ fontSize: phone ? 36 : 32 }} />
       </IconButton>
 
       <IconButton
@@ -100,7 +108,8 @@ export default function NPControls() {
         aria-pressed={player.repeat !== 'off'}
         onClick={player.cycleRepeat}
         className={cn(
-          'size-11 ![transition:background-color_160ms_ease,color_160ms_ease]',
+          '![transition:background-color_160ms_ease,color_160ms_ease]',
+          phone ? 'size-12' : 'size-11',
           player.repeat === 'off'
             ? '!text-muted hover:!bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]'
             : '!bg-accent-fg/14 !text-accent-fg hover:!bg-accent-fg/22',

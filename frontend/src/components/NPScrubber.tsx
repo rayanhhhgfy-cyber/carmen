@@ -147,12 +147,12 @@ export default function NPScrubber({ onSeek }: NPScrubberProps) {
         {/* empty rail */}
         <div
           aria-hidden
-          className="seek-rail pointer-events-none absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] bg-hover [transition:height_140ms_ease] group-hover:h-1.5 group-focus-within:h-1.5"
+          className="seek-rail pointer-events-none absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] bg-hover [transition:height_140ms_ease] pointer-coarse:h-1.5 group-hover:h-1.5 group-focus-within:h-1.5"
         />
         {/* buffered range, painted behind the thumb */}
         <div
           aria-hidden
-          className="seek-buffer pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] group-hover:h-1.5 group-focus-within:h-1.5"
+          className="seek-buffer pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] pointer-coarse:h-1.5 group-hover:h-1.5 group-focus-within:h-1.5"
           style={{
             width: `${bufferedFraction * 100}%`,
             backgroundColor: alpha('var(--app-text)', 0.16),
@@ -180,7 +180,7 @@ export default function NPScrubber({ onSeek }: NPScrubberProps) {
             <div
               aria-hidden
               className={cn(
-                'seek-fill pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] bg-accent-fg',
+                'seek-fill pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] bg-accent-fg pointer-coarse:h-1.5',
                 !dragging && '[transition:width_150ms_cubic-bezier(0.4,0,0.2,1)]',
               )}
               style={{
@@ -191,10 +191,11 @@ export default function NPScrubber({ onSeek }: NPScrubberProps) {
               }}
             />
             {/* thumb: 12px dot, white fill, accent ring — hidden until the
-                bar is hovered, focused or dragged */}
+                bar is hovered, focused or dragged; on touch (no hover to
+                reveal it) it simply stays put */}
             <div
               aria-hidden
-              className="seek-thumb pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 scale-50 rounded-full border-[3px] border-accent-fg bg-surface opacity-0 shadow-none [transition:opacity_140ms_ease,scale_140ms_ease] group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100"
+              className="seek-thumb pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 scale-50 rounded-full border-[3px] border-accent-fg bg-surface opacity-0 shadow-none [transition:opacity_140ms_ease,scale_140ms_ease] pointer-coarse:scale-100 pointer-coarse:opacity-100 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100"
               style={{ left: `${progressPercent}%` }}
             />
           </div>

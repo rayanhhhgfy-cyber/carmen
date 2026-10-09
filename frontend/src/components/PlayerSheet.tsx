@@ -35,7 +35,6 @@ import {
   Spinner,
   Tab,
   Tabs,
-  Tooltip,
 } from '../components/ui';
 
 import {
@@ -294,9 +293,11 @@ export default function PlayerSheet() {
       <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
         {isDesktop ? <CloseIcon /> : <ExpandMoreIcon />}
       </IconButton>
-      {/* <span className="block text-xs font-bold uppercase leading-[1.4] tracking-[0.14em] text-muted">
+      {/* Phone: the centred eyebrow a full-screen player expects — pinned
+          out of flow so the close/menu buttons never shift. */}
+      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[11px] font-bold uppercase leading-[1.4] tracking-[0.16em] text-muted md:hidden">
         Now playing
-      </span> */}
+      </span>
       <div className="flex-1" />
       <PlayerMenu track={track} meta={meta} />
     </div>
@@ -309,7 +310,7 @@ export default function PlayerSheet() {
    * colour instead.
    */
   const artworkBox = (
-    <div className="relative mx-auto w-full max-w-[min(74vw,320px)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]">
+    <div className="relative mx-auto w-full max-w-[min(86vw,392px,44vh)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]">
       <Artwork
         src={artwork}
         alt={track.albumName || track.title}
@@ -333,38 +334,61 @@ export default function PlayerSheet() {
     </div>
   );
 
-  const titleBlock = (
-    <div className="mt-4 flex flex-row items-center gap-2 text-center md:mt-2 md:text-left">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-row items-center justify-center gap-[6px] md:justify-start">
-          <MarqueeText text={track.title} variant="h6" />
-          {track.isExplicit && (
-            <ExplicitIcon
-              aria-label="Explicit"
-              sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }}
-            />
-          )}
-        </div>
-        <p
-          className={cn(
-            'm-0 truncate text-sm leading-[1.43] text-muted hover:text-accent-fg',
-            track.artist ? 'cursor-pointer' : 'cursor-default',
-          )}
-          role={track.artist ? 'link' : undefined}
-          tabIndex={track.artist ? 0 : undefined}
-          onClick={searchArtist}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') searchArtist();
-          }}
-        >
-          {track.artist}
-        </p>
-        {track.albumName && (
-          <span className="mt-[2px] block truncate text-xs leading-[1.4] text-disabled">
-            {track.albumName}
-          </span>
+  /**
+   * Title · explicit badge · artist · album — the metadata both layouts
+   * share; only the title's weight differs (hero `h5` on the phone, the
+   * `h6` that has always sat beside the desktop columns). The `md:`
+   * alignment rule is safe in the shared markup because the desktop body
+   * only ever renders at ≥900px.
+   */
+  const titleMeta = (titleVariant: 'h5' | 'h6') => (
+    <>
+      <div className="flex flex-row items-center justify-center gap-[6px] md:justify-start">
+        <MarqueeText text={track.title} variant={titleVariant} />
+        {track.isExplicit && (
+          <ExplicitIcon
+            aria-label="Explicit"
+            sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }}
+          />
         )}
       </div>
+      <p
+        className={cn(
+          'm-0 truncate text-sm leading-[1.43] text-muted hover:text-accent-fg',
+          track.artist ? 'cursor-pointer' : 'cursor-default',
+        )}
+        role={track.artist ? 'link' : undefined}
+        tabIndex={track.artist ? 0 : undefined}
+        onClick={searchArtist}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') searchArtist();
+        }}
+      >
+        {track.artist}
+      </p>
+      {track.albumName && (
+        <span className="mt-[2px] block truncate text-xs leading-[1.4] text-disabled">
+          {track.albumName}
+        </span>
+      )}
+    </>
+  );
+
+  const titleBlock = (
+    <div className="mt-4 flex flex-row items-center gap-2 text-center md:mt-2 md:text-left">
+      <div className="min-w-0 flex-1">{titleMeta('h6')}</div>
+    </div>
+  );
+
+  /**
+   * Phone arrangement: the hero title with the heart riding its right
+   * edge — Apple Music's placement, so the favourite is a thumb away from
+   * the thing it favourites instead of hiding in the row below.
+   */
+  const mobileTitleBlock = (
+    <div className="mt-5 flex items-center gap-1 text-center">
+      <div className="min-w-0 flex-1">{titleMeta('h5')}</div>
+      <NPFavorite track={track} />
     </div>
   );
 
@@ -387,37 +411,57 @@ export default function PlayerSheet() {
   ) : null;
 
   /**
-   * Secondary row. On a phone it also carries the three panel shortcuts
-   * (lyrics / queue / related) — on a desktop those live in the tabs to the
-   * right, so only the heart and the download stay here.
+   * Secondary row (desktop): the heart and the download, under the
+   * transport. On a phone those two live elsewhere now — the heart rides
+   * the title, the download sits in the labelled action bar — so this row
+   * stops carrying the bare panel icons that used to live here.
    */
   const secondaryRow = (
     <div className="mt-2 flex flex-row items-center justify-center gap-1">
-      {!isDesktop && (
-        <>
-          <Tooltip title="Lyrics" placement="top">
-            <IconButton aria-label="Show lyrics" onClick={() => openPanel(LYRICS_TAB)}>
-              <LyricsIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Queue" placement="top">
-            <IconButton aria-label="Show queue" onClick={() => openPanel(QUEUE_TAB)}>
-              <QueueMusicIcon />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Related" placement="top">
-            <IconButton aria-label="Show related songs" onClick={() => openPanel(RELATED_TAB)}>
-              <RelatedIcon />
-            </IconButton>
-          </Tooltip>
-        </>
-      )}
       <NPFavorite track={track} />
       <DownloadButton
         track={track}
         meta={meta}
         waitForCache={() => player.waitForCache(track.videoId)}
       />
+    </div>
+  );
+
+  /**
+   * Phone action bar: one segmented glass pill under the transport —
+   * three labelled panel destinations (the bare icons they replaced were
+   * far too quiet) and the download cell at the end, everything within a
+   * thumb's arc.
+   */
+  const mobileActionBar = (
+    <div className="mx-auto mt-4 flex w-full max-w-[440px] items-stretch overflow-hidden rounded-full border border-line bg-surface/60 backdrop-blur-xl">
+      {[
+        { label: 'Lyrics', Icon: LyricsIcon, tab: LYRICS_TAB },
+        { label: 'Queue', Icon: QueueMusicIcon, tab: QUEUE_TAB },
+        { label: 'Related', Icon: RelatedIcon, tab: RELATED_TAB },
+      ].map(({ label, Icon, tab: value }) => (
+        <button
+          key={label}
+          type="button"
+          onClick={() => openPanel(value)}
+          className={cn(
+            'flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2 py-3',
+            'text-xs font-semibold text-muted',
+            'transition-colors duration-150 hover:bg-hover hover:text-body active:scale-[0.98]',
+            'focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2',
+          )}
+        >
+          <Icon fontSize="small" className="shrink-0" />
+          <span className="truncate">{label}</span>
+        </button>
+      ))}
+      <div className="grid w-14 shrink-0 place-items-center border-l border-line">
+        <DownloadButton
+          track={track}
+          meta={meta}
+          waitForCache={() => player.waitForCache(track.videoId)}
+        />
+      </div>
     </div>
   );
 
@@ -538,16 +582,17 @@ export default function PlayerSheet() {
     </div>
   ) : null;
 
-  // ── Phone: main view (artwork → info → controls → secondary row) ───────
+  // ── Phone: main view (cover → hero info → scrubber → transport → bar) ──
   const mobileMain = (
-    // on a short screen the column scrolls instead of clipping
-    <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-4 pt-1">
+    // on a short screen the column scrolls instead of clipping; the
+    // bottom padding clears the home indicator where the OS reports one
+    <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom),1rem)] pt-1">
       {artworkBox}
-      {titleBlock}
+      {mobileTitleBlock}
       {errorAlert}
       {scrubber}
-      <NPControls />
-      {secondaryRow}
+      <NPControls phone />
+      {mobileActionBar}
     </div>
   );
 
