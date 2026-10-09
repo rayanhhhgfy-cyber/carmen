@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconButton, Tooltip } from '@mui/material';
+import { IconButton, Tooltip } from '../components/ui';
 
 import { toggleFavorite } from '../db/repos/favorites';
 import { useFlag } from '../db/flags';
-import { useTheme } from '../theme/ThemeContext';
 import type { Track } from '../types/models';
+import { cn } from '../utils/cn';
 import { HeartFilledIcon, HeartIcon } from './icons';
 
 interface NPFavoriteProps {
@@ -26,8 +26,8 @@ interface NPFavoriteProps {
 export default function NPFavorite({ track, size = 'medium' }: NPFavoriteProps) {
   const favorite = useFlag('favorite', track.videoId);
   // Readable accent: a filled heart in the pinned white accent would vanish
-  // on the light player surface (see `accentFg` in ThemeContext).
-  const { accentFg } = useTheme();
+  // on the light player surface — the `text-accent-fg` token below carries
+  // ThemeContext's `accentFg`.
   const busyRef = useRef(false);
   const [popping, setPopping] = useState(false);
 
@@ -55,30 +55,32 @@ export default function NPFavorite({ track, size = 'medium' }: NPFavoriteProps) 
   const label = favorite ? 'Remove from favorites' : 'Add to favorites';
 
   return (
-    <Tooltip title={label} placement="top">
-      <IconButton
-        size={size}
-        aria-label={label}
-        aria-pressed={favorite}
-        onClick={() => void handleToggle()}
-        sx={{
-          color: favorite ? accentFg : 'text.secondary',
-          transition: 'color 160ms ease, transform 160ms ease',
-          animation: popping ? 'np-fav-pop 260ms cubic-bezier(.2,.8,.2,1)' : 'none',
-          '&:hover': {
-            color: favorite ? accentFg : 'text.primary',
-            bgcolor: 'action.hover',
-          },
-          '&:active': { transform: 'scale(0.88)' },
-          '@keyframes np-fav-pop': {
-            '0%': { transform: 'scale(1)' },
-            '55%': { transform: 'scale(1.25)' },
-            '100%': { transform: 'scale(1)' },
-          },
-        }}
-      >
-        {favorite ? <HeartFilledIcon /> : <HeartIcon />}
-      </IconButton>
-    </Tooltip>
+    // MIGRATION: MUI used to inject `@keyframes np-fav-pop` through the sx
+    // object (`'@keyframes np-fav-pop': {...}`); `styles.css` is off limits
+    // in this migration, so the keyframes travel with the component in a
+    // <style> element instead (same pattern as SongRow's `row-eq`).
+    <>
+      <style>
+        {'@keyframes np-fav-pop{0%{transform:scale(1)}55%{transform:scale(1.25)}100%{transform:scale(1)}}'}
+      </style>
+      <Tooltip title={label} placement="top">
+        <IconButton
+          size={size}
+          aria-label={label}
+          aria-pressed={favorite}
+          onClick={() => void handleToggle()}
+          className={cn(
+            '![transition:color_160ms_ease,transform_160ms_ease]',
+            'active:[transform:scale(0.88)]',
+            favorite
+              ? '!text-accent-fg'
+              : '!text-muted hover:!text-body',
+            popping && 'animate-[np-fav-pop_260ms_cubic-bezier(.2,.8,.2,1)]',
+          )}
+        >
+          {favorite ? <HeartFilledIcon /> : <HeartIcon />}
+        </IconButton>
+      </Tooltip>
+    </>
   );
 }

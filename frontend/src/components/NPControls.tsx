@@ -1,9 +1,9 @@
-import { CircularProgress, Fab, IconButton, Stack } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { Fab, IconButton, Spinner } from '../components/ui';
 
 import { usePlayer } from '../player/PlayerContext';
 import { useEffectsEnabled } from '../settings/store';
-import { useTheme } from '../theme/ThemeContext';
+import { alpha } from '../utils/color';
+import { cn } from '../utils/cn';
 import {
   PauseIcon,
   PlayArrowIcon,
@@ -30,37 +30,26 @@ export default function NPControls() {
   // The FAB's accent glow is a painted effect — flat while low battery
   // mode is on.
   const effectsEnabled = useEffectsEnabled();
-  // Shuffle / repeat icons are line art on the sheet — the readable accent
-  // keeps them visible when the mode pins the accent to white.
-  const { accentFg } = useTheme();
+  // Shuffle / repeat icons are line art on the sheet — the `accent-fg`
+  // tokens below are ThemeContext's readable accent, which keeps them
+  // visible when the mode pins the accent to white.
 
   return (
-    <Stack
-      direction="row"
-      alignItems="center"
-      justifyContent="center"
-      spacing={{ xs: 0.25, sm: 0.75 }}
+    <div
       role="group"
       aria-label="Playback controls"
-      sx={{ maxWidth: 440, width: '100%', mx: 'auto', mt: 1.5 }}
+      className="mx-auto mt-3 flex w-full max-w-[440px] items-center justify-center gap-[2px] sm:gap-[6px]"
     >
       <IconButton
         aria-label={player.shuffle ? 'Shuffle on' : 'Shuffle off'}
         aria-pressed={player.shuffle}
         onClick={player.toggleShuffle}
-        sx={{
-          width: 44,
-          height: 44,
-          color: player.shuffle ? accentFg : 'text.secondary',
-          bgcolor: player.shuffle ? alpha(accentFg, 0.14) : 'transparent',
-          transition: 'background-color 160ms ease, color 160ms ease',
-          '&:hover': {
-            bgcolor: (t) =>
-              player.shuffle
-                ? alpha(accentFg, 0.22)
-                : alpha(t.palette.text.primary, 0.08),
-          },
-        }}
+        className={cn(
+          'size-11 ![transition:background-color_160ms_ease,color_160ms_ease]',
+          player.shuffle
+            ? '!bg-accent-fg/14 !text-accent-fg hover:!bg-accent-fg/22'
+            : '!text-muted hover:!bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]',
+        )}
       >
         <ShuffleIcon fontSize="small" />
       </IconButton>
@@ -68,38 +57,29 @@ export default function NPControls() {
       <IconButton
         aria-label="Previous"
         onClick={player.previous}
-        sx={{
-          width: 48,
-          height: 48,
-          color: 'text.primary',
-          transition: 'background-color 160ms ease',
-          '&:hover': { bgcolor: 'action.hover' },
-        }}
+        className="size-12 !text-body"
       >
         <SkipPreviousIcon sx={{ fontSize: 32 }} />
       </IconButton>
 
       <Fab
-        color="primary"
         aria-label={player.isPlaying ? 'Pause' : 'Play'}
         onClick={player.togglePlay}
-        sx={{
-          width: 66,
-          height: 66,
-          mx: 1,
-          boxShadow: (t) =>
-            effectsEnabled ? `0 10px 26px ${alpha(t.palette.primary.main, 0.42)}` : 'none',
-          transition:
-            'transform 160ms cubic-bezier(.2,.8,.2,1), box-shadow 160ms ease',
-          '&:hover': {
-            transform: 'scale(1.06)',
-            boxShadow: (t) =>
-              effectsEnabled ? `0 14px 32px ${alpha(t.palette.primary.main, 0.55)}` : 'none',
-          },
+        className={cn(
+          'mx-2 size-[66px]',
+          '![transition:transform_160ms_cubic-bezier(.2,.8,.2,1),box-shadow_160ms_ease]',
+          'hover:[transform:scale(1.06)]',
+          effectsEnabled &&
+            'hover:![box-shadow:0_14px_32px_color-mix(in_srgb,var(--app-accent)_55%,transparent)]',
+        )}
+        style={{
+          boxShadow: effectsEnabled
+            ? `0 10px 26px ${alpha('var(--app-accent)', 0.42)}`
+            : 'none',
         }}
       >
         {player.buffering ? (
-          <CircularProgress size={26} color="inherit" />
+          <Spinner size={26} color="inherit" />
         ) : player.isPlaying ? (
           <PauseIcon sx={{ fontSize: 34 }} />
         ) : (
@@ -110,13 +90,7 @@ export default function NPControls() {
       <IconButton
         aria-label="Next"
         onClick={() => player.next()}
-        sx={{
-          width: 48,
-          height: 48,
-          color: 'text.primary',
-          transition: 'background-color 160ms ease',
-          '&:hover': { bgcolor: 'action.hover' },
-        }}
+        className="size-12 !text-body"
       >
         <SkipNextIcon sx={{ fontSize: 32 }} />
       </IconButton>
@@ -125,20 +99,12 @@ export default function NPControls() {
         aria-label={`Repeat: ${player.repeat}`}
         aria-pressed={player.repeat !== 'off'}
         onClick={player.cycleRepeat}
-        sx={{
-          width: 44,
-          height: 44,
-          color: player.repeat === 'off' ? 'text.secondary' : accentFg,
-          bgcolor:
-            player.repeat === 'off' ? 'transparent' : alpha(accentFg, 0.14),
-          transition: 'background-color 160ms ease, color 160ms ease',
-          '&:hover': {
-            bgcolor: (t) =>
-              player.repeat === 'off'
-                ? alpha(t.palette.text.primary, 0.08)
-                : alpha(accentFg, 0.22),
-          },
-        }}
+        className={cn(
+          'size-11 ![transition:background-color_160ms_ease,color_160ms_ease]',
+          player.repeat === 'off'
+            ? '!text-muted hover:!bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]'
+            : '!bg-accent-fg/14 !text-accent-fg hover:!bg-accent-fg/22',
+        )}
       >
         {player.repeat === 'one' ? (
           <RepeatOneIcon fontSize="small" />
@@ -146,6 +112,6 @@ export default function NPControls() {
           <RepeatIcon fontSize="small" />
         )}
       </IconButton>
-    </Stack>
+    </div>
   );
 }

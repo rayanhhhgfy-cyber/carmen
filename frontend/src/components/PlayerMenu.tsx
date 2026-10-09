@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  IconButton,
-  ListItemIcon,
-  Menu,
-  MenuItem,
-  Tooltip,
-} from '@mui/material';
+import { IconButton, Tooltip } from '../components/ui';
+import { ListItemIcon, Menu, MenuItem } from '../components/ui/Overlay';
 import { useNavigate } from 'react-router-dom';
 import { useDownloads } from '../hooks';
 import { usePlayer } from '../player/PlayerContext';
@@ -95,25 +90,27 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
 
   return (
     <>
-      <Tooltip title="More">
+      {/* `placement="bottom"` keeps MUI's default tooltip direction. */}
+      <Tooltip title="More" placement="bottom">
         <IconButton
           size="small"
           aria-label="More actions"
           aria-haspopup="menu"
           aria-expanded={anchor ? true : undefined}
           onClick={(event) => setAnchor(event.currentTarget)}
-          sx={{ width: 34, height: 34, border: 1, borderColor: 'divider' }}
+          className="size-[34px] border border-line"
         >
           <MoreVertIcon fontSize="small" />
         </IconButton>
       </Tooltip>
 
+      {/* MIGRATION: `anchorOrigin` / `transformOrigin` dropped — the kit Menu
+          anchors itself 4px below the trigger (and flips above when it would
+          overflow), so it self-positions instead of taking origin props. */}
       <Menu
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={close}
-        transformOrigin={{ horizontal: 'center', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'center', vertical: 'bottom' }}
       >
         <MenuItem disabled={running || saved} onClick={onDownload}>
           <ListItemIcon>

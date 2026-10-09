@@ -1,20 +1,19 @@
-import { useState } from 'react';
-import { Box, LinearProgress, Slider, Stack, Typography } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { useRef, useState } from 'react';
 
+import { ProgressBar } from '../components/ui';
 import { useEffectsEnabled } from '../settings/store';
 import { usePlayhead, usePlayer } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
+import { alpha } from '../utils/color';
+import { cn } from '../utils/cn';
 import { formatTime } from '../utils/format';
 
 interface NPScrubberProps {
   onSeek: (seconds: number) => void;
 }
 
-/** MUI sliders report `number | number[]`; the seek bar is never a range. */
-function scalar(value: number | number[], fallback = 0): number {
-  return Array.isArray(value) ? (value[0] ?? fallback) : value;
-}
+/** Slider step: the bar moves in half-second increments, like before. */
+const STEP = 0.5;
 
 /**
  * Seek bar of the now-playing screen.
@@ -26,9 +25,15 @@ function scalar(value: number | number[], fallback = 0): number {
  *
  * While a gesture is in flight the bar keeps a *tentative* position in
  * local state, so it never snaps back to the real playhead under the
- * finger; the seek is only sent when the gesture commits.
- * `onChangeCommitted` also fires for keyboard changes (arrow / page / home
- * / end keys), so the bar stays fully keyboard operable.
+ * finger; the seek is only sent when the gesture commits. Keyboard changes
+ * (arrow / page / home / end keys) commit right away too, so the bar stays
+ * fully keyboard operable.
+ *
+ * MIGRATION: MUI's `Slider` became a hand-built `role="slider"` div —
+ * same pointer flow (press → drag → release commits, `step` rounding,
+ * press-time focus) and the same keyboard contract: arrows ±`STEP`,
+ * PageUp/PageDown ±10% of the duration, Home/End jump to the ends, and
+ * every handled key commits through `onSeek`.
  */
 export default function NPScrubber({ onSeek }: NPScrubberProps) {
   // The playhead lives in its own context (`usePlayhead`), so these
@@ -47,116 +52,166 @@ export default function NPScrubber({ onSeek }: NPScrubberProps) {
   // mode (filled surfaces can keep `primary.main`).
   const { accentFg } = useTheme();
 
+  const sliderRef = useRef<HTMLDivElement>(null);
+  // Mirrors MUI's press → drag → release cycle: the value under the finger
+  // is tentative (`scrub`) until the pointer is released.
+  const pressedRef = useRef(false);
+  const moveCountRef = useRef(0);
+  // The track stops easing towards the finger once the drag is intentional,
+  // so the fill stays glued to the pointer (MUI's `dragging` state).
+  const [dragging, setDragging] = useState(false);
+
   const progress = duration ? Math.min(Math.max(scrub ?? currentTime, 0), duration) : 0;
   const bufferedFraction = duration ? Math.min(Math.max(buffered, 0) / duration, 1) : 0;
   const elapsed = scrub ?? currentTime;
+  const progressPercent = duration ? (progress / duration) * 100 : 0;
+
+  /** Position → slider value, rounded to `step` and clamped to the range. */
+  const valueAt = (clientX: number): number | null => {
+    const rect = sliderRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !duration) return null;
+    const fraction = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    const rounded = Math.round((fraction * duration) / STEP) * STEP;
+    return Math.min(Math.max(rounded, 0), duration);
+  };
+
+  const commit = (value: number | null) => {
+    if (value != null) onSeek(value);
+    setScrub(null);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    // MUI's root did the same: no text selection while the finger moves.
+    event.preventDefault();
+    // MUI focused its hidden input on press — keep the bar focusable so the
+    // keyboard contract is one gesture away.
+    event.currentTarget.focus();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pressedRef.current = true;
+    moveCountRef.current = 0;
+    setScrub(valueAt(event.clientX));
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pressedRef.current) return;
+    moveCountRef.current += 1;
+    if (moveCountRef.current > 2) setDragging(true);
+    setScrub(valueAt(event.clientX));
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pressedRef.current) return;
+    pressedRef.current = false;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    commit(scrub);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const bigIncrement = duration / 10;
+    let next: number | null = null;
+    switch (event.key) {
+      case 'ArrowUp':
+      case 'ArrowRight':
+        next = progress + STEP;
+        break;
+      case 'ArrowDown':
+      case 'ArrowLeft':
+        next = progress - STEP;
+        break;
+      case 'PageUp':
+        next = progress + bigIncrement;
+        break;
+      case 'PageDown':
+        next = progress - bigIncrement;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = duration;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    commit(Math.min(Math.max(next, 0), duration));
+  };
 
   return (
-    <Box sx={{ mt: 2.5 }}>
-      <Box
-        sx={{
-          position: 'relative',
-          '& .seek-rail, & .seek-buffer': { transition: 'height 140ms ease' },
-          '&:hover, &:focus-within': {
-            '& .seek-rail, & .seek-buffer': { height: 6 },
-          },
-        }}
-      >
+    <div className="mt-5">
+      <div className="group relative">
         {/* empty rail */}
-        <Box
+        <div
           aria-hidden
-          className="seek-rail"
-          sx={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            height: 4,
-            borderRadius: 3,
-            bgcolor: 'action.hover',
-            pointerEvents: 'none',
-          }}
+          className="seek-rail pointer-events-none absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] bg-hover [transition:height_140ms_ease] group-hover:h-1.5 group-focus-within:h-1.5"
         />
         {/* buffered range, painted behind the thumb */}
-        <Box
+        <div
           aria-hidden
-          className="seek-buffer"
-          sx={{
-            position: 'absolute',
-            left: 0,
+          className="seek-buffer pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] group-hover:h-1.5 group-focus-within:h-1.5"
+          style={{
             width: `${bufferedFraction * 100}%`,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            height: 4,
-            borderRadius: 3,
-            bgcolor: (t) => alpha(t.palette.text.primary, 0.16),
-            pointerEvents: 'none',
+            backgroundColor: alpha('var(--app-text)', 0.16),
             transition: 'width 300ms linear, height 140ms ease',
           }}
         />
         {duration ? (
-          <Slider
-            size="small"
-            value={progress}
-            max={duration}
-            step={0.5}
+          <div
+            ref={sliderRef}
+            role="slider"
+            tabIndex={0}
             aria-label="Seek"
-            onChange={(_, value) => setScrub(scalar(value, progress))}
-            onChangeCommitted={(_, value) => {
-              onSeek(scalar(value, progress));
-              setScrub(null);
-            }}
-            sx={{
-              position: 'relative',
-              color: accentFg,
-              py: 1.25,
-              '& .MuiSlider-rail': { bgcolor: 'transparent', opacity: 1 },
-              '& .MuiSlider-track': {
-                border: 0,
-                height: 4,
-                borderRadius: 3,
-                boxShadow: effectsEnabled ? `0 0 10px ${alpha(accentFg, 0.55)}` : 'none',
-              },
-              '& .MuiSlider-thumb': {
-                width: 12,
-                height: 12,
-                bgcolor: 'background.paper',
-                border: `3px solid ${accentFg}`,
-                boxShadow: 'none',
-                opacity: 0,
-                scale: '0.5',
-                transition: 'opacity 140ms ease, scale 140ms ease',
-                '&:hover, &.MuiSlider-active': { opacity: 1, scale: '1' },
-              },
-              '&:hover .MuiSlider-thumb, &:focus-visible .MuiSlider-thumb': {
-                opacity: 1,
-                scale: '1',
-              },
-            }}
-          />
+            aria-orientation="horizontal"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={progress}
+            className="relative block h-4 w-full cursor-pointer touch-none select-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onKeyDown={handleKeyDown}
+          >
+            {/* played range — the glowing accent track */}
+            <div
+              aria-hidden
+              className={cn(
+                'seek-fill pointer-events-none absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-[42px] bg-accent-fg',
+                !dragging && '[transition:width_150ms_cubic-bezier(0.4,0,0.2,1)]',
+              )}
+              style={{
+                width: `${progressPercent}%`,
+                boxShadow: effectsEnabled
+                  ? `0 0 10px ${alpha(accentFg, 0.55)}`
+                  : 'none',
+              }}
+            />
+            {/* thumb: 12px dot, white fill, accent ring — hidden until the
+                bar is hovered, focused or dragged */}
+            <div
+              aria-hidden
+              className="seek-thumb pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 scale-50 rounded-full border-[3px] border-accent-fg bg-surface opacity-0 shadow-none [transition:opacity_140ms_ease,scale_140ms_ease] group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100"
+              style={{ left: `${progressPercent}%` }}
+            />
+          </div>
         ) : (
           /* no duration yet: the indeterminate bar says "loading" instead of
              pretending the song is one pixel long */
-          <LinearProgress sx={{ borderRadius: 3, height: 4, bgcolor: 'action.hover' }} />
+          <ProgressBar />
         )}
-      </Box>
-      <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.25 }}>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-        >
+      </div>
+      <div className="mt-[2px] flex justify-between">
+        <span className="text-xs leading-[1.4] text-muted tabular-nums">
           {formatTime(elapsed)}
-        </Typography>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ fontVariantNumeric: 'tabular-nums' }}
-        >
+        </span>
+        <span className="text-xs leading-[1.4] text-muted tabular-nums">
           {duration ? formatTime(duration) : '--:--'}
-        </Typography>
-      </Stack>
-    </Box>
+        </span>
+      </div>
+    </div>
   );
 }

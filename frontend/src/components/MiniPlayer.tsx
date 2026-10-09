@@ -1,8 +1,9 @@
-import { Box, IconButton, Typography } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import CircularProgress from '@mui/material/CircularProgress';
+import { IconButton, Spinner } from '../components/ui';
+
 import { usePlayhead, usePlayer } from '../player/PlayerContext';
 import { useEffectsEnabled } from '../settings/store';
+import { alpha } from '../utils/color';
+import { cn } from '../utils/cn';
 import Artwork from './Artwork';
 import MarqueeText from './MarqueeText';
 import { ExpandLessIcon, PauseIcon, PlayArrowIcon, SkipNextIcon } from './icons';
@@ -43,76 +44,44 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
     : 0;
 
   return (
-    <Box
+    <div
       onClick={() => player.setSheetOpen(true)}
-      sx={{
-        position: 'fixed',
-        left: { xs: 8, sm: 12, md: 228 },
-        right: { xs: 8, sm: 12, md: 12 },
-        bottom: bottomOffset,
-        zIndex: (t) => t.zIndex.modal - 1,
-        color: 'text.primary',
-        // solid paper without the glass effect: the fill has to carry the
+      className={cn(
+        // `group` carries the expand button's hover reveal (the old
+        // `'&:hover .mini-expand'` selector).
+        'group fixed z-[1299] cursor-pointer overflow-hidden rounded-[56px] border border-line text-body',
+        'left-2 right-2 sm:left-3 sm:right-3 md:left-[228px]',
+        // solid surface without the glass effect: the fill has to carry the
         // surface on its own once nothing blurs behind it
-        bgcolor: (t) =>
-          effectsEnabled ? alpha(t.palette.background.paper, 0.86) : t.palette.background.paper,
-        borderRadius: 4,
-        border: '1px solid',
-        borderColor: 'divider',
-        boxShadow:
-          '0 12px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08)',
-        overflow: 'hidden',
-        cursor: 'pointer',
+        effectsEnabled ? 'bg-surface/86' : 'bg-surface',
+        'shadow-glass [transition:left_250ms_ease,opacity_200ms_ease,transform_160ms_ease,box-shadow_160ms_ease]',
+        'hover:[transform:translateY(-2px)] hover:shadow-[0_16px_40px_rgba(0,0,0,0.2),0_3px_10px_rgba(0,0,0,0.1)]',
+      )}
+      style={{
+        bottom: bottomOffset,
         backdropFilter: effectsEnabled ? 'blur(20px) saturate(1.6)' : 'none',
         WebkitBackdropFilter: effectsEnabled ? 'blur(20px) saturate(1.6)' : 'none',
-        transition:
-          'left 250ms ease, opacity 200ms ease, transform 160ms ease, box-shadow 160ms ease',
-        '&:hover': {
-          transform: 'translateY(-2px)',
-          boxShadow:
-            '0 16px 40px rgba(0,0,0,0.2), 0 3px 10px rgba(0,0,0,0.1)',
-        },
-        '&:hover .mini-expand': { opacity: 1 },
       }}
     >
       {/* buffered (behind) + played (front) progress */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 3,
-          bgcolor: (t) => alpha(t.palette.text.primary, 0.08),
-        }}
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            height: '100%',
-            width: `${buffered}%`,
-            bgcolor: (t) => alpha(t.palette.text.primary, 0.2),
-          }}
+      <div className="absolute inset-x-0 top-0 h-[3px] bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]">
+        <div
+          className="absolute left-0 top-0 h-full bg-[color-mix(in_srgb,var(--app-text)_20%,transparent)]"
+          style={{ width: `${buffered}%` }}
         />
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            height: '100%',
+        <div
+          className="absolute left-0 top-0 h-full rounded-[0_3px_3px_0] bg-accent"
+          style={{
             width: `${progress}%`,
-            bgcolor: 'primary.main',
-            borderRadius: '0 3px 3px 0',
-            boxShadow: (t) =>
-              effectsEnabled ? `0 0 8px ${alpha(t.palette.primary.main, 0.65)}` : 'none',
+            boxShadow: effectsEnabled
+              ? `0 0 8px ${alpha('var(--app-accent)', 0.65)}`
+              : 'none',
             transition: 'width 250ms linear',
           }}
         />
-      </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1.25, py: 1 }}>
-        <Box sx={{ position: 'relative', width: 44, height: 44, flexShrink: 0 }}>
+      </div>
+      <div className="flex items-center gap-3 px-[10px] py-1">
+        <div className="relative h-11 w-11 shrink-0">
           <Artwork
             src={track.artwork}
             alt=""
@@ -120,23 +89,20 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: 'action.hover' }}
           />
           {player.buffering && (
-            <CircularProgress
-              size={20}
-              sx={{ position: 'absolute', inset: 0, margin: 'auto', color: 'primary.main' }}
-            />
+            <Spinner size={20} className="absolute inset-0 m-auto" />
           )}
-        </Box>
+        </div>
 
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <div className="min-w-0 flex-1">
           <MarqueeText
             text={track.title}
             variant="body2"
             sx={{ fontWeight: 600, lineHeight: 1.2 }}
           />
-          <Typography variant="caption" noWrap sx={{ display: 'block', color: 'text.secondary' }}>
+          <span className="block truncate text-xs leading-[1.4] text-muted">
             {track.artist}
-          </Typography>
-        </Box>
+          </span>
+        </div>
 
         <IconButton
           aria-label={player.isPlaying ? 'Pause' : 'Play'}
@@ -144,14 +110,7 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             event.stopPropagation();
             player.togglePlay();
           }}
-          sx={{
-            width: 42,
-            height: 42,
-            bgcolor: 'primary.main',
-            color: 'primary.contrastText',
-            transition: 'transform 150ms ease, filter 150ms ease',
-            '&:hover': { bgcolor: 'primary.main', transform: 'scale(1.08)', filter: 'brightness(1.08)' },
-          }}
+          className="size-[42px] bg-accent !text-accent-fg hover:!bg-accent hover:[transform:scale(1.08)] hover:[filter:brightness(1.08)] ![transition:transform_150ms_ease,filter_150ms_ease]"
         >
           {player.isPlaying ? <PauseIcon /> : <PlayArrowIcon />}
         </IconButton>
@@ -162,34 +121,22 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             event.stopPropagation();
             player.next();
           }}
-          sx={{
-            color: 'text.secondary',
-            width: 40,
-            height: 40,
-            '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-          }}
+          className="size-10 !text-muted hover:!text-body"
         >
           <SkipNextIcon />
         </IconButton>
         <IconButton
-          className="mini-expand"
           size="small"
+          className="mini-expand size-10 !text-muted hover:!text-body opacity-100 md:opacity-55 group-hover:!opacity-100 group-focus-within:!opacity-100"
           aria-label="Open player"
           onClick={(event) => {
             event.stopPropagation();
             player.setSheetOpen(true);
           }}
-          sx={{
-            color: 'text.secondary',
-            width: 40,
-            height: 40,
-            opacity: { xs: 1, md: 0.55 },
-            '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-          }}
         >
           <ExpandLessIcon />
         </IconButton>
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }

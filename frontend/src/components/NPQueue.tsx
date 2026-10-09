@@ -1,20 +1,10 @@
-import {
-  Box,
-  Button,
-  IconButton,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Button, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText } from '../components/ui';
 
 import { usePlayer } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import type { Track } from '../types/models';
 import { formatTime } from '../utils/format';
+import { cn } from '../utils/cn';
 import { useFlag } from '../db/flags';
 import Artwork from './Artwork';
 import MarqueeText from './MarqueeText';
@@ -36,31 +26,10 @@ function QueueRow({
   const favorite = useFlag('favorite', track.videoId);
 
   return (
-    <ListItem
-      disablePadding
-      sx={{ mb: 0.5 }}
-      secondaryAction={
-        <Box sx={{ display: 'flex', alignItems: 'center', pr: 0.5 }}>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mr: 1, minWidth: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
-          >
-            {track.duration ? formatTime(track.duration) : ''}
-          </Typography>
-          <IconButton
-            size="small"
-            aria-label={`Remove ${track.title} from queue`}
-            onClick={() => player.removeFromQueue(index)}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      }
-    >
+    <ListItem disablePadding className="relative mb-1">
       <ListItemButton
         onClick={() => player.playTrack(track, context)}
-        sx={{ borderRadius: 2, pr: 9 }}
+        className="!rounded-[28px] !pr-[72px]"
       >
         <ListItemIcon sx={{ minWidth: 52 }}>
           <Artwork
@@ -71,13 +40,10 @@ function QueueRow({
           />
         </ListItemIcon>
         <ListItemText
-          primary={
-            <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
-              {track.title}
-            </Typography>
-          }
+          primary={track.title}
+          primaryClassName="!font-medium"
           secondary={
-            <Typography variant="caption" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <span className="flex items-center gap-1">
               {track.isExplicit && <ExplicitIcon sx={{ fontSize: 13 }} />}
               {/* Passive state badges, kept muted so the meta line stays quiet. */}
               {downloaded && (
@@ -87,10 +53,27 @@ function QueueRow({
                 <HeartFilledIcon titleAccess="Favorite" sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }} />
               )}
               {track.artist}
-            </Typography>
+            </span>
           }
+          secondaryClassName="!text-body leading-[1.4]"
         />
       </ListItemButton>
+      {/* MIGRATION: MUI's `secondaryAction` slot has no kit equivalent — the
+          same block, absolutely positioned after the button (right: 16px,
+          vertically centred). The row keeps `pr-[72px]` so the text never
+          runs underneath it. */}
+      <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center pr-1">
+        <span className="mr-2 min-w-[34px] text-right text-xs leading-[1.4] text-muted tabular-nums">
+          {track.duration ? formatTime(track.duration) : ''}
+        </span>
+        <IconButton
+          size="small"
+          aria-label={`Remove ${track.title} from queue`}
+          onClick={() => player.removeFromQueue(index)}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </div>
     </ListItem>
   );
 }
@@ -115,45 +98,44 @@ export default function NPQueue() {
   const context = current ? [current, ...queue] : queue;
 
   return (
-    <Box sx={{ height: '100%', overflowY: 'auto', px: 1, py: 1 }}>
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        sx={{ px: 1, mb: 1 }}
-      >
-        <Typography variant="subtitle2" color="text.secondary">
+    <div className="h-full overflow-y-auto px-2 py-2">
+      <div className="mb-2 flex items-center justify-between px-2">
+        <p className="m-0 text-sm font-medium text-muted">
           {queue.length
             ? `${queue.length} track${queue.length === 1 ? '' : 's'} up next`
             : 'Up next'}
-        </Typography>
-        <Stack direction="row" spacing={0.5}>
+        </p>
+        <div className="flex gap-1">
           <Button
-            size="small"
             startIcon={<ShuffleIcon fontSize="small" />}
             onClick={player.toggleShuffle}
-            color={player.shuffle ? 'primary' : 'inherit'}
+            className={cn(
+              // MUI's `size="small"` has no kit equivalent: 18px inline
+              // padding (the theme's paddingInline), 4px block, 13px label.
+              '!px-[18px] !py-1 !text-[0.8125rem]',
+              !player.shuffle && '!text-body',
+            )}
           >
             Shuffle
           </Button>
           <Button
-            size="small"
             startIcon={<TrashIcon fontSize="small" />}
             onClick={player.clearQueue}
             disabled={!queue.length}
+            className="!px-[18px] !py-1 !text-[0.8125rem]"
           >
             Clear
           </Button>
-        </Stack>
-      </Stack>
+        </div>
+      </div>
 
       <List dense disablePadding>
         {current && (
-          <ListItem disablePadding sx={{ mb: 0.5 }}>
+          <ListItem disablePadding className="mb-1">
             <ListItemButton
               onClick={player.togglePlay}
               selected
-              sx={{ borderRadius: 2, pr: 9 }}
+              className="!rounded-[28px] !pr-[72px]"
             >
               <ListItemIcon sx={{ minWidth: 52 }}>
                 <Artwork
@@ -172,13 +154,9 @@ export default function NPQueue() {
                   />
                 }
                 secondary={
-                  <Typography
-                    variant="caption"
-                    noWrap
-                    sx={{ display: 'block', color: accentFg, opacity: 0.85 }}
-                  >
+                  <span className="block truncate text-xs leading-[1.4] text-accent-fg opacity-85">
                     Now playing — {current.artist}
-                  </Typography>
+                  </span>
                 }
               />
             </ListItemButton>
@@ -196,15 +174,15 @@ export default function NPQueue() {
       </List>
 
       {!queue.length && (
-        <Box sx={{ py: 5, textAlign: 'center', px: 3 }}>
-          <Typography variant="subtitle1" color="text.secondary">
+        <div className="px-6 py-10 text-center">
+          <p className="m-0 text-base font-semibold text-muted">
             Nothing lined up
-          </Typography>
-          <Typography variant="caption" color="text.disabled">
+          </p>
+          <span className="text-xs leading-[1.4] text-disabled">
             Add songs from any list — related songs keep playing automatically.
-          </Typography>
-        </Box>
+          </span>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
