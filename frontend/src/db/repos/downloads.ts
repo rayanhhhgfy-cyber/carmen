@@ -5,8 +5,18 @@
  * Only raw, unconverted files are recorded (see `offline/downloads.ts`).
  */
 import type { DownloadedSong, Track } from '../../types/models';
+import {
+  allDownloadRecords as allDownloadRows,
+  deleteDownloadRecord,
+  getDownloadRecord,
+  patchDownloadLyricsRecord,
+  putDownloadRecord,
+  putTrackRecord,
+  type DownloadRow,
+} from '../../services/storage';
 import { getDb } from '../connection';
 import { usingFallback } from './fallback';
+import { favoriteIds } from './favorites';
 import { mapDownloadedRow, trackBindValues, UPSERT_TRACK_SQL, type SongRow } from './rows';
 import { orderBy, type SortDir, type SortKey } from './tracks';
 
@@ -43,9 +53,67 @@ const SONG_SELECT = `
   LEFT JOIN favorites f ON f.video_id = t.video_id
 `;
 
+// ── Browser branch (IndexedDB, see services/storage) ─────────────────────────
+
+function toDownloadedSong(row: DownloadRow, isFavorite: boolean): DownloadedSong {
+  return {
+    ...row.track,
+    audioPath: row.audioPath,
+    artworkPath: row.artworkPath,
+    lyricsPath: row.lyricsPath,
+    lyricsSynced: row.lyricsSynced,
+    bytes: row.bytes,
+    downloadedAt: row.downloadedAt,
+    isFavorite,
+  };
+}
+
+/** JS twin of `orderBy`'s `ORDER BY` — NOCASE primary, title tiebreak. */
+function sortDownloaded(
+  songs: DownloadedSong[],
+  sort: SortKey,
+  dir: SortDir,
+): DownloadedSong[] {
+  const sign = dir === 'desc' ? -1 : 1;
+  const primary = (song: DownloadedSong): string =>
+    sort === 'artist'
+      ? song.artist
+      : sort === 'releaseDate'
+        ? (song.releaseDate || song.year || '')
+        : song.title;
+  return songs.sort(
+    (a, b) =>
+      sign * primary(a).localeCompare(primary(b), undefined, { sensitivity: 'base' }) ||
+      a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
+  );
+}
+
+/** Every download as `DownloadedSong`, favorites flag included. */
+async function browserSongs(): Promise<DownloadedSong[]> {
+  const [rows, favorites] = await Promise.all([
+    allDownloadRows(),
+    favoriteIds().catch(() => [] as string[]),
+  ]);
+  const favoriteSet = new Set(favorites);
+  return rows.map((row) => toDownloadedSong(row, favoriteSet.has(row.videoId)));
+}
+
 /** Records a finished download (metadata first, then the file locations). */
 export async function insertDownload(entry: NewDownload): Promise<void> {
-  if (usingFallback) return;
+  if (usingFallback) {
+    await putTrackRecord(entry.track);
+    await putDownloadRecord({
+      videoId: entry.track.videoId,
+      track: entry.track,
+      audioPath: entry.audioPath,
+      artworkPath: entry.artworkPath,
+      lyricsPath: entry.lyricsPath,
+      lyricsSynced: entry.lyricsSynced,
+      bytes: entry.bytes,
+      downloadedAt: Date.now(),
+    });
+    return;
+  }
   const db = await getDb();
   await db.execute(UPSERT_TRACK_SQL, trackBindValues(entry.track));
   await db.execute(
@@ -73,7 +141,11 @@ export async function insertDownload(entry: NewDownload): Promise<void> {
 
 /** All downloaded songs with sorting + the favorites quick filter. */
 export async function listDownloads(query: SongQuery = {}): Promise<DownloadedSong[]> {
-  if (usingFallback) return [];
+  if (usingFallback) {
+    const songs = await browserSongs();
+    const filtered = query.favoritesOnly ? songs.filter((song) => song.isFavorite) : songs;
+    return sortDownloaded(filtered, query.sort ?? 'title', query.dir ?? 'asc');
+  }
   const db = await getDb();
   const where = query.favoritesOnly ? 'WHERE f.video_id IS NOT NULL' : '';
   const sql = `${SONG_SELECT} ${where} ORDER BY ${orderBy(query.sort ?? 'title', query.dir ?? 'asc')}`;
@@ -83,7 +155,10 @@ export async function listDownloads(query: SongQuery = {}): Promise<DownloadedSo
 
 /** The last `limit` downloads — the "Recently Downloaded" carousel. */
 export async function recentDownloads(limit = 10): Promise<DownloadedSong[]> {
-  if (usingFallback) return [];
+  if (usingFallback) {
+    const songs = await browserSongs();
+    return songs.sort((a, b) => b.downloadedAt - a.downloadedAt).slice(0, limit);
+  }
   const db = await getDb();
   const rows = await db.select<SongRow[]>(
     `${SONG_SELECT} ORDER BY d.downloaded_at DESC LIMIT $1`,
@@ -93,7 +168,18 @@ export async function recentDownloads(limit = 10): Promise<DownloadedSong[]> {
 }
 
 export async function getDownload(videoId: string): Promise<DownloadRecord | null> {
-  if (usingFallback) return null;
+  if (usingFallback) {
+    const row = await getDownloadRecord(videoId);
+    if (!row?.audioPath) return null;
+    return {
+      videoId: row.videoId,
+      audioPath: row.audioPath,
+      artworkPath: row.artworkPath,
+      lyricsPath: row.lyricsPath,
+      lyricsSynced: row.lyricsSynced,
+      downloadedAt: row.downloadedAt,
+    };
+  }
   const db = await getDb();
   const rows = await db.select<SongRow[]>(
     `${SONG_SELECT} WHERE t.video_id = $1`,
@@ -112,7 +198,10 @@ export async function getDownload(videoId: string): Promise<DownloadRecord | nul
 }
 
 export async function deleteDownloadRow(videoId: string): Promise<void> {
-  if (usingFallback) return;
+  if (usingFallback) {
+    await deleteDownloadRecord(videoId);
+    return;
+  }
   const db = await getDb();
   await db.execute('DELETE FROM downloads WHERE video_id = $1', [videoId]);
 }
@@ -123,7 +212,10 @@ export async function updateLyricsPath(
   lyricsPath: string | null,
   lyricsSynced: boolean,
 ): Promise<void> {
-  if (usingFallback) return;
+  if (usingFallback) {
+    await patchDownloadLyricsRecord(videoId, lyricsPath, lyricsSynced);
+    return;
+  }
   const db = await getDb();
   await db.execute(
     'UPDATE downloads SET lyrics_path = $1, lyrics_synced = $2 WHERE video_id = $3',
@@ -133,7 +225,9 @@ export async function updateLyricsPath(
 
 /** Downloaded video ids — hydrated once at boot for synchronous lookups. */
 export async function downloadedIds(): Promise<string[]> {
-  if (usingFallback) return [];
+  if (usingFallback) {
+    return (await allDownloadRows()).map((row) => row.videoId);
+  }
   const db = await getDb();
   const rows = await db.select<{ video_id: string }[]>(
     'SELECT video_id FROM downloads',
@@ -143,7 +237,18 @@ export async function downloadedIds(): Promise<string[]> {
 
 /** Full file locations of every download (boot hydration for playback). */
 export async function allDownloadRecords(): Promise<DownloadRecord[]> {
-  if (usingFallback) return [];
+  if (usingFallback) {
+    return (await allDownloadRows())
+      .filter((row) => Boolean(row.audioPath))
+      .map((row) => ({
+        videoId: row.videoId,
+        audioPath: row.audioPath,
+        artworkPath: row.artworkPath,
+        lyricsPath: row.lyricsPath,
+        lyricsSynced: row.lyricsSynced,
+        downloadedAt: row.downloadedAt,
+      }));
+  }
   const db = await getDb();
   const rows = await db.select<SongRow[]>(`${SONG_SELECT}`);
   return rows

@@ -24,7 +24,6 @@ let hydrated = false;
 export async function hydrateLocalLibrary(): Promise<void> {
   if (hydrated) return;
   hydrated = true;
-  if (!isTauri) return;
   try {
     const list = await allDownloadRecords();
     records.clear();
@@ -100,9 +99,14 @@ export function localAssetSource(videoId: string): AudioSource | null {
 const blobUrls = new Map<string, string>();
 const BLOB_LIMIT = 3;
 
+/**
+ * The downloaded file as a blob URL — the platform-neutral local source:
+ * the WebView's asset protocol where there is one (Tauri), the IndexedDB
+ * bytes where there isn't (browser / iOS offline playback).
+ */
 export async function localBlobSource(videoId: string): Promise<AudioSource | null> {
   const record = getLocalRecord(videoId);
-  if (!record || !isTauri) return null;
+  if (!record) return null;
 
   const cached = blobUrls.get(videoId);
   if (cached) return { url: cached, kind: 'blob' };

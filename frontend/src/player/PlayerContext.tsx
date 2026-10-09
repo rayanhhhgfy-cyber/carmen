@@ -18,7 +18,7 @@ import {
   localLyrics,
   type AudioSource,
 } from '../offline/source';
-import { emitTrayState, onTrayAction } from '../platform/env';
+import { emitTrayState, isTauri, onTrayAction } from '../platform/env';
 import { useSettings } from '../settings/store';
 import type { LyricsProvider, RepeatMode, Track, TrackMeta } from '../types/models';
 import { addSuggestions, recordPlay } from '../utils/library';
@@ -457,7 +457,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setBuffered(0);
 
     const load = async () => {
-      const local = localAssetSource(current.videoId);
+      // Offline first, same chain as the WebView: the asset protocol where
+      // one exists, the IndexedDB blob where it doesn't (browser / iOS), the
+      // live stream only when the song is not on the device at all.
+      let local = localAssetSource(current.videoId);
+      if (!local && !isTauri) {
+        try {
+          local = await localBlobSource(current.videoId);
+        } catch {
+          local = null;
+        }
+        if (cancelled) return;
+      }
       const source: AudioSource = local ?? { url: streamUrl(current.videoId), kind: 'stream' };
       if (cancelled) return;
       sourceRef.current = source;

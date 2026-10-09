@@ -8,6 +8,14 @@
     />
     <meta name="theme-color" content="#4CAF50" />
     <meta name="description" content="Carmen — stream, play and download your music." />
+    <!-- iOS Safari / PWA: "Add to Home Screen" runs the app full-screen with
+         its own title. `default` status bar keeps an opaque bar above the
+         page — the pinned header does not pad env(safe-area-inset-top), so
+         `black-translucent` would slide it under the clock. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Carmen" />
     <title>Carmen</title>
     <link rel="preconnect" href="https://i.ytimg.com" />
     <link rel="preconnect" href="https://yt3.googleusercontent.com" crossorigin />

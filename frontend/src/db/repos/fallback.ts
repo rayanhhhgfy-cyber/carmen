@@ -1,19 +1,27 @@
 /**
- * Browser fallback for sessions that run under plain `vite dev` (no Tauri
- * WebView → no SQLite). Only the stores the app needs to *render* are shimmed;
- * playlists / downloads simply report as empty.
+ * Browser fallback for sessions that run without Tauri's SQLite (plain
+ * `vite dev`, the deployed web build, iOS Safari / PWA).
  *
- * Inside the app this module is never used — `dbAvailable` is true there.
+ * The seam itself is unchanged — repositories keep calling
+ * `fallbackGet`/`fallbackSet` with localStorage's synchronous shape — but
+ * the durable copy now lives in IndexedDB through `services/storage`
+ * (memory cache for reads, write-behind persist, localStorage mirror for
+ * durability and migration). `hydrateBrowserStorage()` seeds the cache from
+ * the historical `carmen.fb.*` shims on first boot, so every playlist,
+ * setting, favorite and resume position from an older browser session
+ * survives the move.
+ *
+ * Inside the Tauri app this module is never used — `dbAvailable` is true
+ * there and no repository reaches these helpers.
  */
+import { kvRead, kvWrite } from '../../services/storage';
 import { dbAvailable } from '../connection';
 
 export const usingFallback: boolean = !dbAvailable;
 
 export function fallbackGet<T>(key: string, fallback: T): T {
   try {
-    const raw = window.localStorage.getItem(`carmen.fb.${key}`);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
+    return kvRead(key, fallback);
   } catch {
     return fallback;
   }
@@ -21,8 +29,8 @@ export function fallbackGet<T>(key: string, fallback: T): T {
 
 export function fallbackSet(key: string, value: unknown): void {
   try {
-    window.localStorage.setItem(`carmen.fb.${key}`, JSON.stringify(value));
+    kvWrite(key, value);
   } catch {
-    /* private mode / quota — browser dev only */
+    /* storage blocked — the session keeps serving from memory */
   }
 }

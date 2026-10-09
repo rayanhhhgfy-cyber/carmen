@@ -15,6 +15,13 @@
 import { exists, mkdir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs';
 
 import { isTauri, storagePaths } from '../platform/env';
+import {
+  deleteFile,
+  deleteFilesUnder,
+  getFileBytes,
+  hasFile,
+  putFile,
+} from '../services/storage';
 
 let songsDirectory: string | null = null;
 let artworkDirectory: string | null = null;
@@ -54,17 +61,25 @@ export async function motionDir(): Promise<string | null> {
   return motionDirectory;
 }
 
-/** `<songs>/<videoId>` — created on demand. */
+/**
+ * `<songs>/<videoId>` — created on demand.
+ *
+ * In a browser session the folder is **virtual**: no directory exists, the
+ * files under it live in IndexedDB keyed by these very paths (see
+ * `services/storage`), which keeps every caller — the download pipeline
+ * included — writing the exact same strings on both platforms.
+ */
 export async function songFolder(videoId: string): Promise<string | null> {
+  if (!isTauri) return `songs/${videoId}`;
   const base = await songsDir();
   if (!base) return null;
   const folder = `${base}/${videoId}`;
-  if (isTauri) await mkdir(folder, { recursive: true }).catch(() => {});
+  await mkdir(folder, { recursive: true }).catch(() => {});
   return folder;
 }
 
 export async function fileExists(path: string): Promise<boolean> {
-  if (!isTauri) return false;
+  if (!isTauri) return hasFile(path);
   try {
     return await exists(path);
   } catch {
@@ -73,15 +88,23 @@ export async function fileExists(path: string): Promise<boolean> {
 }
 
 export async function writeBinary(path: string, data: Uint8Array): Promise<void> {
+  if (!isTauri) {
+    await putFile(path, data);
+    return;
+  }
   await writeFile(path, data);
 }
 
 export async function writeText(path: string, text: string): Promise<void> {
+  if (!isTauri) {
+    await putFile(path, new TextEncoder().encode(text));
+    return;
+  }
   await writeFile(path, new TextEncoder().encode(text));
 }
 
 export async function readBinary(path: string): Promise<Uint8Array | null> {
-  if (!isTauri) return null;
+  if (!isTauri) return getFileBytes(path);
   try {
     return await readFile(path);
   } catch {
@@ -90,7 +113,10 @@ export async function readBinary(path: string): Promise<Uint8Array | null> {
 }
 
 export async function readText(path: string): Promise<string | null> {
-  if (!isTauri) return null;
+  if (!isTauri) {
+    const bytes = await getFileBytes(path);
+    return bytes ? new TextDecoder().decode(bytes) : null;
+  }
   try {
     const bytes = await readFile(path);
     return new TextDecoder().decode(bytes);
@@ -100,7 +126,10 @@ export async function readText(path: string): Promise<string | null> {
 }
 
 export async function deletePath(path: string): Promise<void> {
-  if (!isTauri) return;
+  if (!isTauri) {
+    await deleteFile(path);
+    return;
+  }
   try {
     await remove(path, { recursive: true });
   } catch {
@@ -110,6 +139,10 @@ export async function deletePath(path: string): Promise<void> {
 
 /** Deletes a whole `songs/<videoId>` folder. */
 export async function deleteSongFolder(videoId: string): Promise<void> {
+  if (!isTauri) {
+    await deleteFilesUnder(`songs/${videoId}/`);
+    return;
+  }
   const base = await songsDir();
   if (!base) return;
   await deletePath(`${base}/${videoId}`);

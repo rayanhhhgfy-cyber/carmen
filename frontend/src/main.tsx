@@ -9,6 +9,7 @@ import { hydrateLocalLibrary, downloadedVideoIds } from './offline/source';
 import { bootstrapPlatform } from './platform/env';
 import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
+import { hydrateBrowserStorage } from './services/storage';
 import { hydrateLibrary } from './utils/library';
 import './fonts';
 import './styles.css';
@@ -53,6 +54,10 @@ async function restoreRoute(): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   await bootstrapPlatform();
+  // Browser sessions: fill the IndexedDB-backed KV cache (and migrate the
+  // legacy localStorage shims) *before* any repository reads settings,
+  // playlists or the resume point. No-op inside Tauri.
+  await hydrateBrowserStorage();
   await Promise.allSettled([
     hydrateSettings(),
     hydrateLibrary(),
