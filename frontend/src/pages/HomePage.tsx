@@ -13,6 +13,17 @@ import { HistoryIcon, RefreshIcon, ShuffleIcon } from '../components/icons';
 /** How far the list has to be pulled down on a phone to refresh. */
 const PULL_DISTANCE = 90;
 
+/**
+ * "Is the page at the very top?" — the page scrolls inside
+ * `<main id="app-main">` (Layout), not the window, so the gesture reads
+ * that scroller; the window fallback keeps the guard honest if the
+ * layout ever hands scrolling back to the document.
+ */
+function atScrollerTop(): boolean {
+  const scroller = document.getElementById('app-main');
+  return (scroller ? scroller.scrollTop : window.scrollY) <= 0;
+}
+
 /** Props shared by the shelf row and the responsive grid. */
 interface FeedCardsProps {
   items: Track[];
@@ -167,14 +178,14 @@ export default function HomePage() {
 
     const onTouchStart = (event: TouchEvent) => {
       startY =
-        window.scrollY <= 0 && event.touches.length === 1
+        atScrollerTop() && event.touches.length === 1
           ? event.touches[0].clientY
           : null;
     };
     const onTouchMove = (event: TouchEvent) => {
       if (startY === null) return;
       const distance = event.touches[0].clientY - startY;
-      if (distance >= PULL_DISTANCE && window.scrollY <= 0) {
+      if (distance >= PULL_DISTANCE && atScrollerTop()) {
         startY = null;
         refreshRef.current();
       }
@@ -225,7 +236,10 @@ export default function HomePage() {
         {/* The feed only moves when the reader says so: pull it down on a
             phone, press this on a bigger screen. */}
         <div className="flex justify-end px-4 md:px-0">
-          <Tooltip title="Refresh feed">
+          {/* `placement="left"`: the button hugs the right edge, so a
+              centred bubble would poke past the container and get clipped
+              by `main`'s overflow-x lock */}
+          <Tooltip title="Refresh feed" placement="left">
             <span>
               <IconButton
                 aria-label="Refresh feed"
@@ -249,7 +263,7 @@ export default function HomePage() {
               title="Recently played"
               subtitle={`Last ${recentTracks.length} of ${RECENT_LIMIT} songs`}
               action={
-                <Tooltip title="Play recent songs">
+                <Tooltip title="Play recent songs" placement="left">
                   <IconButton
                     size="small"
                     aria-label="Play recently played songs"
@@ -284,7 +298,7 @@ export default function HomePage() {
                   >
                     Shuffle all
                   </Button>
-                  <Tooltip title="Reshuffle suggestions">
+                  <Tooltip title="Reshuffle suggestions" placement="left">
                     <IconButton
                       size="small"
                       aria-label="Reshuffle suggestions"

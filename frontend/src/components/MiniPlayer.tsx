@@ -15,6 +15,36 @@ export interface MiniPlayerProps {
 }
 
 /**
+ * Buffered/played rail across the top of the bar.  It owns the playhead
+ * subscription, so the 4 Hz ticks repaint these two divs only — artwork,
+ * title and the buttons in `MiniPlayer` never re-render per tick.
+ */
+function MiniProgress({ effectsEnabled }: { effectsEnabled: boolean }) {
+  const { currentTime, duration, buffered: bufferedSecs } = usePlayhead();
+  const progress = duration ? (currentTime / duration) * 100 : 0;
+  const buffered = duration ? Math.min((bufferedSecs / duration) * 100, 100) : 0;
+
+  return (
+    <div className="absolute inset-x-0 top-0 h-[3px] bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]">
+      <div
+        className="absolute left-0 top-0 h-full bg-[color-mix(in_srgb,var(--app-text)_20%,transparent)]"
+        style={{ width: `${buffered}%` }}
+      />
+      <div
+        className="absolute left-0 top-0 h-full rounded-[0_3px_3px_0] bg-accent"
+        style={{
+          width: `${progress}%`,
+          boxShadow: effectsEnabled
+            ? `0 0 8px ${alpha('var(--app-accent)', 0.65)}`
+            : 'none',
+          transition: 'width 250ms linear',
+        }}
+      />
+    </div>
+  );
+}
+
+/**
  * Compact player docked above the navigation bar. Tapping it opens the full
  * player sheet.
  *
@@ -28,20 +58,12 @@ export interface MiniPlayerProps {
  */
 export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
   const player = usePlayer();
-  // Progress ticks come from the playhead context — the mini bar re-renders
-  // per tick, nothing else does (see `usePlayhead`).
-  const { currentTime, duration, buffered: bufferedSecs } = usePlayhead();
   const track = player.current;
   // The glass card (blur + translucent fill) and the accent glow on the
   // progress line are the first things low battery mode gives up.
   const effectsEnabled = useEffectsEnabled();
 
   if (!track) return null;
-
-  const progress = duration ? (currentTime / duration) * 100 : 0;
-  const buffered = duration
-    ? Math.min((bufferedSecs / duration) * 100, 100)
-    : 0;
 
   return (
     <div
@@ -63,23 +85,9 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
         WebkitBackdropFilter: effectsEnabled ? 'blur(20px) saturate(1.6)' : 'none',
       }}
     >
-      {/* buffered (behind) + played (front) progress */}
-      <div className="absolute inset-x-0 top-0 h-[3px] bg-[color-mix(in_srgb,var(--app-text)_8%,transparent)]">
-        <div
-          className="absolute left-0 top-0 h-full bg-[color-mix(in_srgb,var(--app-text)_20%,transparent)]"
-          style={{ width: `${buffered}%` }}
-        />
-        <div
-          className="absolute left-0 top-0 h-full rounded-[0_3px_3px_0] bg-accent"
-          style={{
-            width: `${progress}%`,
-            boxShadow: effectsEnabled
-              ? `0 0 8px ${alpha('var(--app-accent)', 0.65)}`
-              : 'none',
-            transition: 'width 250ms linear',
-          }}
-        />
-      </div>
+      {/* buffered (behind) + played (front) progress — leaf component, so
+          per-tick playhead updates never touch the rest of this bar */}
+      <MiniProgress effectsEnabled={effectsEnabled} />
       <div className="flex items-center gap-3 px-[10px] py-1">
         <div className="relative h-11 w-11 shrink-0">
           <Artwork

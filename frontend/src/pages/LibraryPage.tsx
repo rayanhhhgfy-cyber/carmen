@@ -130,7 +130,9 @@ export default function LibraryPage() {
         variant="scrollable"
         aria-label="Library sections"
         className={cn(
-          'sticky top-14 md:top-16 mb-5 min-h-[46px] border-b border-line bg-bg/[0.92] dark:bg-bg/[0.88]',
+          // sticks to the top of `<main>` — the app header sits above the
+          // scrollport (Layout), so no top offset is needed anymore
+          'sticky top-0 mb-5 min-h-[46px] border-b border-line bg-bg/[0.92] dark:bg-bg/[0.88]',
           effectsEnabled && 'backdrop-blur-[12px]',
         )}
       >

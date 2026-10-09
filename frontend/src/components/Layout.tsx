@@ -151,7 +151,10 @@ export default function Layout() {
     : `calc(${navHeight}px + env(safe-area-inset-bottom) + ${showMini ? 84 : 20}px)`;
 
   return (
-    <div className="flex min-h-screen">
+    // Fixed-height app window: the root never scrolls (styles.css locks
+    // html/body/#root), only `<main>` below does — no rubber-banding, no
+    // horizontal document overflow, header and nav pinned by the column.
+    <div className="flex h-dvh overflow-hidden">
       {/* artwork driven ambient tint (painted behind every surface) —
           low battery mode and the Settings choice skip it entirely */}
       {effectsEnabled && artworkBackground && <AmbientBackground />}
@@ -159,8 +162,10 @@ export default function Layout() {
       {isDesktop && <SideNav />}
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* pinned by the flex column, not by `sticky`: the scroll starts at
+            `<main>` below, so the header can never scroll away */}
         <header
-          className="sticky top-0 z-[1100] border-b border-line"
+          className="relative z-[1100] border-b border-line"
           style={{
             backdropFilter: effectsEnabled ? 'blur(12px)' : 'none',
             backgroundColor: !effectsEnabled
@@ -190,7 +195,13 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="flex-1" style={{ paddingBottom: contentPaddingBottom }}>
+        {/* the app's single vertical scroller — pages lay out inside it;
+            `id="app-main"` lets HomePage's pull-to-refresh read its position */}
+        <main
+          id="app-main"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+          style={{ paddingBottom: contentPaddingBottom }}
+        >
           <Outlet />
         </main>
       </div>

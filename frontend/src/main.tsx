@@ -14,6 +14,19 @@ import './fonts';
 import './styles.css';
 
 /**
+ * Native-app context menu: right-click does nothing outside editable fields,
+ * where the paste / cut / copy menu is still genuinely useful.  No view in
+ * the app renders a custom context menu, so the webview's default one is
+ * pure desktop artifact.
+ */
+document.addEventListener('contextmenu', (event) => {
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (!target?.closest('input, textarea, [contenteditable="true"], [contenteditable=""]')) {
+    event.preventDefault();
+  }
+});
+
+/**
  * Bootstrap runs **before** the first render so the app never paints with the
  * default theme, an empty feed or a lost route:
  *

@@ -18,6 +18,7 @@ import { cn } from '../utils/cn';
 import { formatTime } from '../utils/format';
 import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
+import MarqueeText from './MarqueeText';
 import {
   DownloadIcon,
   ExplicitIcon,
@@ -152,12 +153,14 @@ export default function TrackRow({
           )}
           <ListItemText
             primary={
-              <p
-                className="m-0 truncate text-sm leading-[1.43] text-body"
-                style={{ fontWeight: active ? 700 : 500, color: active ? accentFg : undefined }}
-              >
-                {track.title}
-              </p>
+              // marquee instead of a bare ellipsis: a title wider than the
+              // row glides through its box and the row width never grows
+              <MarqueeText
+                text={track.title}
+                variant="body2"
+                className="text-body"
+                sx={{ fontWeight: active ? 700 : 500, color: active ? accentFg : undefined }}
+              />
             }
             secondary={
               <span className="flex items-center gap-1 truncate text-xs leading-[1.4] text-body">
@@ -176,7 +179,13 @@ export default function TrackRow({
                     sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }}
                   />
                 )}
-                {track.artist}
+                {/* the artist shrinks first (`min-w-0 flex-1`) and glides
+                    when longer than what is left of the row */}
+                <MarqueeText
+                  text={track.artist}
+                  variant="caption"
+                  className="min-w-0 flex-1"
+                />
               </span>
             }
           />

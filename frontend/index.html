@@ -13,14 +13,30 @@
     <link rel="preconnect" href="https://yt3.googleusercontent.com" crossorigin />
     <link rel="preconnect" href="https://music.youtube.com" />
     <style>
+      /*
+       * Native-app window lock, applied before the bundle paints so the
+       * webview can never rubber-band or scroll at the root: the page
+       * scrolls inside <main> only (see Layout).  Mirrored in styles.css
+       * (@layer base) — keep both in sync.
+       */
       html,
       body,
       #root {
         height: 100%;
-      }
-      body {
         margin: 0;
-        overscroll-behavior-y: none;
+        padding: 0;
+        overflow: hidden;
+        overscroll-behavior: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+      }
+      /* Re-enable selection strictly for text inputs. */
+      input,
+      textarea,
+      [contenteditable='true'] {
+        user-select: text;
+        -webkit-user-select: text;
       }
       ::-webkit-scrollbar {
         width: 8px;

@@ -298,8 +298,8 @@ export function Divider({
   className,
   ...rest
 }: DividerProps) {
-  const inset = variant === 'inset' && orientation === 'horizontal' ? 'ml-[72px]' : '';
-  const middle = variant === 'middle' ? 'mx-4' : '';
+  const inset = variant === 'inset' && orientation === 'horizontal';
+  const middle = variant === 'middle';
   return (
     <Comp
       {...rest}
@@ -307,9 +307,13 @@ export function Divider({
       aria-orientation={orientation}
       className={cn(
         'border-0 border-line',
-        orientation === 'vertical' ? 'w-px self-stretch border-r' : 'w-full border-t',
-        inset,
-        middle,
+        orientation === 'vertical' ? 'w-px self-stretch border-r' : 'border-t',
+        // A horizontal divider is a block: its width must subtract the
+        // indent it carries, else `w-full` + margin spills past the list
+        // container — the classic hidden-horizontal-overflow bug.
+        inset && 'ml-[72px] w-[calc(100%_-_72px)]',
+        middle && 'mx-4 w-[calc(100%_-_32px)]',
+        !inset && !middle && orientation === 'horizontal' && 'w-full',
         className,
       )}
     />
