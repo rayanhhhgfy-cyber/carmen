@@ -150,12 +150,10 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
           alt=""
           icon={MusicNoteIcon}
           iconSize={56}
-          sx={{
-            width: { xs: 160, sm: 180 },
-            height: { xs: 160, sm: 180 },
-            borderRadius: 3,
-            boxShadow: 3,
-            mx: { xs: 'auto', sm: 0 },
+          className="w-[160px] sm:w-[180px] h-[160px] sm:h-[180px] mx-auto sm:mx-0"
+          style={{
+            borderRadius: 42,
+            boxShadow: 'var(--shadow-elev-3)',
             flexShrink: 0,
           }}
         />

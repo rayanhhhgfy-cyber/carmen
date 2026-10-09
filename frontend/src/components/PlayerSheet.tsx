@@ -8,42 +8,35 @@ import NPQueue from "./NPQueue";
 import NPScrubber from "./NPScrubber";
 import PlayerMenu from "./PlayerMenu";
 import RelatedTab from "./RelatedTab";
-import { alpha } from "@mui/material/styles";
 import { useNavigate } from "react-router-dom";
 import { streamUrl } from "../api";
+import { useIsDesktop } from "../hooks";
 import { localAssetSource } from "../offline/source";
 import { usePlayer } from "../player/PlayerContext";
 import { useEffectsEnabled } from "../settings/store";
 import { useTheme as useAppTheme } from "../theme/ThemeContext";
+import { cn } from "../utils/cn";
+import { alpha } from "../utils/color";
 import { lyricsOf } from "../utils/lyrics";
 import { pickArtwork } from "../utils/track";
 
 import {
-  forwardRef,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type SyntheticEvent,
   type TouchEvent,
 } from 'react';
 import {
   Alert,
-  Box,
   Button,
-  CircularProgress,
   Dialog,
   IconButton,
-  Slide,
-  Stack,
+  Spinner,
   Tab,
   Tabs,
   Tooltip,
-  Typography,
-  useMediaQuery,
-  useTheme,
-  type SlideProps,
-} from '@mui/material';
+} from '../components/ui';
 
 import {
   CloseIcon,
@@ -67,18 +60,19 @@ const RELATED_TAB = 2;
 /** Pixels of downward swipe on the handle that dismiss the sheet. */
 const DISMISS_DISTANCE = 72;
 
-/** The phone sheet slides up from the bottom edge of the window. */
-const SheetTransition = forwardRef<unknown, SlideProps>(function SheetTransition(props, ref) {
-  return <Slide direction="up" ref={ref} {...props} />;
-});
 
-const TAB_SX = { minHeight: 50, minWidth: 0, textTransform: 'none', fontWeight: 600 } as const;
+/**
+ * Shared metrics of the three tabs (the old `TAB_SX`): 50px tall, no
+ * minimum width so they can share the strip, semibold label — the kit Tab
+ * already renders without `text-transform`.
+ */
+const TAB_CLASS = 'min-h-[50px] min-w-0 !font-semibold';
 
 /**
  * The full "Now Playing" experience, in two shapes switched at the `md`
  * breakpoint:
  *
- * * **Phone** — a full-screen sheet that slides up. A grab *handle* sits on
+ * * **Phone** — a full-screen sheet over the window. A grab *handle* sits on
  *   the top edge: tap it or swipe it down to dismiss (the sheet follows the
  *   finger while the swipe is in flight). Below it: artwork,
  *   title / artist / album, scrubber, transport, and the
@@ -97,12 +91,13 @@ const TAB_SX = { minHeight: 50, minWidth: 0, textTransform: 'none', fontWeight: 
  */
 export default function PlayerSheet() {
   const player = usePlayer();
-  const theme = useTheme();
   // Line art on the sheet surface (focus ring, spinner, artist hover) needs
-  // the readable accent — white on a light sheet would be invisible.
-  const { accentFg } = useAppTheme();
+  // the readable accent — white on a light sheet would be invisible. It
+  // reaches the CSS through the `accent-fg` token now; `resolved` picks the
+  // theme-coloured scrim over the motion loops.
+  const { resolved } = useAppTheme();
   const navigate = useNavigate();
-  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
+  const isDesktop = useIsDesktop();
   // The blurred artwork layer (the wash behind the sheet) is the expensive
   // part of this screen — low battery mode
   // drops it and keeps the plain surfaces.
@@ -163,7 +158,7 @@ export default function PlayerSheet() {
   // Readability scrim shared by both motion layers — theme-coloured so the
   // light mode sheet stays light and the dark one stays dark.
   const motionScrim =
-    theme.palette.mode === 'dark'
+    resolved === 'dark'
       ? 'linear-gradient(180deg, rgba(10,13,11,0.48) 0%, rgba(10,13,11,0.72) 100%)'
       : 'linear-gradient(180deg, rgba(246,247,246,0.62) 0%, rgba(246,247,246,0.82) 100%)';
 
@@ -179,7 +174,8 @@ export default function PlayerSheet() {
     setPanelOpen(true);
   };
 
-  const onTabChange = (_event: SyntheticEvent, value: number) => setTab(value);
+  // MIGRATION: the kit Tabs calls `onChange(value)` — no MUI event argument.
+  const onTabChange = (value: unknown) => setTab(value as number);
 
   if (!track) return null;
 
@@ -273,7 +269,7 @@ export default function PlayerSheet() {
    * scrolling the content underneath.
    */
   const strip = (
-    <Box
+    <div
       role="button"
       tabIndex={0}
       aria-label="Close player"
@@ -287,52 +283,23 @@ export default function PlayerSheet() {
       onTouchStart={onStripTouchStart}
       onTouchMove={onStripTouchMove}
       onTouchEnd={onStripTouchEnd}
-      sx={{
-        position: 'relative',
-        zIndex: 2,
-        flexShrink: 0,
-        display: 'grid',
-        placeItems: 'center',
-        pt: 1.25,
-        pb: 0.5,
-        cursor: 'pointer',
-        touchAction: 'none',
-        '&:focus-visible': {
-          outline: '2px solid',
-          outlineColor: accentFg,
-          outlineOffset: -2,
-          borderRadius: 2,
-        },
-      }}
+      className="relative z-[2] grid shrink-0 cursor-pointer place-items-center touch-none pb-1 pt-[10px] focus-visible:rounded-[28px] focus-visible:[outline:2px_solid_var(--app-accent-fg)] focus-visible:[outline-offset:-2px]"
     >
-      <Box aria-hidden sx={{ width: 44, height: 4, borderRadius: 4, bgcolor: 'action.disabled' }} />
-    </Box>
+      <div aria-hidden className="h-1 w-11 rounded-[56px] bg-disabled" />
+    </div>
   );
 
   const header = (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={1}
-      sx={{ position: 'relative', zIndex: 2, px: 1.25, py: 0.75, flexShrink: 0 }}
-    >
+    <div className="relative z-[2] flex shrink-0 flex-row items-center gap-2 px-[10px] py-[6px]">
       <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
         {isDesktop ? <CloseIcon /> : <ExpandMoreIcon />}
       </IconButton>
-      {/* <Typography
-        variant="caption"
-        sx={{
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          fontWeight: 700,
-          color: 'text.secondary',
-        }}
-      >
+      {/* <span className="block text-xs font-bold uppercase leading-[1.4] tracking-[0.14em] text-muted">
         Now playing
-      </Typography> */}
-      <Box sx={{ flex: 1 }} />
+      </span> */}
+      <div className="flex-1" />
       <PlayerMenu track={track} meta={meta} />
-    </Stack>
+    </div>
   );
 
   /**
@@ -342,56 +309,34 @@ export default function PlayerSheet() {
    * colour instead.
    */
   const artworkBox = (
-    <Box
-      sx={{
-        position: 'relative',
-        width: '100%',
-        maxWidth: { xs: 'min(74vw, 320px)', sm: 'min(60vw, 340px)', md: 'min(100%, 440px)' },
-        mx: 'auto',
-      }}
-    >
+    <div className="relative mx-auto w-full max-w-[min(74vw,320px)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]">
       <Artwork
         src={artwork}
         alt={track.albumName || track.title}
         iconSize={72}
-        sx={{
+        style={{
           position: 'relative',
           zIndex: 1,
           width: '100%',
           aspectRatio: '1 / 1',
-          borderRadius: 3,
-          boxShadow: 10,
+          borderRadius: 42,
+          boxShadow: 'var(--shadow-elev-10)',
         }}
       />
       {player.buffering && (
-        <CircularProgress
+        <Spinner
           size={44}
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            margin: 'auto',
-            zIndex: 2,
-            color: accentFg,
-          }}
+          color="inherit"
+          className="absolute inset-0 z-[2] m-auto text-accent-fg"
         />
       )}
-    </Box>
+    </div>
   );
 
   const titleBlock = (
-    <Stack
-      direction="row"
-      alignItems="center"
-      spacing={1}
-      sx={{ mt: { xs: 2, md: 1 }, textAlign: { xs: 'center', md: 'left' } }}
-    >
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent={{ xs: 'center', md: 'flex-start' }}
-          spacing={0.75}
-        >
+    <div className="mt-4 flex flex-row items-center gap-2 text-center md:mt-2 md:text-left">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-row items-center justify-center gap-[6px] md:justify-start">
           <MarqueeText text={track.title} variant="h6" />
           {track.isExplicit && (
             <ExplicitIcon
@@ -399,55 +344,45 @@ export default function PlayerSheet() {
               sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }}
             />
           )}
-        </Stack>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          noWrap
+        </div>
+        <p
+          className={cn(
+            'm-0 truncate text-sm leading-[1.43] text-muted hover:text-accent-fg',
+            track.artist ? 'cursor-pointer' : 'cursor-default',
+          )}
           role={track.artist ? 'link' : undefined}
           tabIndex={track.artist ? 0 : undefined}
           onClick={searchArtist}
           onKeyDown={(event) => {
             if (event.key === 'Enter') searchArtist();
           }}
-          sx={{
-            cursor: track.artist ? 'pointer' : 'default',
-            '&:hover': { color: accentFg },
-          }}
         >
           {track.artist}
-        </Typography>
+        </p>
         {track.albumName && (
-          <Typography
-            variant="caption"
-            color="text.disabled"
-            noWrap
-            sx={{ display: 'block', mt: 0.25 }}
-          >
+          <span className="mt-[2px] block truncate text-xs leading-[1.4] text-disabled">
             {track.albumName}
-          </Typography>
+          </span>
         )}
-      </Box>
-    </Stack>
+      </div>
+    </div>
   );
 
   const errorAlert = player.error ? (
-    <Alert
-      severity="error"
-      onClose={player.dismissError}
-      sx={{ mt: 1.5, py: 0 }}
-      action={
+    <Alert severity="error" onClose={player.dismissError} className="mt-3 !py-0">
+      {/* MIGRATION: the kit Alert has no `action` slot, and the kit Button
+          has no `size="small"` / `color="inherit"` — the Retry button rides
+          inside the message row with those metrics written as classes. */}
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1">{player.error}</span>
         <Button
-          color="inherit"
-          size="small"
           startIcon={<RefreshIcon fontSize="small" />}
           onClick={retry}
+          className="shrink-0 !px-2 !py-1 !text-[0.8125rem] !text-white hover:!bg-white/10"
         >
           Retry
         </Button>
-      }
-    >
-      {player.error}
+      </div>
     </Alert>
   ) : null;
 
@@ -457,7 +392,7 @@ export default function PlayerSheet() {
    * right, so only the heart and the download stay here.
    */
   const secondaryRow = (
-    <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.5} sx={{ mt: 1 }}>
+    <div className="mt-2 flex flex-row items-center justify-center gap-1">
       {!isDesktop && (
         <>
           <Tooltip title="Lyrics" placement="top">
@@ -483,56 +418,44 @@ export default function PlayerSheet() {
         meta={meta}
         waitForCache={() => player.waitForCache(track.videoId)}
       />
-    </Stack>
+    </div>
   );
 
   const scrubber = <NPScrubber onSeek={player.seek} />;
 
   /** Lyrics / queue / related, shared by the phone panel and the desktop column. */
   const panel = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div className="flex min-h-0 flex-1 flex-col">
       <Tabs
         value={tab}
         onChange={onTabChange}
         variant="fullWidth"
         aria-label="Now playing panels"
-        sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
+        className="shrink-0 border-b border-line"
       >
         <Tab
-          disableRipple
           value={LYRICS_TAB}
           label="Lyrics"
           icon={<LyricsIcon />}
           iconPosition="start"
-          sx={TAB_SX}
+          className={TAB_CLASS}
         />
         <Tab
-          disableRipple
           value={QUEUE_TAB}
           label="Queue"
           icon={<QueueMusicIcon />}
           iconPosition="start"
-          sx={TAB_SX}
+          className={TAB_CLASS}
         />
         <Tab
-          disableRipple
           value={RELATED_TAB}
           label="Related"
           icon={<RelatedIcon />}
           iconPosition="start"
-          sx={TAB_SX}
+          className={TAB_CLASS}
         />
       </Tabs>
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: 220,
-          position: 'relative',
-          mt: 1,
-          borderRadius: 2,
-          overflow: 'hidden',
-        }}
-      >
+      <div className="relative mt-2 min-h-[220px] flex-1 overflow-hidden rounded-[28px]">
         {/* Phone only: the animated cover, fitted edge-to-edge behind the
             lyrics under a theme-coloured scrim, so every line stays
             readable on top of moving pixels. A phone animates nowhere else
@@ -540,8 +463,7 @@ export default function PlayerSheet() {
             and related keep the plain surface. */}
         {tab === LYRICS_TAB && motionUrl && !isDesktop && (
           <>
-            <Box
-              component="video"
+            <video
               ref={panelVideoRef}
               src={motionUrl}
               autoPlay
@@ -552,25 +474,13 @@ export default function PlayerSheet() {
               onCanPlay={() => setMotionReady(true)}
               onError={() => setMotionReady(false)}
               aria-hidden
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                opacity: motionReady ? 1 : 0,
-                transition: 'opacity 400ms ease',
-                pointerEvents: 'none',
-              }}
+              className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+              style={{ opacity: motionReady ? 1 : 0, transition: 'opacity 400ms ease' }}
             />
-            <Box
+            <div
               aria-hidden
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 1,
-                pointerEvents: 'none',
+              className="pointer-events-none absolute inset-0 z-[1]"
+              style={{
                 background: motionScrim,
                 opacity: motionReady ? 1 : 0,
                 transition: 'opacity 400ms ease',
@@ -581,224 +491,140 @@ export default function PlayerSheet() {
         {/* Lyrics mounts only while its tab is open: it measures real layout
             to centre the active line, which a display:none box cannot do. */}
         {tab === LYRICS_TAB && (
-          <Box sx={{ height: '100%', position: 'relative', zIndex: 2 }}>
+          <div className="relative z-[2] h-full">
             <LyricsView
               synced={lyrics.synced}
               unsynced={lyrics.unsynced}
               source={lyrics.source}
               loading={meta === null}
             />
-          </Box>
+          </div>
         )}
         {/* Queue and related stay mounted (hidden) so switching tabs never
             resets their scroll position or flickers a loading state. */}
-        <Box sx={{ display: tab === QUEUE_TAB ? 'block' : 'none', height: '100%' }}>
+        <div className={cn('h-full', tab === QUEUE_TAB ? 'block' : 'hidden')}>
           <NPQueue />
-        </Box>
-        <Box sx={{ display: tab === RELATED_TAB ? 'block' : 'none', height: '100%' }}>
+        </div>
+        <div className={cn('h-full', tab === RELATED_TAB ? 'block' : 'hidden')}>
           <RelatedTab />
-        </Box>
-      </Box>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 
   const backdrop = effectsEnabled ? (
-    <Box
-      aria-hidden
-      sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
-    >
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
       {artwork && (
         <Artwork
           src={artwork}
           alt=""
           icon={null}
-          sx={{
+          style={{
             position: 'absolute',
             top: '-25%',
             left: '-25%',
             width: '150%',
             height: '150%',
           }}
-          imgSx={{ filter: 'blur(70px) saturate(1.5)', opacity: 0.55 }}
+          imgStyle={{ filter: 'blur(70px) saturate(1.5)', opacity: 0.55 }}
         />
       )}
-      <Box
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          background: `linear-gradient(180deg, ${alpha(theme.palette.background.default, 0.5)} 0%, ${alpha(theme.palette.background.default, 0.88)} 45%, ${theme.palette.background.default} 100%)`,
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(180deg, ${alpha('var(--app-bg)', 0.5)} 0%, ${alpha('var(--app-bg)', 0.88)} 45%, var(--app-bg) 100%)`,
         }}
       />
-    </Box>
+    </div>
   ) : null;
 
   // ── Phone: main view (artwork → info → controls → secondary row) ───────
   const mobileMain = (
-    <Box
-      sx={{
-        position: 'relative',
-        zIndex: 1,
-        flex: 1,
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        px: 3,
-        pt: 0.5,
-        pb: 2,
-        // on a short screen the column scrolls instead of clipping
-        overflowY: 'auto',
-      }}
-    >
+    // on a short screen the column scrolls instead of clipping
+    <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-4 pt-1">
       {artworkBox}
       {titleBlock}
       {errorAlert}
       {scrubber}
       <NPControls />
       {secondaryRow}
-    </Box>
+    </div>
   );
 
   // ── Phone: a panel has taken the screen over ───────────────────────────
   const mobilePanel = (
-    <Box
-      sx={{
-        position: 'relative',
-        zIndex: 1,
-        flex: 1,
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        px: 2,
-        pt: 1,
-        pb: 1,
-      }}
-    >
+    <div className="relative z-[1] flex min-h-0 flex-1 flex-col px-4 py-2">
       {/* compact now-playing card: the song stays visible above the panel,
           and the down arrow folds everything back to the main view */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        spacing={1.5}
-        sx={{
-          px: 1.25,
-          py: 1,
-          mb: 0.5,
-          bgcolor: 'background.paper',
-          border: 1,
-          borderColor: 'divider',
-          borderRadius: 2,
-          flexShrink: 0,
-        }}
-      >
+      <div className="mb-1 flex shrink-0 flex-row items-center gap-3 rounded-[28px] border border-line bg-surface px-[10px] py-2">
         <Artwork
           src={artwork}
           alt=""
           iconSize={20}
-          sx={{ width: 44, height: 44, borderRadius: 1.5, flexShrink: 0 }}
+          style={{ width: 44, height: 44, borderRadius: 21, flexShrink: 0 }}
         />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <div className="min-w-0 flex-1">
           <MarqueeText text={track.title} variant="subtitle2" />
-          <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+          <span className="block truncate text-xs leading-[1.4] text-muted">
             {track.artist}
-          </Typography>
-        </Box>
+          </span>
+        </div>
         <IconButton
           aria-label="Back to player"
           onClick={() => setPanelOpen(false)}
-          sx={{ border: 1, borderColor: 'divider' }}
+          className="border border-line"
         >
           <ExpandMoreIcon />
         </IconButton>
-      </Stack>
+      </div>
       {panel}
-    </Box>
+    </div>
   );
 
   // ── Desktop: centred two-column dialog ─────────────────────────────────
   const desktopBody = (
-    <Box
-      sx={{
-        position: 'relative',
-        zIndex: 1,
-        flex: 1,
-        minHeight: 0,
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 0.9fr) minmax(0, 1.1fr)',
-        columnGap: 4,
-        rowGap: 2,
-        px: { md: 4 },
-        pb: 3,
-        // the columns handle their own overflow — nothing ever escapes the
-        // dialog itself
-        overflow: 'hidden',
-      }}
-    >
+    // the columns handle their own overflow — nothing ever escapes the
+    // dialog itself
+    <div className="relative z-[1] grid min-h-0 flex-1 grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-x-8 gap-y-4 overflow-hidden pb-6 md:px-8">
       {/* ── Left: cover, centred in its column ─────────────────────── */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: 0,
-          minWidth: 0,
-          py: 2,
-        }}
-      >
+      <div className="flex min-h-0 min-w-0 items-center justify-center py-4">
         {artworkBox}
-      </Box>
+      </div>
 
       {/* ── Right: info → scrubber → transport → panels ─────────────── */}
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          minWidth: 0,
-          overflowY: 'auto',
-          pr: 0.5,
-        }}
-      >
+      <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto pr-1">
         {titleBlock}
         {errorAlert}
         {scrubber}
         <NPControls />
         {secondaryRow}
-        <Box sx={{ flex: 1, minHeight: 240, display: 'flex', flexDirection: 'column', mt: 1.5 }}>
+        <div className="mt-3 flex min-h-[240px] flex-1 flex-col">
           {panel}
-        </Box>
-      </Box>
-    </Box>
+        </div>
+      </div>
+    </div>
   );
 
   const showHeader = isDesktop || !panelOpen;
 
+  // MIGRATION: `fullScreen` / `TransitionComponent` / `PaperProps` have no
+  // kit equivalents — the kit Dialog animates the layer itself (a short
+  // fade-and-rise instead of the old bottom `Slide`), and the paper's shape
+  // lives in `className`: window-filling below `md`, the centred
+  // `min(1120px, 100vw − 64px)` × `min(760px, 100vh − 64px)` card above.
   return (
     <Dialog
-      fullScreen={!isDesktop}
       open={player.sheetOpen}
       onClose={handleClose}
-      TransitionComponent={isDesktop ? undefined : SheetTransition}
       aria-label="Now playing"
-      PaperProps={{
-        sx: {
-          overflow: 'hidden',
-          bgcolor: 'background.default',
-          // desktop: a centred modal that can never outgrow its window
-          width: { md: 'min(1120px, calc(100vw - 64px))' },
-          height: { md: 'min(760px, calc(100vh - 64px))' },
-          maxWidth: { md: '100%' },
-        },
-      }}
+      className={cn(
+        '!h-screen !w-screen !max-h-none !max-w-none !rounded-none !bg-bg',
+        'md:!h-[min(760px,calc(100vh_-_64px))] md:!w-[min(1120px,calc(100vw_-_64px))] md:!rounded-card',
+      )}
     >
-      <Box
+      <div
         ref={sheetRef}
-        sx={{
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          minHeight: 0,
-        }}
+        className="relative flex h-full min-h-0 flex-col"
       >
         {backdrop}
         {/* Desktop: the motion cover spans the whole Now Playing card —
@@ -809,8 +635,7 @@ export default function PlayerSheet() {
             loop plays only behind the lyrics panel. */}
         {isDesktop && motionUrl && (
           <>
-            <Box
-              component="video"
+            <video
               ref={cardVideoRef}
               src={motionUrl}
               autoPlay
@@ -821,25 +646,13 @@ export default function PlayerSheet() {
               onCanPlay={() => setMotionReady(true)}
               onError={() => setMotionReady(false)}
               aria-hidden
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                opacity: motionReady ? 1 : 0,
-                transition: 'opacity 400ms ease',
-                pointerEvents: 'none',
-              }}
+              className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+              style={{ opacity: motionReady ? 1 : 0, transition: 'opacity 400ms ease' }}
             />
-            <Box
+            <div
               aria-hidden
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 1,
-                pointerEvents: 'none',
+              className="pointer-events-none absolute inset-0 z-[1]"
+              style={{
                 background: motionScrim,
                 opacity: motionReady ? 1 : 0,
                 transition: 'opacity 400ms ease',
@@ -850,7 +663,7 @@ export default function PlayerSheet() {
         {!isDesktop && strip}
         {showHeader && header}
         {isDesktop ? desktopBody : panelOpen ? mobilePanel : mobileMain}
-      </Box>
+      </div>
     </Dialog>
   );
 }

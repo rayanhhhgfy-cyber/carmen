@@ -46,7 +46,7 @@ export default function QueuePage() {
             src={track.artwork}
             alt=""
             iconSize={28}
-            sx={{ width: 64, height: 64, borderRadius: 2, flexShrink: 0 }}
+            style={{ width: 64, height: 64, borderRadius: 28, flexShrink: 0 }}
           />
           <div className="min-w-0 flex-1">
             <MarqueeText text={track.title} variant="subtitle1" />

@@ -118,12 +118,10 @@ export default function CollectionPage() {
           src={artwork}
           alt=""
           iconSize={64}
-          sx={{
-            width: { xs: 160, sm: 220 },
-            height: { xs: 160, sm: 220 },
-            borderRadius: 3,
-            boxShadow: 4,
-            mx: { xs: 'auto', sm: 0 },
+          className="w-[160px] sm:w-[220px] h-[160px] sm:h-[220px] mx-auto sm:mx-0"
+          style={{
+            borderRadius: 42,
+            boxShadow: 'var(--shadow-elev-4)',
             flexShrink: 0,
           }}
         />

@@ -70,11 +70,11 @@ export default function RecentSection() {
                   alt=""
                   icon={MusicNoteIcon}
                   iconSize={40}
-                  sx={{
+                  style={{
                     width: '100%',
                     aspectRatio: '1 / 1',
-                    borderRadius: 2,
-                    boxShadow: 1,
+                    borderRadius: 28,
+                    boxShadow: 'var(--shadow-elev-1)',
                     transition: 'transform 220ms ease',
                   }}
                 />

@@ -93,11 +93,11 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
         alt=""
         icon={shape === 'circle' ? UserIcon : AlbumIcon}
         iconSize={40}
-        sx={{
+        style={{
           width: '100%',
           aspectRatio: '1 / 1',
-          borderRadius: shape === 'circle' ? '50%' : 2,
-          boxShadow: 1,
+          borderRadius: shape === 'circle' ? '50%' : 28,
+          boxShadow: 'var(--shadow-elev-1)',
           transition: 'transform 220ms ease',
         }}
       />

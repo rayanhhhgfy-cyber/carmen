@@ -1,33 +1,18 @@
-import {
-  Alert,
-  AppBar,
-  Box,
-  BottomNavigation,
-  BottomNavigationAction,
-  Drawer,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Snackbar,
-  Toolbar,
-  Typography,
-  useMediaQuery,
-  useTheme,
-} from '@mui/material';
-import type { SvgIconProps } from './SvgIcon';
 import { useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
+import { useIsDesktop } from '../hooks';
 import { usePlayer } from '../player/PlayerContext';
 import { useArtworkBackground, useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloads';
+import { cn } from '../utils/cn';
 import AmbientBackground from './AmbientBackground';
 import MiniPlayer from './MiniPlayer';
 import PlayerSheet from './PlayerSheet';
+import type { SvgIconProps } from './SvgIcon';
+import { Alert, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Snackbar } from './ui';
 import {
   DarkModeIcon,
   HomeIcon,
@@ -53,75 +38,59 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Settings', path: '/settings', icon: SettingsIcon },
 ];
 
+/** Section-title typography (MUI h6: 1.25rem/1.6/700, tightened tracking). */
+const TITLE_CLS = 'm-0 text-xl font-extrabold leading-[1.6] tracking-[-0.02em]';
+
 function SideNav() {
   const location = useLocation();
   // Glass only while the ambient tint can bleed through: low battery
   // mode paints the solid paper colour instead (no backdrop-filter).
   const effectsEnabled = useEffectsEnabled();
+  const { resolved } = useAppTheme();
   return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: 216,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: 216,
-          boxSizing: 'border-box',
-          borderRight: 1,
-          borderColor: 'divider',
-          // translucent so the ambient artwork tint bleeds through
-          bgcolor: (theme) =>
-            !effectsEnabled
-              ? theme.palette.background.paper
-              : theme.palette.mode === 'dark'
-                ? 'rgba(18,23,20,0.86)'
-                : 'rgba(255,255,255,0.86)',
-          backdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
-        },
+    <aside
+      className="w-[216px] shrink-0 border-r border-line"
+      style={{
+        boxSizing: 'border-box',
+        backgroundColor: !effectsEnabled
+          ? 'var(--app-paper)'
+          : resolved === 'dark'
+            ? 'rgba(18,23,20,0.86)'
+            : 'rgba(255,255,255,0.86)',
+        backdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
       }}
     >
-      <Toolbar sx={{ px: 2.5, gap: 1 }}>
-        <Box
-          sx={{
-            width: 28,
-            height: 28,
-            borderRadius: 1.5,
-            bgcolor: 'primary.main',
-            display: 'grid',
-            placeItems: 'center',
-            color: 'primary.contrastText',
-            fontWeight: 800,
-            fontSize: 15,
-          }}
+      <div className="flex min-h-14 items-center gap-2 px-5">
+        <span
+          className="grid h-7 w-7 place-items-center bg-accent text-accent-fg"
+          style={{ borderRadius: 21, fontWeight: 800, fontSize: 15 }}
         >
           C
-        </Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-          Carmen
-        </Typography>
-      </Toolbar>
-      <List sx={{ px: 1.5 }}>
+        </span>
+        <h6 className={TITLE_CLS}>Carmen</h6>
+      </div>
+      <List className="px-3">
         {NAV_ITEMS.map(({ label, path, icon: Icon }) => (
           <ListItemButton
             key={path}
-            component={NavLink}
+            as={NavLink}
             to={path}
             selected={location.pathname === path}
-            sx={{ mb: 0.5 }}
+            className="mb-1"
           >
             <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>
               <Icon fontSize="small" />
             </ListItemIcon>
-            <ListItemText primary={label} primaryTypographyProps={{ variant: 'body2', fontWeight: 600 }} />
+            <ListItemText primary={label} />
           </ListItemButton>
         ))}
       </List>
-    </Drawer>
+    </aside>
   );
 }
 
 function NoticeSnackbars() {
-  const { notice } = useSyncExternalStore(subscribeDownloads, getDownloadsSnapshot);
+  const { notice } = useSyncExternalStore(subscribeDownloads, getDownloadsSnapshot, getDownloadsSnapshot);
   const player = usePlayer();
 
   return (
@@ -133,7 +102,7 @@ function NoticeSnackbars() {
         onClose={clearNotice}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert severity={notice?.severity || 'info'} variant="filled" onClose={clearNotice} sx={{ width: '100%' }}>
+        <Alert severity={notice?.severity || 'info'} variant="filled" onClose={clearNotice} className="w-full">
           {notice?.message}
         </Alert>
       </Snackbar>
@@ -155,11 +124,10 @@ function NoticeSnackbars() {
 /** App shell: navigation, docked mini player, full player and snackbars. */
 export default function Layout() {
   const appTheme = useAppTheme();
-  const muiTheme = useTheme();
   const player = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
-  const isDesktop = useMediaQuery(muiTheme.breakpoints.up('md'));
+  const isDesktop = useIsDesktop();
   const showMini = Boolean(player.current);
   // Low battery mode: no ambient artwork layer, no glass surfaces —
   // plain solid ones instead (see useEffectsEnabled). The ambient wash
@@ -169,8 +137,7 @@ export default function Layout() {
   // A white accent painted straight onto the light bar would be white on
   // white, so the selected label falls back to the plain text colour there.
   const whiteAccentOnLightBar =
-    muiTheme.palette.mode === 'light' &&
-    muiTheme.palette.primary.main.toLowerCase() === '#ffffff';
+    appTheme.resolved === 'light' && appTheme.accentInUse.toLowerCase() === '#ffffff';
 
   const navHeight = 56;
   const bottomOffset = isDesktop
@@ -184,42 +151,34 @@ export default function Layout() {
     : `calc(${navHeight}px + env(safe-area-inset-bottom) + ${showMini ? 84 : 20}px)`;
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="flex min-h-screen">
       {/* artwork driven ambient tint (painted behind every surface) —
           low battery mode and the Settings choice skip it entirely */}
       {effectsEnabled && artworkBackground && <AmbientBackground />}
 
       {isDesktop && <SideNav />}
 
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <AppBar
-          position="sticky"
-          color="transparent"
-          elevation={0}
-          enableColorOnDark
-          sx={{
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header
+          className="sticky top-0 z-[1100] border-b border-line"
+          style={{
             backdropFilter: effectsEnabled ? 'blur(12px)' : 'none',
-            bgcolor: (theme) =>
-              !effectsEnabled
-                ? theme.palette.background.default
-                : theme.palette.mode === 'dark'
-                  ? 'rgba(10,13,11,0.72)'
-                  : 'rgba(246,247,246,0.78)',
-            borderBottom: 1,
-            borderColor: 'divider',
+            backgroundColor: !effectsEnabled
+              ? 'var(--app-bg)'
+              : appTheme.resolved === 'dark'
+                ? 'rgba(10,13,11,0.72)'
+                : 'rgba(246,247,246,0.78)',
           }}
         >
-          <Toolbar sx={{ minHeight: { xs: 56, md: 64 } }}>
+          <div className="flex min-h-14 items-center px-4 md:min-h-16">
             {isDesktop ? (
-              <Typography variant="h6" sx={{ fontWeight: 800 }}>
+              <h6 className={TITLE_CLS}>
                 {NAV_ITEMS.find((item) => item.path === location.pathname)?.label || 'Carmen'}
-              </Typography>
+              </h6>
             ) : (
-              <Typography variant="h6" sx={{ fontWeight: 800, flex: 1 }}>
-                Carmen
-              </Typography>
+              <h6 className={`${TITLE_CLS} flex-1`}>Carmen</h6>
             )}
-            <Box sx={{ flex: 1 }} />
+            <div className="flex-1" />
             <IconButton
               aria-label={
                 appTheme.resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
@@ -228,63 +187,58 @@ export default function Layout() {
             >
               {appTheme.resolved === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
             </IconButton>
-          </Toolbar>
-        </AppBar>
+          </div>
+        </header>
 
-        <Box component="main" sx={{ flex: 1, pb: contentPaddingBottom }}>
+        <main className="flex-1" style={{ paddingBottom: contentPaddingBottom }}>
           <Outlet />
-        </Box>
-      </Box>
+        </main>
+      </div>
 
       {/* the docked bar would sit under the desktop player drawer, so it
           steps aside while the player is open */}
       {!(isDesktop && player.sheetOpen) && <MiniPlayer bottomOffset={bottomOffset} />}
 
       {!isDesktop && (
-        <BottomNavigation
-          showLabels
-          value={location.pathname}
-          onChange={(_, newPath) => navigate(newPath)}
-          sx={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
+        <nav
+          className="fixed inset-x-0 bottom-0 z-[1100] flex"
+          style={{
             height: `calc(${navHeight}px + env(safe-area-inset-bottom))`,
-            pb: 'env(safe-area-inset-bottom)',
-            borderTop: 1,
-            borderColor: 'divider',
-            bgcolor: (theme) =>
-              !effectsEnabled
-                ? theme.palette.background.paper
-                : theme.palette.mode === 'dark'
-                  ? 'rgba(18,23,20,0.9)'
-                  : 'rgba(255,255,255,0.9)',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+            borderTop: '1px solid var(--app-divider)',
+            backgroundColor: !effectsEnabled
+              ? 'var(--app-paper)'
+              : appTheme.resolved === 'dark'
+                ? 'rgba(18,23,20,0.9)'
+                : 'rgba(255,255,255,0.9)',
             backdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
-            zIndex: (theme) => theme.zIndex.appBar,
           }}
         >
           {NAV_ITEMS.map(({ label, path, icon: Icon }) => (
-            <BottomNavigationAction
+            <button
               key={path}
-              value={path}
-              label={label}
-              icon={<Icon />}
-              sx={{
-                color:
-                  location.pathname === path
-                    ? whiteAccentOnLightBar
-                      ? 'text.primary'
-                      : 'primary.main'
-                    : 'text.secondary',
-              }}
-            />
+              type="button"
+              onClick={() => navigate(path)}
+              className={cn(
+                'flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1',
+                'text-xs font-medium transition-colors',
+                'focus-visible:outline-2 focus-visible:outline-accent',
+                location.pathname === path
+                  ? whiteAccentOnLightBar
+                    ? 'text-body'
+                    : 'text-accent'
+                  : 'text-muted',
+              )}
+            >
+              <Icon />
+              <span className="max-w-full truncate">{label}</span>
+            </button>
           ))}
-        </BottomNavigation>
+        </nav>
       )}
 
       <PlayerSheet />
       <NoticeSnackbars />
-    </Box>
+    </div>
   );
 }

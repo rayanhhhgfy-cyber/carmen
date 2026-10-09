@@ -126,7 +126,7 @@ export default function SongRow({
           alt=""
           icon={MusicNoteIcon}
           iconSize={20}
-          sx={{ width: 42, height: 42, borderRadius: 1.5, flexShrink: 0 }}
+          style={{ width: 42, height: 42, borderRadius: 21, flexShrink: 0 }}
         />
         <div className="min-w-0 flex-1">
           <p

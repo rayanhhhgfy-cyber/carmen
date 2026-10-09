@@ -80,11 +80,11 @@ export interface ArtworkProps {
   icon?: Glyph;
   /** `fontSize` of the fallback glyph. */
   iconSize?: number;
-  /** Tile styles — the underlying artwork component still resolves them. */
-  sx?: Record<string, unknown>;
-  /** Styles of the `<img>` itself (blur, scale, …). */
-  imgSx?: Record<string, unknown>;
-  /** Anything else is forwarded to the underlying `Box` (e.g. `className`). */
+  /** Tile styles — plain CSS (the MUI `sx` this replaced). */
+  style?: React.CSSProperties;
+  /** Styles of the `<img>` itself (blur, scale, …) — plain CSS. */
+  imgStyle?: React.CSSProperties;
+  /** Anything else is forwarded to the underlying element (e.g. `className`). */
   [key: string]: unknown;
 }
 

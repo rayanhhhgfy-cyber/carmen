@@ -36,7 +36,7 @@ function QueueRow({
             src={track.artwork}
             alt=""
             iconSize={20}
-            sx={{ width: 46, height: 46, borderRadius: 1.5 }}
+            style={{ width: 46, height: 46, borderRadius: 21 }}
           />
         </ListItemIcon>
         <ListItemText
@@ -142,7 +142,7 @@ export default function NPQueue() {
                   src={current.artwork}
                   alt=""
                   iconSize={20}
-                  sx={{ width: 46, height: 46, borderRadius: 1.5 }}
+                  style={{ width: 46, height: 46, borderRadius: 21 }}
                 />
               </ListItemIcon>
               <ListItemText

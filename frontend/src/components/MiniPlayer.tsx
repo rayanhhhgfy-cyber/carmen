@@ -86,7 +86,7 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             src={track.artwork}
             alt=""
             iconSize={20}
-            sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: 'action.hover' }}
+            style={{ width: 44, height: 44, borderRadius: 28, backgroundColor: 'var(--app-hover)' }}
           />
           {player.buffering && (
             <Spinner size={20} className="absolute inset-0 m-auto" />

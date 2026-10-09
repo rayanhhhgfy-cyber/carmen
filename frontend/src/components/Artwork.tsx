@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
-import { Box, type BoxProps, type SxProps, type Theme } from '@mui/material';
-import type { SvgIconProps } from './SvgIcon';
+import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type HTMLAttributes } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
+import type { SvgIconProps } from './SvgIcon';
 import {
   artworkFallbacks,
   isArtworkReady,
@@ -17,16 +16,33 @@ import { MusicNoteIcon } from './icons';
  */
 const REVEAL_MS = 0.32;
 
+/** The tile's own defaults — callers merge their `style` on top. */
+const HOST_STYLE: CSSProperties = {
+  position: 'relative',
+  overflow: 'hidden',
+  backgroundColor: 'var(--app-hover)',
+};
+
+/** Everything the `<img>` paints with, before caller overrides. */
+const IMG_STYLE: CSSProperties = {
+  width: '100%',
+  height: '100%',
+  objectFit: 'cover',
+  objectPosition: 'center',
+};
+
 /** Artwork tile that goes through the throttled loader. */
-interface ArtworkProps extends BoxProps {
+interface ArtworkProps extends Omit<HTMLAttributes<HTMLDivElement>, 'style'> {
   /** Artwork URL (largest available size). */
   src?: string | null;
   alt?: string;
   /** Placeholder glyph shown while / instead of the cover. */
   icon?: ComponentType<SvgIconProps> | null;
   iconSize?: number;
-  /** Styles of the `<img>` itself (blur, scale, …). */
-  imgSx?: SxProps<Theme>;
+  /** Tile styles — plain CSS (the MUI `sx` this replaced). */
+  style?: CSSProperties;
+  /** Styles of the `<img>` itself (blur, scale, …) — plain CSS. */
+  imgStyle?: CSSProperties;
 }
 
 /**
@@ -55,8 +71,8 @@ export default function Artwork({
   alt = '',
   icon: Icon = MusicNoteIcon,
   iconSize = 40,
-  sx,
-  imgSx,
+  style,
+  imgStyle,
   ...rest
 }: ArtworkProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -155,20 +171,11 @@ export default function Artwork({
   }, [active, near, chain.length, step]);
 
   return (
-    <Box
-      ref={hostRef}
-      sx={{
-        position: 'relative',
-        overflow: 'hidden',
-        bgcolor: 'action.hover',
-        ...sx,
-      }}
-      {...rest}
-    >
+    <div ref={hostRef} {...rest} style={{ ...HOST_STYLE, ...style }}>
       {/* The layer stack stays mounted even while a cover is queued, so the
           outgoing image can finish its exit fade underneath the shimmer.
-          framer animates a wrapper div; the <img> inside keeps its MUI sx
-          (including caller `imgSx`) untouched. */}
+          framer animates a wrapper div; the <img> inside carries the
+          caller's `imgStyle` (blur, scale, …) untouched. */}
       <AnimatePresence>
         {status === 'ready' && active ? (
           <motion.div
@@ -179,53 +186,34 @@ export default function Artwork({
             transition={{ duration: REVEAL_MS, ease: 'easeOut' }}
             style={{ position: 'absolute', inset: 0 }}
           >
-            <Box
-              component="img"
+            <img
               src={painted || active}
               alt={alt}
               onError={nextOrGiveUp}
-              sx={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                objectPosition: 'center',
-                ...imgSx,
-              }}
+              style={{ ...IMG_STYLE, ...imgStyle }}
             />
           </motion.div>
         ) : null}
       </AnimatePresence>
       {status === 'ready' && active ? null : (
-        <Box
+        <div
           aria-hidden
-          sx={{
+          style={{
             position: 'absolute',
             inset: 0,
             display: 'grid',
             placeItems: 'center',
-            color: 'text.disabled',
+            color: 'var(--app-text-disabled)',
             overflow: 'hidden',
           }}
         >
           {status === 'queued' ? (
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                background:
-                  'linear-gradient(100deg, transparent 15%, rgba(128,128,128,0.22) 45%, transparent 75%)',
-                animation: 'artwork-shimmer 1.5s linear infinite',
-                '@keyframes artwork-shimmer': {
-                  from: { transform: 'translateX(-100%)' },
-                  to: { transform: 'translateX(100%)' },
-                },
-              }}
-            />
+            <div className="artwork-shimmer" />
           ) : Icon ? (
             <Icon sx={{ fontSize: iconSize }} />
           ) : null}
-        </Box>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
