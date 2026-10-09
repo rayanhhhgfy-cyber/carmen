@@ -60,3 +60,29 @@ export function plainLyrics(meta: TrackMeta | null | undefined): string | null {
 export function lyricsOf(meta: TrackMeta | null | undefined): TrackLyrics {
   return meta?.lyrics ?? { synced: null, unsynced: null, source: null };
 }
+
+/**
+ * Index of the last line whose timestamp has passed — a binary search, so
+ * every playhead tick costs `O(log n)` and nothing else.
+ *
+ * Shared by the lyrics panel and the lock-screen lyric mirror
+ * (`services/mediaSession/lockScreenLyrics`) so both highlight exactly the
+ * same line at exactly the same millisecond.
+ *
+ * @returns `-1` before the first line (intro, ads, instrumental leads)
+ */
+export function activeLineIndexAt(lines: LyricLine[], timeMs: number): number {
+  let low = 0;
+  let high = lines.length - 1;
+  let answer = -1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (lines[middle].timeMs <= timeMs) {
+      answer = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return answer;
+}

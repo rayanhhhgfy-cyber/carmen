@@ -1,6 +1,8 @@
 /**
  * System level playback — macOS Now Playing / Control Center, Windows media
- * controls, Android lock screens — through the Web Media Session API.
+ * controls, Android lock screens, iOS lock-screen artwork — through the Web
+ * Media Session API. One manager owns everything the OS is told about this
+ * app's audio.
  *
  * The module is deliberately defensive: every entry point is feature
  * detected, every call the browser may refuse is wrapped, and the handlers
@@ -9,11 +11,22 @@
  * When the active song has been downloaded, its **local** cover (base64 data
  * URL read straight from the app sandbox) is handed to the OS first, so the
  * widget keeps working with no network at all.
+ *
+ * Lock-screen lyrics (`lockScreenLyrics.ts`) additionally repaint
+ * `metadata.artist` with the currently sung line, and the iOS-only
+ * `lockScreenArtwork.ts` feeds a hidden `<video>` so iOS projects motion
+ * artwork onto the lock screen — both without touching React state per tick.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { localArtworkDataUrl } from '../offline/source';
-import type { Track, TrackMeta } from '../types/models';
+import { localArtworkDataUrl } from '../../offline/source';
+import { DEFAULT_SETTINGS, getSettingsSnapshot, subscribeSettings } from '../../settings/store';
+import type { Track, TrackMeta } from '../../types/models';
+import { syncedLines } from '../../utils/lyrics';
+import {
+  LYRIC_LINE_PREFIX,
+  useLockScreenLyricTracker,
+} from './lockScreenLyrics';
 
 const YTIMG = 'https://i.ytimg.com';
 
@@ -218,15 +231,54 @@ export function useMediaSession({
     };
   }, [videoId]);
 
-  // ── 1. Metadata ─────────────────────────────────────────────────────────
+  // ── 1. Metadata (title / artist / album / artwork, plus the lock-screen
+  //        lyric mirror on the artist slot) ────────────────────────────────
+
+  const lockLyricsEnabled = useSyncExternalStore(
+    subscribeSettings,
+    () => getSettingsSnapshot().lockScreenLyrics,
+    () => DEFAULT_SETTINGS.lockScreenLyrics,
+  );
+
+  // Currently sung line, mirrored from `timeupdate` without React state —
+  // `publishMetadata` below repaints the OS widget directly per line change.
+  const lyricLineRef = useRef<string | null>(null);
+
+  // A new song starts from the plain artist; declared *before* the publish
+  // effect so the reset lands within the same commit.
   useEffect(() => {
+    lyricLineRef.current = null;
+  }, [videoId]);
+
+  const publishMetadata = useCallback(() => {
     if (!media || typeof MediaMetadata !== 'function') return;
     if (!current) {
       media.metadata = null;
       return;
     }
-    media.metadata = new MediaMetadata(buildMetadata(current, meta, localCover));
-  }, [media, current, meta, localCover]);
+    const base = buildMetadata(current, meta, localCover);
+    const line = lockLyricsEnabled ? lyricLineRef.current : null;
+    media.metadata = new MediaMetadata(
+      line ? { ...base, artist: `${LYRIC_LINE_PREFIX} ${line}` } : base,
+    );
+  }, [media, current, meta, localCover, lockLyricsEnabled]);
+
+  useEffect(() => {
+    publishMetadata();
+  }, [publishMetadata]);
+
+  useLockScreenLyricTracker({
+    audioRef,
+    lines: syncedLines(meta),
+    enabled: lockLyricsEnabled,
+    onLine: useCallback(
+      (line: string | null) => {
+        lyricLineRef.current = line;
+        publishMetadata();
+      },
+      [publishMetadata],
+    ),
+  });
 
   // ── 2. Playback state ───────────────────────────────────────────────────
   useEffect(() => {

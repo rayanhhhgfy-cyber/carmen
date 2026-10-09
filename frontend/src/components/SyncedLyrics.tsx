@@ -5,6 +5,7 @@ import { usePlayhead } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import type { LyricLine } from '../types/models';
 import { cn } from '../utils/cn';
+import { activeLineIndexAt as activeIndexAt } from '../utils/lyrics';
 
 /**
  * Synced lyrics engine — rAF glide + windowed rows, zero renders per tick.
@@ -49,28 +50,6 @@ const OWN_SCROLL_TOLERANCE = 2;
 const OVERSCAN = 6;
 /** Row height guess before the first measurement (px) — refines itself. */
 const ESTIMATED_ROW = 52;
-
-/**
- * Index of the last line whose timestamp has passed — a binary search, so
- * every playhead tick costs `O(log n)` and nothing else.
- *
- * @returns `-1` before the first line (intro, ads, instrumental leads)
- */
-function activeIndexAt(lines: LyricLine[], timeMs: number): number {
-  let low = 0;
-  let high = lines.length - 1;
-  let answer = -1;
-  while (low <= high) {
-    const middle = (low + high) >> 1;
-    if (lines[middle].timeMs <= timeMs) {
-      answer = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  return answer;
-}
 
 /**
  * The *only* component that subscribes to the playhead, so the engine above

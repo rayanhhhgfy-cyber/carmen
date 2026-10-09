@@ -24,6 +24,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   animatedArtwork: true,
   blurEffects: true,
   artworkBackground: true,
+  lockScreenLyrics: true,
+  iosLockScreenArtwork: true,
 };
 
 const KEYS: SettingsKey[] = [
@@ -37,6 +39,8 @@ const KEYS: SettingsKey[] = [
   'animatedArtwork',
   'blurEffects',
   'artworkBackground',
+  'lockScreenLyrics',
+  'iosLockScreenArtwork',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -96,6 +100,8 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
     case 'animatedArtwork':
     case 'blurEffects':
     case 'artworkBackground':
+    case 'lockScreenLyrics':
+    case 'iosLockScreenArtwork':
       // Absent = on: only an explicit "0" turns the feature off.
       return raw !== '0' && raw !== 'false';
     case 'accent':
@@ -113,7 +119,9 @@ function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
     key === 'lowBatteryMode' ||
     key === 'animatedArtwork' ||
     key === 'blurEffects' ||
-    key === 'artworkBackground'
+    key === 'artworkBackground' ||
+    key === 'lockScreenLyrics' ||
+    key === 'iosLockScreenArtwork'
   ) {
     return value ? '1' : '0';
   }

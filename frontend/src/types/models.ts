@@ -170,6 +170,23 @@ export interface AppSettings {
    * the plain theme background. Low battery mode hides it too.
    */
   artworkBackground: boolean;
+  /**
+   * Lock-screen lyrics — mirrors the currently sung line into the OS media
+   * widget's `metadata.artist` (`💬 <line>`), so the lock screen / Control
+   * Center / car display shows what is playing right now. Updates fire
+   * only when the active synced line changes, never per playhead tick
+   * (see `services/mediaSession/lockScreenLyrics`).
+   */
+  lockScreenLyrics: boolean;
+  /**
+   * iOS lock-screen animated artwork — feeds Apple's motion artwork
+   * (`.m3u8`, translated from `test.py`/coverpy in `artwork/motion.ts`)
+   * to a hidden, muted `<video>` so iOS projects it as the lock-screen /
+   * Control Center artwork. Strictly an iOS/iPadOS Safari behaviour; the
+   * Now Playing page is untouched. Degrades silently to the static cover
+   * when the HLS URL cannot be resolved from the web (CORS).
+   */
+  iosLockScreenArtwork: boolean;
 }
 
 export type SettingsKey = keyof AppSettings;

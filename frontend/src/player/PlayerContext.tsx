@@ -24,7 +24,8 @@ import type { LyricsProvider, RepeatMode, Track, TrackMeta } from '../types/mode
 import { addSuggestions, recordPlay } from '../utils/library';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
-import { useMediaSession } from './mediaSession';
+import { useMediaSession } from '../services/mediaSession';
+import { useLockScreenArtwork } from '../services/mediaSession/lockScreenArtwork';
 import { useAdaptiveAccent } from '../theme/adaptiveAccent';
 
 /**
@@ -571,6 +572,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     onNext: () => next(),
     onSeek: seek,
   });
+
+  // ── iOS lock-screen motion artwork (hidden video, Now Playing untouched)
+  // Stable per track so the hook's effect only ever re-runs on song change.
+  const motionRef = useMemo(
+    () =>
+      current
+        ? {
+            videoId: current.videoId,
+            album: current.albumName,
+            title: current.title,
+            artist: current.artist,
+          }
+        : null,
+    [current],
+  );
+  useLockScreenArtwork(motionRef, audioRef);
 
   // ── Local home library: recent plays + suggested songs ─────────────────
 

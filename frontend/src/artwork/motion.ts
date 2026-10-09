@@ -30,8 +30,11 @@
  * own origin, and Apple's edge answers *that* with a 403 on the bootstrap
  * page — so the plain GETs deliberately send an empty Origin (coverpy sends
  * none either), which the plugin strips before sending. That also means
- * the feature only exists inside the Tauri shell; a plain `vite dev`
- * session simply keeps static covers.
+ * *the Now Playing page* only exists inside the Tauri shell; a plain
+ * `vite dev` session keeps static covers there. (The iOS lock screen has a
+ * separate, browser-capable resolver — `lockScreenMotionUrls` at the
+ * bottom — whose attempts degrade to `null` on the web, where Apple's CORS
+ * headers only ever answer Apple's own origins.)
  *
  * The bytes are cached so nothing is ever fetched twice:
  *
@@ -139,11 +142,24 @@ interface PluginJsonResult {
  * an empty one — with `unsafe-headers` the plugin *removes* `Origin: ''`
  * before sending. Callers may still pass their own Origin (amp-api needs
  * `https://music.apple.com`).
+ *
+ * In a plain browser the hop degrades to `fetch`: `Origin` is a *forbidden*
+ * header there, so the browser drops any spoofed value and sends the page's
+ * real origin — Apple answers web origins with `403` / no CORS headers and
+ * the caller (the iOS lock-screen resolver) degrades to static artwork.
  */
 async function pluginText(
   url: string,
   headers: Record<string, string> = {},
 ): Promise<PluginTextResult> {
+  if (!isTauri) {
+    try {
+      const response = await fetch(url, { headers });
+      return { ok: response.ok, status: response.status, body: await response.text() };
+    } catch {
+      return { ok: false, status: 0, body: '' };
+    }
+  }
   const merged: Record<string, string> = { Origin: '', ...headers };
   const response = (await tauriFetch(url, { headers: merged })) as unknown as {
     ok: boolean;
@@ -159,6 +175,20 @@ async function pluginJson(
   url: string,
   headers: Record<string, string> = {},
 ): Promise<PluginJsonResult> {
+  if (!isTauri) {
+    try {
+      const response = await fetch(url, { headers });
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+      return { ok: response.ok, status: response.status, payload };
+    } catch {
+      return { ok: false, status: 0, payload: null };
+    }
+  }
   const response = (await tauriFetch(url, { headers })) as unknown as {
     ok: boolean;
     status: number;
@@ -691,6 +721,103 @@ export async function motionSource(
   if (!url) return null;
   const path = await cachedVideo(key, url);
   return path ? localFileUrl(path) : url;
+}
+
+// ── iOS lock-screen resolution (the web-capable path) ────────────────────────
+
+/** Motion URLs for one track: the HLS master + the direct MP4 behind it. */
+export interface LockScreenMotionUrls {
+  /** `.m3u8` master playlist — iOS Safari plays HLS natively in `<video>`. */
+  hls: string | null;
+  /** The self-contained MP4 (`#EXT-X-MAP`) — the cacheable copy. */
+  mp4: string | null;
+}
+
+/** Session memo — `null` = "this album has none" (or the chain failed). */
+const lockScreenCache = new Map<string, LockScreenMotionUrls | null>();
+const lockScreenPending = new Map<string, Promise<LockScreenMotionUrls | null>>();
+
+/**
+ * Latched after the first origin-level failure **in a plain browser**: the
+ * chain dies at the token bootstrap / `amp-api` because Apple only sends
+ * CORS headers for its own origins (verified: `music.apple.com` → `403`
+ * for any web origin, `amp-api` echoes ACAO only for `music.apple.com`).
+ * One failed attempt already proves the chain cannot succeed this session —
+ * latching keeps later tracks from adding CORS noise. Tauri never latches:
+ * its Rust fetch is not subject to CORS.
+ */
+let lockScreenBroken = false;
+
+/**
+ * Translation of `test.py` / coverpy's `.m3u8` extraction for the iOS
+ * lock-screen pipeline (see `services/mediaSession/lockScreenArtwork`):
+ *
+ *   1. iTunes Search (CORS-open) → `collectionId` — album first, then the
+ *      `song`-entity fallback, exactly like `resolvedUrl`,
+ *   2. AMP web token scraped from the web bundle,
+ *   3. `amp-api …?extend=editorialVideo` → HLS master playlist,
+ *   4. master → 468-preferring variant → the direct MP4 of `#EXT-X-MAP`.
+ *
+ * Steps 2–4 hop through `pluginText`/`pluginJson`, which in a browser are
+ * plain `fetch` — they *run* (this is the translated caller) but Apple
+ * refuses web origins, so the promise resolves `null` and the caller keeps
+ * the static cover: graceful degradation, never an error the UI can see.
+ */
+export async function lockScreenMotionUrls(
+  reference: MotionArtworkRef | null | undefined,
+): Promise<LockScreenMotionUrls | null> {
+  const identity = referenceIdentity(reference);
+  if (!reference || !identity) return null;
+  const key = motionKey(identity);
+  const cached = lockScreenCache.get(key);
+  if (cached !== undefined) return cached;
+  if (lockScreenBroken) return null;
+  const inFlight = lockScreenPending.get(key);
+  if (inFlight) return inFlight;
+
+  const task = (async (): Promise<LockScreenMotionUrls | null> => {
+    try {
+      const album = reference.album?.trim();
+      const title = reference.title?.trim();
+      const artist = reference.artist?.trim();
+      let collectionId: number | null = null;
+      if (album) {
+        collectionId = await searchCollectionId(artist ? `${album} - ${artist}` : album, 'album');
+      }
+      if (!collectionId && title) {
+        collectionId = await searchCollectionId(artist ? `${title} - ${artist}` : title, 'song');
+      }
+      if (!collectionId) {
+        lockScreenCache.set(key, null);
+        return null;
+      }
+      const hls = await editorialVideoUrl(collectionId);
+      if (!hls) {
+        lockScreenCache.set(key, null);
+        return null;
+      }
+      const mp4 = await resolveVideoUrl(hls);
+      const result: LockScreenMotionUrls = { hls, mp4 };
+      lockScreenCache.set(key, result);
+      return result;
+    } catch (error) {
+      if (!isTauri) {
+        lockScreenBroken = true;
+        console.warn('[motion] lock-screen resolution unavailable for this session', error);
+      } else {
+        console.warn('[motion] lock-screen resolve failed', identity, error);
+      }
+      lockScreenCache.set(key, null);
+      return null;
+    }
+  })();
+
+  lockScreenPending.set(key, task);
+  try {
+    return await task;
+  } finally {
+    lockScreenPending.delete(key);
+  }
 }
 
 /**

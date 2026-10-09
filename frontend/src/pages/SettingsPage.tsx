@@ -11,6 +11,7 @@ import {
 } from '../components/ui';
 import type { ReactElement, ReactNode } from 'react';
 import { cn } from '../utils/cn';
+import { isIOS } from '../services/env';
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
 import { useBattery } from '../settings/battery';
@@ -111,6 +112,8 @@ export default function SettingsPage() {
     animatedArtwork,
     blurEffects,
     artworkBackground,
+    lockScreenLyrics,
+    iosLockScreenArtwork,
   } = useSettings();
   // The *effective* mode (manual toggle or the automatic low-battery
   // kick-in) and the reading behind its status line.
@@ -433,6 +436,56 @@ export default function SettingsPage() {
                 checked={artworkBackground}
                 onChange={(_, checked) => updateSettings({ artworkBackground: checked })}
                 inputProps={{ 'aria-label': 'Artwork background' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <Divider />
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Lock screen lyrics
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Mirrors the currently sung line onto the lock screen,
+                  Control Center and car displays — 💬 in front of the line,
+                  while the track title stays where it belongs. Updates only
+                  when the line changes, never while it is being sung.
+                </span>
+              </div>
+              <Switch
+                checked={lockScreenLyrics}
+                onChange={(_, checked) => updateSettings({ lockScreenLyrics: checked })}
+                inputProps={{ 'aria-label': 'Lock screen lyrics' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <Divider />
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Animated lock screen artwork
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Shows the album's motion artwork behind the lock screen and
+                  Control Center while music plays. The video is loaded once
+                  per song and kept for offline replays; albums without one
+                  simply keep their static cover.
+                </span>
+                {!isIOS && (
+                  <span className="block text-xs leading-[1.4] text-muted">
+                    Applies on iPhone and iPad — it has no effect on this
+                    device.
+                  </span>
+                )}
+              </div>
+              <Switch
+                checked={iosLockScreenArtwork}
+                onChange={(_, checked) => updateSettings({ iosLockScreenArtwork: checked })}
+                inputProps={{ 'aria-label': 'Animated lock screen artwork' }}
                 className="shrink-0"
               />
             </div>
