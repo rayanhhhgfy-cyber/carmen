@@ -157,7 +157,7 @@ export default function MediaCard({
         )}
         {card.kind === 'song' && (
           <div
-            className="card-play absolute bottom-1.5 right-1.5 grid h-9 w-9 translate-y-1.5 place-items-center rounded-full bg-accent text-accent-fg opacity-0 transition-all duration-200 ease-[ease]"
+            className="card-play absolute bottom-1.5 right-1.5 grid h-9 w-9 translate-y-1.5 place-items-center rounded-full bg-accent text-accent-contrast opacity-0 transition-all duration-200 ease-[ease]"
             style={{ boxShadow: ELEVATION_3 }}
           >
             <PlayArrowIcon />

@@ -221,7 +221,7 @@ export default function SearchPage() {
               onClick={() => setFilter(option.id)}
               className={cn(
                 'flex-shrink-0',
-                filter === option.id && '!border-transparent !bg-accent !text-accent-fg',
+                filter === option.id && '!border-transparent !bg-accent !text-accent-contrast',
               )}
             />
           ))}

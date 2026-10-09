@@ -62,7 +62,7 @@ function SideNav() {
     >
       <div className="flex min-h-14 items-center gap-2 px-5">
         <span
-          className="grid h-7 w-7 place-items-center bg-accent text-accent-fg"
+          className="grid h-7 w-7 place-items-center bg-accent text-accent-contrast"
           style={{ borderRadius: 21, fontWeight: 800, fontSize: 15 }}
         >
           C

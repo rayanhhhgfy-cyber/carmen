@@ -31,11 +31,18 @@ export interface ThemeContextValue {
    * Same as {@link accentInUse} except when that colour would disappear:
    * white on a light surface reads as nothing, so light mode falls back to
    * the text colour there (dark mode keeps white — it is perfectly legible).
-   * Filled surfaces (buttons, FABs) keep using `accentInUse` directly: they
-   * pair it with their own contrast text (`text-accent-fg`) and stay
-   * readable either way.
+   * Filled accent surfaces (buttons, FABs, selected chips) pair their
+   * `bg-accent` with {@link accentContrast} instead.
    */
   accentFg: string;
+  /**
+   * Text/icon colour **on top of a filled accent surface** — the
+   * `contrastText` MUI used to compute: white when the accent is dark
+   * enough (contrast ratio ≥ 3 against white), otherwise 87% black.  Never
+   * the accent itself, so a green play button wears a dark icon, not a
+   * green-on-green one.
+   */
+  accentContrast: string;
   /**
    * Whether artwork theming is *actually* running — the stored switch, but
    * forced off while low battery mode is on (the stored choice itself
@@ -163,6 +170,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ? '#12160f'
       : accentInUse;
 
+  // MUI's `contrastText`: white on the accent while the contrast ratio
+  // against white clears 3 (i.e. the accent is dark enough), otherwise
+  // 87% black — the ratio math matches `getContrastRatio` from
+  // @mui/material so every filled surface keeps its old legibility.
+  const accentContrast =
+    1.05 / (luminance(accentInUse) + 0.05) >= 3 ? '#ffffff' : 'rgba(0,0,0,0.87)';
+
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', accentInUse);
@@ -181,12 +195,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ...cssPalette(resolved),
       '--app-accent': accentInUse,
       '--app-accent-fg': accentFg,
+      '--app-accent-contrast': accentContrast,
       '--app-font': fontStack(font),
     };
     for (const [name, value] of Object.entries(tokens)) {
       root.style.setProperty(name, value);
     }
-  }, [resolved, accentInUse, accentFg, font]);
+  }, [resolved, accentInUse, accentFg, accentContrast, font]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
@@ -196,6 +211,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setAccent,
       accentInUse,
       accentFg,
+      accentContrast,
       adaptiveAccent,
       setAdaptiveAccent,
       adaptiveColor,
@@ -211,6 +227,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setAccent,
       accentInUse,
       accentFg,
+      accentContrast,
       adaptiveAccent,
       setAdaptiveAccent,
       adaptiveColor,

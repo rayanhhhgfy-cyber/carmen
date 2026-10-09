@@ -25,6 +25,8 @@
   /* Published by ThemeProvider — dynamic at runtime. */
   --color-accent: var(--app-accent, #4caf50);
   --color-accent-fg: var(--app-accent-fg, #ffffff);
+  /* Text on top of a filled accent surface (MUI's contrastText). */
+  --color-accent-contrast: var(--app-accent-contrast, #ffffff);
   --color-bg: var(--app-bg, #f6f7f6);
   --color-surface: var(--app-paper, #ffffff);
   --color-body: var(--app-text, #12160f);

@@ -277,7 +277,7 @@ export function ToggleButton({ value, children, disabled, className, ...rest }: 
         'rounded-[10px] px-3 py-1.5 text-sm font-medium transition-colors duration-150',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:opacity-40',
-        selected ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-hover',
+        selected ? 'bg-accent text-accent-contrast' : 'text-muted hover:bg-hover',
         className,
       )}
     >

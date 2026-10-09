@@ -110,7 +110,7 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             event.stopPropagation();
             player.togglePlay();
           }}
-          className="size-[42px] bg-accent !text-accent-fg hover:!bg-accent hover:[transform:scale(1.08)] hover:[filter:brightness(1.08)] ![transition:transform_150ms_ease,filter_150ms_ease]"
+          className="size-[42px] bg-accent !text-accent-contrast hover:!bg-accent hover:[transform:scale(1.08)] hover:[filter:brightness(1.08)] ![transition:transform_150ms_ease,filter_150ms_ease]"
         >
           {player.isPlaying ? <PauseIcon /> : <PlayArrowIcon />}
         </IconButton>

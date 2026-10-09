@@ -121,7 +121,7 @@ export default function SongsSection() {
                 label={active ? `${option.label} ${direction}` : option.label}
                 className={cn(
                   'cursor-pointer focus-visible:outline-2 focus-visible:outline-accent',
-                  active && '!bg-accent !text-accent-fg',
+                  active && '!bg-accent !text-accent-contrast',
                 )}
                 role="button"
                 tabIndex={0}
@@ -158,7 +158,7 @@ export default function SongsSection() {
           }
           className={cn(
             'cursor-pointer focus-visible:outline-2 focus-visible:outline-accent',
-            favoritesOnly ? '!bg-accent !text-accent-fg' : '!border-accent/50 !text-accent',
+            favoritesOnly ? '!bg-accent !text-accent-contrast' : '!border-accent/50 !text-accent',
           )}
           role="button"
           tabIndex={0}

@@ -173,7 +173,7 @@ export function Button({
         variant === 'contained'
           ? color === 'error'
             ? 'bg-error text-white hover:brightness-90'
-            : 'bg-accent text-accent-fg hover:brightness-90'
+            : 'bg-accent text-accent-contrast hover:brightness-90'
           : color === 'error'
             ? 'text-error hover:bg-hover'
             : 'text-accent hover:bg-hover',
@@ -200,7 +200,7 @@ export function Fab({
       type={type}
       {...rest}
       className={cn(
-        'relative inline-grid place-items-center rounded-full bg-accent text-accent-fg',
+        'relative inline-grid place-items-center rounded-full bg-accent text-accent-contrast',
         'transition-[transform,box-shadow] duration-150',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:opacity-50',
