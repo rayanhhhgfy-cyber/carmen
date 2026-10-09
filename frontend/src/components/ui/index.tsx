@@ -15,8 +15,9 @@
  *  - MUI numeric spacing (n × 8px) becomes Tailwind n × 4px classes
  *    (`gap: 2` → `gap-4`); off-grid values take arbitrary px (`p: 0.75` →
  *    `p-[6px]`).
- *  - Numeric `borderRadius: n` was `n × 14px` (the `buildTheme` shape):
- *    `borderRadius: 1` → `rounded-card`, `borderRadius: 3` → `rounded-[42px]`.
+ *  - Numeric `borderRadius: n` was `n × 14px` (the old MUI theme's shape
+ *    unit): `borderRadius: 1` → `rounded-card`, `borderRadius: 3` →
+ *    `rounded-[42px]`.
  */
 import {
   createContext,

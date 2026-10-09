@@ -45,8 +45,8 @@ const LYRICS_FADE_KEYFRAMES = `@keyframes lyrics-fade {
  * scale and weight — a transform, so nothing in the list reflows while the
  * song plays — while past lines dim and upcoming lines stay readable.
  *
- * Typography follows the theme, which is built from the interface font
- * setting (see `settings/store` + `buildTheme`), and lines use a comfortable
+ * Typography follows the theme, which carries the interface font setting
+ * (see `settings/store` + `theme/ThemeContext`), and lines use a comfortable
  * unitless line height so the rows keep a steady rhythm no matter which font
  * is selected.
  *

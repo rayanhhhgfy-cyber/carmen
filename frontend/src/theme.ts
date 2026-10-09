@@ -1,5 +1,3 @@
-import { createTheme } from '@mui/material/styles';
-
 import type { FontId } from './types/models';
 
 /** One selectable accent of the palette. */
@@ -64,10 +62,10 @@ export const FONTS: FontOption[] = [
 export const DEFAULT_FONT: FontId = 'alexandria';
 
 /**
- * The two surface palettes — **single source of truth** for both theme
- * engines: MUI wears it through `buildTheme`, Tailwind through the `--app-*`
- * custom properties `ThemeProvider` publishes on `<html>` (see
- * `styles.css`).  Editing a colour here restyles the whole migration.
+ * The two surface palettes — **single source of truth** for the app's
+ * colours: `ThemeProvider` publishes them as the `--app-*` custom properties
+ * that the Tailwind `@theme` tokens in `styles.css` read (one engine since
+ * MUI left).  Editing a colour here restyles the whole app.
  */
 const PALETTE = {
   dark: {
@@ -87,8 +85,8 @@ const PALETTE = {
 } as const;
 
 /**
- * The palette of a resolved mode as CSS custom properties — the Tailwind
- * twin of `buildTheme`'s `palette` block, applied on `documentElement`.
+ * The palette of a resolved mode as CSS custom properties, applied on
+ * `documentElement` by `ThemeProvider` (see `styles.css`).
  */
 export function cssPalette(mode: 'light' | 'dark'): Record<string, string> {
   const colors = PALETTE[mode];
@@ -114,104 +112,4 @@ export function cssPalette(mode: 'light' | 'dark'): Record<string, string> {
 export function fontStack(fontId: FontId): string {
   const match = FONTS.find((font) => font.id === fontId);
   return (match || FONTS[0]).stack;
-}
-
-/**
- * Build the MUI theme for a resolved color mode and accent color.
- *
- * @param mode resolved mode (system is already applied)
- * @param accent hex accent color
- * @param fontId selected font id (see {@link FONTS})
- */
-export function buildTheme(mode: 'light' | 'dark', accent: string, fontId: FontId = DEFAULT_FONT) {
-  const colors = PALETTE[mode];
-
-  return createTheme({
-    palette: {
-      mode,
-      primary: { main: accent },
-      background: { default: colors.bg, paper: colors.paper },
-      text: { primary: colors.text, secondary: colors.textSecondary },
-      divider: colors.divider,
-    },
-    shape: { borderRadius: 14 },
-    typography: {
-      fontFamily: fontStack(fontId),
-      h5: { fontWeight: 700, letterSpacing: '-0.02em' },
-      h6: { fontWeight: 700, letterSpacing: '-0.01em' },
-      subtitle1: { fontWeight: 600 },
-      button: { fontWeight: 600, textTransform: 'none' },
-    },
-    components: {
-      /*
-       * A `<button>` does **not** inherit `font-family` or `color` from its
-       * parent — the browser stylesheet paints them with its own defaults.
-       * Every card, list row and tab in this app is a real button, so without
-       * this override the font picked in Settings never showed up on them and
-       * song titles stayed black in dark mode.  Both rules keep a very low
-       * specificity, so component level colours still win.
-       */
-      MuiCssBaseline: {
-        styleOverrides: {
-          'button, input, select, textarea': {
-            fontFamily: 'inherit',
-            color: 'inherit',
-          },
-          /*
-           * Scrollbars are hidden everywhere — home, lyrics, queue,
-           * settings, the player, the whole window.  Scrolling itself is
-           * untouched: wheel, trackpad, touch, keyboard and the drag of a
-           * hidden track all still work, only the bar is no longer painted.
-           *
-           * `scrollbar-width` is the modern (Firefox) way, `msOverflowStyle`
-           * covers legacy Edge, and the webkit pseudo element hides the bar
-           * in Chrome, Edge and Safari — including the document scrollbar,
-           * which Blink draws from the root element's pseudo element.
-           */
-          '*': {
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-          },
-          '::-webkit-scrollbar, *::-webkit-scrollbar': {
-            width: 0,
-            height: 0,
-            display: 'none',
-          },
-        },
-      },
-      MuiButton: {
-        styleOverrides: {
-          root: { borderRadius: 999, paddingInline: 18 },
-        },
-      },
-      MuiCard: {
-        styleOverrides: {
-          root: { borderRadius: 16, overflow: 'hidden' },
-        },
-      },
-      MuiChip: {
-        styleOverrides: {
-          root: { borderRadius: 999, fontWeight: 600 },
-        },
-      },
-      MuiListItemButton: {
-        styleOverrides: { root: { borderRadius: 12 } },
-      },
-      MuiBottomNavigationAction: {
-        styleOverrides: {
-          root: { minWidth: 64, color: 'inherit' },
-        },
-      },
-      MuiDialog: {
-        styleOverrides: {
-          paper: { borderRadius: 18 },
-        },
-      },
-      MuiTooltip: {
-        styleOverrides: {
-          tooltip: { borderRadius: 8, fontSize: 12 },
-        },
-      },
-    },
-  });
 }

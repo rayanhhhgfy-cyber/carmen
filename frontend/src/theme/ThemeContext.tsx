@@ -7,10 +7,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { CssBaseline, ThemeProvider as MuiThemeProvider } from '@mui/material';
 
 import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
-import { DEFAULT_ACCENT, DEFAULT_FONT, buildTheme, cssPalette, fontStack } from '../theme';
+import { cssPalette, fontStack } from '../theme';
 import type { FontId, ThemeMode } from '../types/models';
 
 /** What {@link useTheme} answers — one entry per theme engine setting. */
@@ -32,8 +31,9 @@ export interface ThemeContextValue {
    * Same as {@link accentInUse} except when that colour would disappear:
    * white on a light surface reads as nothing, so light mode falls back to
    * the text colour there (dark mode keeps white — it is perfectly legible).
-   * Filled surfaces (buttons, FABs) keep using `accentInUse` directly: their
-   * contrast text is computed by MUI and stays readable either way.
+   * Filled surfaces (buttons, FABs) keep using `accentInUse` directly: they
+   * pair it with their own contrast text (`text-accent-fg`) and stay
+   * readable either way.
    */
   accentFg: string;
   /**
@@ -84,9 +84,8 @@ function luminance(hex: string): number {
  * Low battery mode outranks both colour settings: it forces adaptive
  * off and pins the accent to white — manually, or by itself below 20%
  * battery — and because this component is the only place the accent is
- * decided (it feeds `buildTheme`, i.e. `palette.primary.main`, and the
- * theme-color meta tag), every consumer follows without knowing the mode
- * exists.
+ * decided (it feeds the `--app-accent` token and the theme-color meta
+ * tag), every consumer follows without knowing the mode exists.
  */
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -164,22 +163,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       ? '#12160f'
       : accentInUse;
 
-  const theme = useMemo(
-    () => buildTheme(resolved, accentInUse, font),
-    [resolved, accentInUse, font],
-  );
-
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', accentInUse);
   }, [accentInUse]);
 
   /**
-   * Publish the live theme onto `<html>` for the Tailwind side of the app:
-   * `data-theme` drives the `dark:` variant, the `--app-*` properties feed
-   * the `@theme` tokens in `styles.css`.  Mirrors `buildTheme` exactly (the
-   * palette itself is single-sourced in `theme.ts`), so both engines wear
-   * the same colours while MUI and Tailwind coexist.
+   * Publish the live theme onto `<html>`: `data-theme` drives the `dark:`
+   * variant, the `--app-*` properties feed the `@theme` tokens in
+   * `styles.css` — the single engine since MUI left, so every surface wears
+   * the same colours the palette in `theme.ts` declares.
    */
   useEffect(() => {
     const root = document.documentElement;
@@ -228,14 +221,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return (
-    <ThemeContext.Provider value={value}>
-      <MuiThemeProvider theme={theme}>
-        <CssBaseline />
-        {children}
-      </MuiThemeProvider>
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme(): ThemeContextValue {

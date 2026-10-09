@@ -1,12 +1,5 @@
 /*
- * Tailwind v4 entry.
- *
- * **Preflight is deliberately skipped.**  MUI's `CssBaseline` still owns the
- * base layer while the migration runs; two resets fighting over the same
- * elements would turn every transition into double debugging.  The two
- * imports below are exactly what `@import "tailwindcss"` expands to minus
- * `preflight.css` — once the last `@mui/material` import is gone, collapse
- * them into that single line.
+ * Tailwind v4 entry — the app's only styling engine since MUI left.
  *
  * **Theme bridge.**  `ThemeProvider` writes the live theme onto `<html>`:
  * `data-theme="light|dark"` plus `--app-*` custom properties (accent,
@@ -15,9 +8,7 @@
  * `bg-accent` track the Settings choices — accent included, which still
  * changes per track while adaptive accenting is on.
  */
-@layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss";
 
 /* The app's own dark switch: `data-theme` on <html>, not the OS preference
    (Settings has a light/dark/system tri-state and the first two must win). */
@@ -73,6 +64,41 @@
 }
 
 @layer base {
+  /*
+   * The body paint CssBaseline used to own: the app background, the text
+   * colour and the Settings font — all live from the `--app-*` tokens.
+   * Preflight's `font: inherit` on form controls already carries this font
+   * onto every button, input and select in the app.
+   */
+  body {
+    background-color: var(--app-bg, #f6f7f6);
+    color: var(--app-text, #12160f);
+    font-family: var(--app-font, "Alexandria", system-ui, sans-serif);
+  }
+
+  /*
+   * Scrollbars are hidden everywhere — home, lyrics, queue, settings, the
+   * player, the whole window.  Scrolling itself is untouched: wheel,
+   * trackpad, touch, keyboard and the drag of a hidden track all still work,
+   * only the bar is no longer painted.
+   *
+   * `scrollbar-width` is the modern (Firefox) way, `msOverflowStyle` covers
+   * legacy Edge, and the webkit pseudo element hides the bar in Chrome, Edge
+   * and Safari — including the document scrollbar, which Blink draws from
+   * the root element's pseudo element.
+   */
+  * {
+    scrollbar-width: none;
+    ms-overflow-style: none;
+  }
+
+  ::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
   /* MUI's `SvgIcon` root, ported verbatim — kept in `base` so utility
      classes (e.g. `hidden sm:flex` for a responsive icon) can override the
      default display, which an inline style never could. */
