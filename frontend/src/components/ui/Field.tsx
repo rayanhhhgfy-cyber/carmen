@@ -236,6 +236,10 @@ export function ToggleButtonGroup({
   onChange,
   children,
   className,
+  // MUI-compat flag: the kit group is single-select by construction, so it
+  // is swallowed here — left in `rest` it fell through to the div and
+  // React logged "non-boolean attribute `exclusive`" on every render.
+  exclusive: _exclusive,
   ...rest
 }: ToggleButtonGroupProps) {
   return (
