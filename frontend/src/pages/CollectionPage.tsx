@@ -1,14 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  Collapse,
-  Container,
-  IconButton,
-  Skeleton,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Button, Collapse, Container, IconButton, Shimmer } from '../components/ui';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
@@ -66,22 +57,22 @@ export default function CollectionPage() {
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ pt: 3 }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
-          <Skeleton variant="rounded" width={220} height={220} />
-          <Box sx={{ flex: 1 }}>
-            <Skeleton variant="text" width="60%" height={44} />
-            <Skeleton variant="text" width="35%" />
-            <Skeleton variant="text" width="25%" />
-          </Box>
-        </Stack>
+      <Container maxWidth="lg" className="pt-6">
+        <div className="flex flex-col gap-6 sm:flex-row">
+          <Shimmer variant="rounded" width={220} height={220} />
+          <div className="flex-1">
+            <Shimmer variant="text" width="60%" height={44} className="mb-[5px]" />
+            <Shimmer variant="text" width="35%" className="mb-[5px]" />
+            <Shimmer variant="text" width="25%" />
+          </div>
+        </div>
       </Container>
     );
   }
 
   if (error || !data) {
     return (
-      <Container maxWidth="lg" sx={{ pt: 4 }}>
+      <Container maxWidth="lg" className="pt-8">
         <EmptyState title={`Could not load this ${kind}`} hint={error} />
       </Container>
     );
@@ -117,12 +108,12 @@ export default function CollectionPage() {
     .join('  •  ');
 
   return (
-    <Container maxWidth="lg" sx={{ pt: { xs: 1.5, md: 3 } }}>
-      <IconButton aria-label="Back" onClick={() => navigate(-1)} sx={{ mb: 1 }}>
+    <Container maxWidth="lg" className="pt-3 md:pt-6">
+      <IconButton aria-label="Back" onClick={() => navigate(-1)} className="mb-2">
         <ArrowBackIcon />
       </IconButton>
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ mb: 3 }}>
+      <div className="mb-6 flex flex-col gap-6 sm:flex-row">
         <Artwork
           src={artwork}
           alt=""
@@ -136,23 +127,18 @@ export default function CollectionPage() {
             flexShrink: 0,
           }}
         />
-        <Box sx={{ flex: 1, minWidth: 0, textAlign: { xs: 'center', sm: 'left' } }}>
-          <Typography variant="overline" color="text.secondary">
+        <div className="min-w-0 flex-1 text-center sm:text-left">
+          {/* MUI's `overline` variant: 12px, uppercase, the tall 2.66 line box. */}
+          <span className="block text-xs uppercase leading-[2.66] text-muted">
             {kind === 'album' ? 'Album' : 'Playlist'}
-          </Typography>
-          <Typography variant="h5" sx={{ fontWeight: 800 }}>
-            {title}
-          </Typography>
+          </span>
+          <h5 className="m-0 text-2xl font-extrabold">{title}</h5>
           {artists && (
-            <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5 }}>
-              {artists}
-            </Typography>
+            <p className="m-0 mt-2 text-base leading-[1.5] text-muted">{artists}</p>
           )}
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            {metaLine}
-          </Typography>
+          <span className="mt-2 block text-xs leading-[1.4] text-muted">{metaLine}</span>
 
-          <Stack direction="row" spacing={1} sx={{ mt: 2, justifyContent: { xs: 'center', sm: 'flex-start' } }}>
+          <div className="mt-4 flex flex-row justify-center gap-2 sm:justify-start">
             <Button
               variant="contained"
               startIcon={<PlayArrowIcon />}
@@ -162,9 +148,9 @@ export default function CollectionPage() {
               Play all
             </Button>
             <Button
-              variant="outlined"
               startIcon={<ShuffleIcon />}
               disabled={!tracks.length}
+              className="border border-accent/50"
               onClick={() => {
                 if (!player.shuffle) player.toggleShuffle();
                 player.playAll(tracks, Math.floor(Math.random() * tracks.length));
@@ -172,12 +158,11 @@ export default function CollectionPage() {
             >
               Shuffle
             </Button>
-          </Stack>
+          </div>
 
           {description && (
-            <Box sx={{ mt: 1.5, textAlign: { xs: 'center', sm: 'left' } }}>
+            <div className="mt-3 text-center sm:text-left">
               <Button
-                size="small"
                 endIcon={
                   <ExpandMoreIcon
                     sx={{ transform: descriptionOpen ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }}
@@ -188,24 +173,14 @@ export default function CollectionPage() {
                 {descriptionOpen ? 'Hide description' : 'About'}
               </Button>
               <Collapse in={descriptionOpen}>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{
-                    mt: 1,
-                    whiteSpace: 'pre-line',
-                    maxHeight: 220,
-                    overflowY: 'auto',
-                    textAlign: 'left',
-                  }}
-                >
+                <p className="m-0 mt-2 max-h-[220px] overflow-y-auto whitespace-pre-line text-left text-sm leading-[1.43] text-muted">
                   {description}
-                </Typography>
+                </p>
               </Collapse>
-            </Box>
+            </div>
           )}
-        </Box>
-      </Stack>
+        </div>
+      </div>
 
       {tracks.length ? (
         <TrackList tracks={tracks} numbered={kind === 'album'} />

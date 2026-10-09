@@ -5,19 +5,10 @@
  * grid and the detail view.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
+
+import { Button, IconButton, Spinner } from '../../components/ui';
+import { Dialog, DialogActions, DialogContent, DialogTitle } from '../../components/ui/Overlay';
+import { TextField } from '../../components/ui/Field';
 
 import { CloseIcon } from './glyphs';
 
@@ -37,14 +28,15 @@ interface PageSummaryProps {
  */
 export function PageSummary({ children, action }: PageSummaryProps) {
   return (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5, minHeight: 28 }}>
-      {children && (
-        <Typography variant="body2" color="text.secondary" sx={{ minWidth: 0 }}>
-          {children}
-        </Typography>
-      )}
-      {action && <Box sx={{ ml: 'auto', flexShrink: 0, display: 'flex', gap: 1 }}>{action}</Box>}
-    </Stack>
+    <div className="mb-3 flex min-h-[28px] items-center gap-2">
+      {children && <p className="m-0 min-w-0 text-sm leading-[1.43] text-muted">{children}</p>}
+      {/* MIGRATION: the old `ml: 'auto'` on this box was a dead letter under
+          MUI — Stack's spacing reset (`> :not(style) ~ :not(style)`, specificity
+          0,1,2) beat the child rule (0,1,0), so the action never pushed right
+          and kept the 8px spacing margin instead. Flex `gap` reproduces that
+          spacing; no `ml-auto` is added. */}
+      {action && <div className="flex shrink-0 gap-2">{action}</div>}
+    </div>
   );
 }
 
@@ -61,28 +53,22 @@ interface EmptyHintProps {
 export function EmptyHint({ title, hint, icon, dense = false }: EmptyHintProps) {
   if (dense) {
     return (
-      <Typography variant="caption" color="text.disabled" sx={{ display: 'block', py: 0.5 }}>
+      <span className="block py-1 text-xs leading-[1.4] text-disabled">
         {title}
         {hint ? ` — ${hint}` : ''}
-      </Typography>
+      </span>
     );
   }
   return (
-    <Box sx={{ py: 5, textAlign: 'center', px: 2 }}>
+    <div className="px-4 py-10 text-center">
       {icon && (
-        <Box sx={{ color: 'text.disabled', display: 'flex', justifyContent: 'center', mb: 1 }} aria-hidden>
+        <div className="mb-2 flex justify-center text-disabled" aria-hidden>
           {icon}
-        </Box>
+        </div>
       )}
-      <Typography variant="subtitle1" color="text.secondary">
-        {title}
-      </Typography>
-      {hint && (
-        <Typography variant="caption" color="text.disabled">
-          {hint}
-        </Typography>
-      )}
-    </Box>
+      <p className="m-0 text-base font-semibold text-muted">{title}</p>
+      {hint && <span className="text-xs leading-[1.4] text-disabled">{hint}</span>}
+    </div>
   );
 }
 
@@ -111,11 +97,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
-      <DialogTitle sx={{ fontWeight: 700 }}>{title}</DialogTitle>
+      <DialogTitle>{title}</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary">
-          {message}
-        </Typography>
+        <p className="m-0 text-sm leading-[1.43] text-muted">{message}</p>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>
@@ -181,21 +165,23 @@ export function PlaylistFormDialog({
   };
 
   return (
+    // MIGRATION: the old `slotProps={{ paper: { sx: { borderRadius: 3 } } }}`
+    // (3 × 14px = 42px); the kit panel ships `rounded-card` (14px), so it is
+    // overridden with `!`.
     <Dialog
       open={open}
       onClose={saving ? undefined : onClose}
       fullWidth
       maxWidth="xs"
-      slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      className="!rounded-[42px]"
     >
-      <DialogTitle sx={{ fontWeight: 700 }}>
+      <DialogTitle>
         {mode === 'create' ? 'New playlist' : 'Rename playlist'}
         <IconButton
           aria-label="Close"
           onClick={onClose}
           disabled={saving}
-          sx={{ position: 'absolute', right: 8, top: 8 }}
-          size="small"
+          className="!absolute right-2 top-2"
         >
           <CloseIcon fontSize="small" />
         </IconButton>
@@ -211,8 +197,12 @@ export function PlaylistFormDialog({
           error={Boolean(error)}
           helperText={error ?? ' '}
           margin="dense"
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void submit();
+          // MIGRATION: the kit TextField takes no top-level `onKeyDown` —
+          // the handler moves onto the control through `inputProps`.
+          inputProps={{
+            onKeyDown: (event) => {
+              if (event.key === 'Enter') void submit();
+            },
           }}
         />
         {mode === 'create' && (
@@ -228,13 +218,13 @@ export function PlaylistFormDialog({
           />
         )}
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
+      <DialogActions>
         <Button onClick={onClose} disabled={saving}>
           Cancel
         </Button>
         <Button variant="contained" onClick={() => void submit()} disabled={!name.trim() || saving}>
           {saving ? (
-            <CircularProgress size={18} />
+            <Spinner size={18} />
           ) : mode === 'create' ? (
             'Create'
           ) : (

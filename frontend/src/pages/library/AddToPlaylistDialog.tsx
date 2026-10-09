@@ -3,23 +3,10 @@
  * the chosen one, and can create a playlist inline (create → add → close).
  */
 import { useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListSubheader,
-  TextField,
-  Typography,
-} from '@mui/material';
+
+import { Button, IconButton, List, ListItem, ListItemButton, ListItemText, ListSubheader, Spinner } from '../../components/ui';
+import { Dialog, DialogActions, DialogContent, DialogTitle } from '../../components/ui/Overlay';
+import { TextField } from '../../components/ui/Field';
 
 import { addTrackToPlaylist, createPlaylist, listPlaylists } from '../../db/repos/playlists';
 import type { Playlist, Track } from '../../types/models';
@@ -92,17 +79,16 @@ export default function AddToPlaylistDialog({ open, track, onClose }: AddToPlayl
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} fullWidth maxWidth="xs">
-      <DialogTitle sx={{ fontWeight: 700 }}>
+      <DialogTitle>
         Add to playlist
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400 }} noWrap>
+        <span className="block truncate text-xs font-normal leading-[1.4] text-muted">
           {track.title} · {track.artist}
-        </Typography>
+        </span>
         <IconButton
           aria-label="Close"
           onClick={onClose}
           disabled={busy}
-          sx={{ position: 'absolute', right: 8, top: 8 }}
-          size="small"
+          className="!absolute right-2 top-2"
         >
           <CloseIcon fontSize="small" />
         </IconButton>
@@ -120,19 +106,21 @@ export default function AddToPlaylistDialog({ open, track, onClose }: AddToPlayl
             error={Boolean(error)}
             helperText={error ?? ' '}
             margin="dense"
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void createAndAdd();
+            // MIGRATION: the kit TextField takes no top-level `onKeyDown` —
+            // the handler moves onto the control through `inputProps`.
+            inputProps={{
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') void createAndAdd();
+              },
             }}
           />
         ) : loading ? (
-          <Box sx={{ display: 'grid', placeItems: 'center', py: 4 }}>
-            <CircularProgress size={26} />
-          </Box>
+          <div className="grid place-items-center py-8">
+            <Spinner size={26} />
+          </div>
         ) : (
           <List dense disablePadding>
-            <ListSubheader sx={{ bgcolor: 'transparent', px: 0 }}>
-              Your playlists
-            </ListSubheader>
+            <ListSubheader className="bg-transparent px-0">Your playlists</ListSubheader>
             {playlists.length === 0 && (
               <EmptyHint dense title="No playlists yet" hint="create one below" />
             )}
@@ -150,7 +138,7 @@ export default function AddToPlaylistDialog({ open, track, onClose }: AddToPlayl
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between' }}>
+      <DialogActions className="!justify-between">
         {creating ? (
           <>
             <Button

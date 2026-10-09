@@ -15,7 +15,6 @@
  */
 import type { ComponentType } from 'react';
 import type { SvgIconProps } from '../../components/SvgIcon';
-import type { SxProps, Theme } from '@mui/material/styles';
 
 // @ts-ignore — silences TS7016 while this resolves to the `.jsx` original.
 import * as glyphs from '../../components/icons';
@@ -81,8 +80,10 @@ export interface ArtworkProps {
   icon?: Glyph;
   /** `fontSize` of the fallback glyph. */
   iconSize?: number;
-  sx?: SxProps<Theme>;
-  imgSx?: SxProps<Theme>;
+  /** Tile styles — the underlying artwork component still resolves them. */
+  sx?: Record<string, unknown>;
+  /** Styles of the `<img>` itself (blur, scale, …). */
+  imgSx?: Record<string, unknown>;
   /** Anything else is forwarded to the underlying `Box` (e.g. `className`). */
   [key: string]: unknown;
 }

@@ -8,13 +8,14 @@
  * heart toggle only refetches when the favorites filter is active (the row
  * would otherwise stay behind), otherwise it patches the row in place.
  */
-import { useEffect, useState } from 'react';
-import { Box, Button, Chip, IconButton, Skeleton, Stack, Tooltip } from '@mui/material';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 
+import { Button, Chip, IconButton, Shimmer, Tooltip } from '../../components/ui';
 import { listDownloads } from '../../db/repos/downloads';
 import type { SortDir, SortKey } from '../../db/repos/tracks';
 import { usePlayer } from '../../player/PlayerContext';
 import type { DownloadedSong } from '../../types/models';
+import { cn } from '../../utils/cn';
 import { shuffleList } from '../../utils/library';
 import { EmptyHint, PageSummary } from './common';
 import {
@@ -91,24 +92,25 @@ export default function SongsSection() {
 
   const direction = dir === 'asc' ? '↑' : '↓';
 
+  // MUI's Chip rendered `<button>` when clickable; the kit Chip is a `<span>`,
+  // so Enter/Space are replayed as a click (with the usual repeat guard).
+  const activateOnKey = (event: KeyboardEvent<HTMLSpanElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    if (!event.repeat) event.currentTarget.click();
+  };
+
   return (
-    <Box component="section">
+    <section>
       <PageSummary>
         {loading && !songs.length
           ? 'Loading…'
           : `${songs.length} downloaded song${songs.length === 1 ? '' : 's'} on this device`}
       </PageSummary>
 
-      <Stack
-        direction="row"
-        alignItems="center"
-        spacing={1}
-        useFlexGap
-        flexWrap="wrap"
-        sx={{ mb: 1.5, rowGap: 1 }}
-      >
+      <div className="mb-3 flex flex-wrap items-center gap-2 gap-y-2">
         {/* Sort: key chips + a direction toggle; the active chip shows ↑ / ↓. */}
-        <Stack direction="row" alignItems="center" spacing={0.75}>
+        <div className="flex items-center gap-[6px]">
           <SortIcon fontSize="small" sx={{ color: 'text.secondary' }} aria-hidden />
           {SORT_OPTIONS.map((option) => {
             const active = sort === option.key;
@@ -117,8 +119,13 @@ export default function SongsSection() {
                 key={option.key}
                 size="small"
                 label={active ? `${option.label} ${direction}` : option.label}
-                color={active ? 'primary' : 'default'}
-                variant={active ? 'filled' : 'outlined'}
+                className={cn(
+                  'cursor-pointer focus-visible:outline-2 focus-visible:outline-accent',
+                  active && '!bg-accent !text-accent-fg',
+                )}
+                role="button"
+                tabIndex={0}
+                onKeyDown={activateOnKey}
                 onClick={() => pickSort(option.key)}
                 aria-label={`Sort by ${option.label}${active ? ` (${dir === 'asc' ? 'ascending' : 'descending'})` : ''}`}
               />
@@ -139,46 +146,51 @@ export default function SongsSection() {
               />
             </IconButton>
           </Tooltip>
-        </Stack>
+        </div>
 
         <Chip
           size="small"
-          icon={<HeartFilledIcon />}
-          label="Favorites"
-          color="primary"
-          variant={favoritesOnly ? 'filled' : 'outlined'}
+          label={
+            <>
+              <HeartFilledIcon />
+              Favorites
+            </>
+          }
+          className={cn(
+            'cursor-pointer focus-visible:outline-2 focus-visible:outline-accent',
+            favoritesOnly ? '!bg-accent !text-accent-fg' : '!border-accent/50 !text-accent',
+          )}
+          role="button"
+          tabIndex={0}
+          onKeyDown={activateOnKey}
           onClick={() => setFavoritesOnly((value) => !value)}
           aria-label="Only show favorites"
         />
 
-        <Stack direction="row" spacing={1} sx={{ ml: { xs: 0, sm: 'auto' } }}>
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<PlayArrowIcon />}
-            disabled={!songs.length}
-            onClick={playAll}
-          >
+        <div className="flex gap-2 sm:ml-auto">
+          <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={!songs.length} onClick={playAll}>
             Play all
           </Button>
+          {/* MIGRATION: the kit Button has no `outlined` variant — the text
+              variant plus a border class is the closest match. */}
           <Button
-            size="small"
-            variant="outlined"
+            variant="text"
+            className="border border-accent/50"
             startIcon={<ShuffleIcon />}
             disabled={!songs.length}
             onClick={shuffleAll}
           >
             Shuffle all
           </Button>
-        </Stack>
-      </Stack>
+        </div>
+      </div>
 
       {loading && !songs.length ? (
-        <Box>
+        <div>
           {[0, 1, 2, 3].map((index) => (
-            <Skeleton key={index} variant="rounded" height={54} sx={{ mb: 1 }} />
+            <Shimmer key={index} variant="rounded" height={54} className="mb-2" />
           ))}
-        </Box>
+        </div>
       ) : songs.length === 0 ? (
         favoritesOnly ? (
           <EmptyHint
@@ -193,7 +205,7 @@ export default function SongsSection() {
           />
         )
       ) : (
-        <Box>
+        <div>
           {songs.map((song) => (
             <SongRow
               key={song.videoId}
@@ -204,8 +216,8 @@ export default function SongsSection() {
               onFavoriteChange={handleFavoriteChange}
             />
           ))}
-        </Box>
+        </div>
       )}
-    </Box>
+    </section>
   );
 }

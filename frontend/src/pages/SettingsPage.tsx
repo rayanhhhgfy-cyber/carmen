@@ -1,18 +1,16 @@
 import {
-  Box,
   Chip,
   Container,
   Divider,
   Paper,
-  Stack,
   Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
-  Typography,
-} from '@mui/material';
+} from '../components/ui';
 import type { ReactElement, ReactNode } from 'react';
+import { cn } from '../utils/cn';
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
 import { useBattery } from '../settings/battery';
@@ -29,17 +27,21 @@ import {
   XIcon,
 } from '../components/icons';
 
+/** MUI's stock `warning.main` (light/dark) — the low-battery status lines. */
+const WARNING_TEXT = 'text-[#ed6c02] dark:text-[#ff9800]';
+
 /** Titled card grouping one group of settings. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Box>
-      <Typography variant="overline" color="text.secondary" sx={{ ml: 0.5 }}>
+    <div>
+      {/* MUI's `overline` variant: 12px, uppercase, the tall 2.66 line box. */}
+      <span className="ml-1 block text-xs uppercase leading-[2.66] text-muted">
         {title}
-      </Typography>
-      <Paper variant="outlined" sx={{ mt: 0.75, borderRadius: 3, p: 2 }}>
+      </span>
+      <Paper variant="outlined" className="mt-[6px] rounded-[42px] p-4">
         {children}
       </Paper>
-    </Box>
+    </div>
   );
 }
 
@@ -58,23 +60,35 @@ interface CreditProps {
  * is only the handle, the icon carries the rest.
  */
 function Credit({ href, name, icon, iconColor, children }: CreditProps) {
+  // The chip used to paint its icon through `sx`; `text.primary` is not a
+  // CSS colour, so those two marks always inherited the chip's own text —
+  // only a real colour (Telegram's teal) ever took.
+  const painted = /^(#|rgb|hsl|var\()/i.test(iconColor);
   return (
-    <Chip
-      component="a"
+    <a
       href={href}
       target="_blank"
       rel="noreferrer noopener"
-      clickable
-      size="small"
-      variant="outlined"
-      icon={icon}
-      label={children}
       aria-label={`${name} — ${children}`}
-      sx={{
-        fontWeight: 600,
-        '& .MuiChip-icon': { fontSize: 17, color: iconColor },
-      }}
-    />
+      className="inline-flex"
+    >
+      <Chip
+        size="small"
+        variant="outlined"
+        className="font-semibold"
+        label={
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="inline-flex text-[17px]"
+              style={painted ? { color: iconColor } : undefined}
+            >
+              {icon}
+            </span>
+            {children}
+          </span>
+        }
+      />
+    </a>
   );
 }
 
@@ -115,33 +129,31 @@ export default function SettingsPage() {
   const whiteOnLight = resolved === 'light' && accentInUse.toLowerCase() === '#ffffff';
 
   return (
-    <Container maxWidth="sm" sx={{ pt: { xs: 2, md: 3 }, pb: 4 }}>
-      <Stack spacing={3}>
-        <Box>
-          <Typography variant="h5">Settings</Typography>
-          <Typography variant="body2" color="text.secondary">
+    <Container maxWidth="sm" className="pb-8 pt-4 md:pt-6">
+      <div className="flex flex-col gap-6">
+        <div>
+          <h5 className="m-0 text-2xl font-bold">Settings</h5>
+          <p className="m-0 text-sm leading-[1.43] text-muted">
             Personalize Carmen
-          </Typography>
-        </Box>
+          </p>
+        </div>
 
         <Section title="Appearance">
-          <Stack spacing={2}>
-            <Box>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                <Typography variant="body2" fontWeight={600}>
+          <div className="flex flex-col gap-4">
+            <div>
+              <div className="mb-2 flex flex-row items-center justify-between">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Color mode
-                </Typography>
+                </p>
                 <Chip
                   size="small"
                   label={`Currently ${resolved}`}
-                  color={whiteOnLight ? 'default' : 'primary'}
                   variant="outlined"
+                  className={cn(!whiteOnLight && '!border-accent/50 !text-accent')}
                 />
-              </Stack>
+              </div>
               <ToggleButtonGroup
                 exclusive
-                fullWidth
-                size="small"
                 value={themeMode}
                 onChange={(_, value) => {
                   if (value === 'light' || value === 'dark' || value === 'system') {
@@ -149,40 +161,39 @@ export default function SettingsPage() {
                   }
                 }}
                 aria-label="Color mode"
+                className="w-full"
               >
-                <ToggleButton value="light">
+                <ToggleButton value="light" className="flex-1">
                   <LightModeIcon fontSize="small" sx={{ mr: 0.75 }} /> Light
                 </ToggleButton>
-                <ToggleButton value="dark">
+                <ToggleButton value="dark" className="flex-1">
                   <DarkModeIcon fontSize="small" sx={{ mr: 0.75 }} /> Dark
                 </ToggleButton>
-                <ToggleButton value="system">
+                <ToggleButton value="system" className="flex-1">
                   <DevicePhoneMobileIcon fontSize="small" sx={{ mr: 0.75 }} /> System
                 </ToggleButton>
               </ToggleButtonGroup>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+              <span className="mt-[6px] block text-xs leading-[1.4] text-muted">
                 System follows your device&apos;s <b>prefers-color-scheme</b> setting live.
-              </Typography>
-            </Box>
+              </span>
+            </div>
 
             <Divider />
 
-            <Box>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div>
+              <div className="mb-2 flex flex-row items-center justify-between">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Interface font
-                </Typography>
+                </p>
                 <Chip
                   size="small"
                   label={selectedFont.name}
-                  color={whiteOnLight ? 'default' : 'primary'}
                   variant="outlined"
+                  className={cn(!whiteOnLight && '!border-accent/50 !text-accent')}
                 />
-              </Stack>
+              </div>
               <ToggleButtonGroup
                 exclusive
-                fullWidth
-                size="small"
                 value={font}
                 onChange={(_, value) => {
                   if (value === 'alexandria' || value === 'cairo' || value === 'system') {
@@ -190,392 +201,342 @@ export default function SettingsPage() {
                   }
                 }}
                 aria-label="Interface font"
+                className="w-full"
               >
                 {FONTS.map((option) => (
-                  <ToggleButton key={option.id} value={option.id}>
+                  <ToggleButton key={option.id} value={option.id} className="flex-1">
                     {option.name}
                   </ToggleButton>
                 ))}
               </ToggleButtonGroup>
-              <Box
-                sx={{
-                  mt: 1.25,
-                  p: 1.5,
-                  borderRadius: 2,
-                  bgcolor: 'action.hover',
-                  fontFamily: fontStack(font),
-                }}
+              <div
+                className="mt-[10px] rounded-[28px] bg-hover p-3"
+                style={{ fontFamily: fontStack(font) }}
               >
-                <Typography sx={{ fontFamily: 'inherit', fontWeight: 700 }} noWrap>
+                <p className="m-0 truncate font-bold">
                   Carmen — {selectedFont.name}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ fontFamily: 'inherit', display: 'block' }}
-                >
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
                   The quick brown fox jumps over the lazy dog
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
+                </span>
+                <span
                   dir="rtl"
-                  sx={{ fontFamily: 'inherit', display: 'block', mt: 0.25 }}
+                  className="mt-[2px] block text-xs leading-[1.4] text-muted"
                 >
                   اسمعني — موسيقى بلا حدود
-                </Typography>
-              </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                </span>
+              </div>
+              <span className="mt-[6px] block text-xs leading-[1.4] text-muted">
                 Cairo and Alexandria are loaded from Fontsource and only
                 downloaded once you pick them.
-              </Typography>
-            </Box>
+              </span>
+            </div>
 
             <Divider />
 
-            <Box>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div>
+              <div className="mb-2 flex flex-row items-center justify-between">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Accent color
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                </p>
+                <span className="font-mono text-xs leading-[1.4] text-muted">
                   {accent.toUpperCase()}
-                </Typography>
-              </Stack>
-              <Box
+                </span>
+              </div>
+              <div
                 role="radiogroup"
                 aria-label="Accent color"
-                sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(44px, 1fr))', gap: 1 }}
+                className="grid grid-cols-[repeat(auto-fill,minmax(44px,1fr))] gap-2"
               >
                 {ACCENTS.map((option) => {
                   const selected = accent.toLowerCase() === option.color.toLowerCase();
                   return (
                     <Tooltip title={option.name} key={option.id}>
-                      <Box
-                        component="button"
+                      <button
                         type="button"
                         role="radio"
                         aria-checked={selected}
                         aria-label={option.name}
                         onClick={() => updateSettings({ accent: option.color })}
-                        sx={{
-                          width: '100%',
-                          aspectRatio: '1 / 1',
-                          borderRadius: '50%',
-                          border: selected ? '3px solid' : '2px solid',
-                          borderColor: selected
-                            ? 'text.primary'
+                        className={cn(
+                          'grid aspect-square w-full cursor-pointer place-items-center rounded-full p-0',
+                          'transition-transform duration-150 hover:scale-[1.08]',
+                          selected ? 'border-[3px]' : 'border-2',
+                          selected
+                            ? 'border-body'
                             : // white on white paper needs an edge to be seen
                               option.color.toLowerCase() === '#ffffff'
-                              ? 'divider'
-                              : 'transparent',
-                          bgcolor: option.color,
-                          cursor: 'pointer',
-                          display: 'grid',
-                          placeItems: 'center',
+                              ? 'border-line'
+                              : 'border-transparent',
                           // a white swatch would hide a white checkmark
-                          color: option.color.toLowerCase() === '#ffffff' ? '#12160f' : '#fff',
-                          p: 0,
-                          transition: 'transform 150ms ease',
-                          '&:hover': { transform: 'scale(1.08)' },
-                        }}
+                          option.color.toLowerCase() === '#ffffff' ? 'text-[#12160f]' : 'text-white',
+                        )}
+                        style={{ backgroundColor: option.color }}
                       >
                         {selected && <CheckIcon sx={{ fontSize: 18 }} />}
-                      </Box>
+                      </button>
                     </Tooltip>
                   );
                 })}
-              </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              </div>
+              <span className="mt-2 block text-xs leading-[1.4] text-muted">
                 Defaults to Material Green ({DEFAULT_ACCENT}).
                 {lowBatteryActive && ' Low battery mode overrides it with white while it is on.'}
-              </Typography>
-            </Box>
+              </span>
+            </div>
 
             <Divider />
 
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Adaptive accent color
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
                   The accent follows the cover of the song that is playing —
                   the most used color of the artwork, or white when the cover
                   is black. Your chosen accent is used while nothing plays.
-                </Typography>
+                </span>
                 {lowBatteryActive && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  <span className="block text-xs leading-[1.4] text-muted">
                     Paused while low battery mode is on — your choice is
                     kept and returns when you turn it off.
-                  </Typography>
+                  </span>
                 )}
-              </Box>
+              </div>
               <Switch
                 checked={adaptiveAccent}
                 disabled={lowBatteryActive}
                 onChange={(_, checked) => updateSettings({ adaptiveAccent: checked })}
                 inputProps={{ 'aria-label': 'Adaptive accent color' }}
-                sx={{ flexShrink: 0 }}
+                className="shrink-0"
               />
-            </Stack>
+            </div>
 
             {adaptiveAccent && adaptiveColor && (
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: -0.5 }}>
-                <Box
-                  sx={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: '50%',
-                    bgcolor: adaptiveColor,
-                    border: 1,
-                    borderColor: 'divider',
-                    flexShrink: 0,
-                  }}
+              <div className="-mt-[2px] flex flex-row items-center gap-2">
+                <div
+                  className="h-[14px] w-[14px] shrink-0 rounded-full border border-line"
+                  style={{ backgroundColor: adaptiveColor }}
                 />
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                <span className="font-mono text-xs leading-[1.4] text-muted">
                   {adaptiveColor} — read from the cover of the playing song
-                </Typography>
-              </Stack>
+                </span>
+              </div>
             )}
 
             <Divider />
 
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Low battery mode
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
                   Saves power by disabling artwork theming, blur and ambient
                   effects — the accent turns white.
-                </Typography>
+                </span>
                 {battery.level !== null && (
-                  <Typography
-                    variant="caption"
-                    color={lowBatteryActive && !lowBatteryManual ? 'warning.main' : 'text.secondary'}
-                    sx={{ display: 'block' }}
+                  <span
+                    className={cn(
+                      'block text-xs leading-[1.4]',
+                      lowBatteryActive && !lowBatteryManual ? WARNING_TEXT : 'text-muted',
+                    )}
                   >
                     {lowBatteryActive && !lowBatteryManual
                       ? `On automatically — battery at ${Math.round(battery.level * 100)}%.`
                       : `Battery at ${Math.round(battery.level * 100)}%${
                           battery.charging ? ', charging' : ''
                         } — turns itself on below 20% while on battery.`}
-                  </Typography>
+                  </span>
                 )}
-              </Box>
+              </div>
               <Switch
                 checked={lowBatteryManual}
                 onChange={(_, checked) => updateSettings({ lowBatteryMode: checked })}
                 inputProps={{ 'aria-label': 'Low battery mode' }}
-                sx={{ flexShrink: 0 }}
+                className="shrink-0"
               />
-            </Stack>
+            </div>
 
             <Divider />
 
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Animated artwork
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
                   Album covers that move in the Now Playing screen, fetched
                   from Apple's iTunes catalogue — the whole card on
                   desktop, the lyrics page on a phone. Downloads keep a
                   copy for offline playback.
-                </Typography>
+                </span>
                 {animatedArtwork && lowBatteryActive && (
-                  <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                  <span className={cn('block text-xs leading-[1.4]', WARNING_TEXT)}>
                     Off automatically — low battery mode is on.
-                  </Typography>
+                  </span>
                 )}
-              </Box>
+              </div>
               <Switch
                 checked={animatedArtwork}
                 onChange={(_, checked) => updateSettings({ animatedArtwork: checked })}
                 inputProps={{ 'aria-label': 'Animated artwork' }}
-                sx={{ flexShrink: 0 }}
+                className="shrink-0"
               />
-            </Stack>
+            </div>
 
             <Divider />
 
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Blur effects
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
                   Glass backdrops, accent glows and the ambient wash — off
                   gives flat, lighter surfaces.
-                </Typography>
+                </span>
                 {lowBatteryActive && !blurEffects && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  <span className="block text-xs leading-[1.4] text-muted">
                     Low battery mode is on as well — both choices are
                     respected when it leaves.
-                  </Typography>
+                  </span>
                 )}
-              </Box>
+              </div>
               <Switch
                 checked={blurEffects}
                 onChange={(_, checked) => updateSettings({ blurEffects: checked })}
                 inputProps={{ 'aria-label': 'Blur effects' }}
-                sx={{ flexShrink: 0 }}
+                className="shrink-0"
               />
-            </Stack>
+            </div>
 
             <Divider />
 
-            <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" fontWeight={600}>
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
                   Artwork background
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
                   Wash the app background with the colors of the artwork that
                   is playing. Off keeps the plain theme background.
-                </Typography>
+                </span>
                 {artworkBackground && lowBatteryActive && (
-                  <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
+                  <span className={cn('block text-xs leading-[1.4]', WARNING_TEXT)}>
                     Hidden automatically — low battery mode is on.
-                  </Typography>
+                  </span>
                 )}
-              </Box>
+              </div>
               <Switch
                 checked={artworkBackground}
                 onChange={(_, checked) => updateSettings({ artworkBackground: checked })}
                 inputProps={{ 'aria-label': 'Artwork background' }}
-                sx={{ flexShrink: 0 }}
+                className="shrink-0"
               />
-            </Stack>
+            </div>
 
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: 'action.hover',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-              }}
-            >
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  bgcolor: 'primary.main',
+            <div className="flex items-center gap-3 rounded-[28px] bg-hover p-3">
+              <div
+                className={cn(
+                  'h-9 w-9 rounded-full bg-accent',
                   // a white accent needs an edge to be seen on this row
-                  border: whiteOnLight ? 1 : 0,
-                  borderColor: 'divider',
-                }}
+                  whiteOnLight && 'border border-line',
+                )}
               />
-              <Box>
-                <Typography
-                  variant="body2"
-                  fontWeight={600}
-                  color={whiteOnLight ? 'text.primary' : 'primary.main'}
+              <div>
+                <p
+                  className={cn(
+                    'm-0 text-sm leading-[1.43] font-semibold',
+                    whiteOnLight ? 'text-body' : 'text-accent',
+                  )}
                 >
                   Primary accent preview
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
+                </p>
+                <span className="text-xs leading-[1.4] text-muted">
                   Buttons, active lines and highlights use this color
-                </Typography>
-              </Box>
-            </Box>
-          </Stack>
+                </span>
+              </div>
+            </div>
+          </div>
         </Section>
 
         <Section title="Lyrics">
-          <Stack spacing={0.5}>
+          <div className="flex flex-col gap-1">
             {LYRICS_PROVIDERS.map((provider) => {
               const selected = lyricsProvider === provider.id;
               return (
-                <Box
+                <button
                   key={provider.id}
-                  component="button"
                   type="button"
                   onClick={() => updateSettings({ lyricsProvider: provider.id })}
                   aria-pressed={selected}
-                  sx={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 1.5,
-                    px: 1.25,
-                    py: 0.75,
-                    border: 0,
-                    borderRadius: 2,
-                    bgcolor: selected ? 'action.selected' : 'transparent',
-                    color: 'text.primary',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
+                  className={cn(
+                    'flex w-full cursor-pointer items-center justify-between gap-3',
+                    'rounded-[28px] border-0 px-[10px] py-[6px] text-left text-body hover:bg-hover',
+                    selected && 'bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.12)]',
+                  )}
                 >
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={600}>
+                  <div className="min-w-0">
+                    <p className="m-0 text-sm leading-[1.43] font-semibold">
                       {provider.label}
-                    </Typography>
+                    </p>
                     {provider.id === 'auto' && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      <span className="block text-xs leading-[1.4] text-muted">
                         YouTube first, then the best public source
-                      </Typography>
+                      </span>
                     )}
-                  </Box>
+                  </div>
                   {selected && <CheckIcon color={whiteOnLight ? 'action' : 'primary'} sx={{ fontSize: 18 }} />}
-                </Box>
+                </button>
               );
             })}
-          </Stack>
+          </div>
         </Section>
 
         <Section title="Downloads">
-          <Stack spacing={0.75}>
-            <Typography variant="body2">
+          <div className="flex flex-col gap-[6px]">
+            <p className="m-0 text-sm leading-[1.43]">
               Every <b>Download</b> runs entirely in your browser: the audio is fetched from the
               server buffer, converted to MP3 with ffmpeg.wasm and tagged with the title, artists,
               album, year, genre, cover art and the lyrics — synced lyrics are written as LRC
               timestamps — before being saved.
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
+            </p>
+            <span className="text-xs leading-[1.4] text-muted">
               Songs longer than 1 hour are not offered by the API.
-            </Typography>
-          </Stack>
+            </span>
+          </div>
         </Section>
 
         <Section title="Server">
-          <Stack spacing={1}>
-            <Typography variant="body2">
+          <div className="flex flex-col gap-2">
+            <p className="m-0 text-sm leading-[1.43]">
               Optional override of the backend URL — leave the field empty to use the bundled
               default.
-            </Typography>
+            </p>
             <TextField
               fullWidth
               size="small"
               value={apiBase}
               placeholder="http://localhost:8000"
               onChange={(event) => updateSettings({ apiBase: event.target.value })}
-              slotProps={{
-                input: { 'aria-label': 'Backend API base URL' },
-              }}
+              inputProps={{ 'aria-label': 'Backend API base URL' }}
             />
-          </Stack>
+          </div>
         </Section>
 
         <Section title="Credits">
-          <Stack spacing={1.25}>
-            <Box>
-              <Typography variant="body2" fontWeight={700}>
+          <div className="flex flex-col gap-[10px]">
+            <div>
+              <p className="m-0 text-sm leading-[1.43] font-bold">
                 Zaid Ballour
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
+              </p>
+              <span className="text-xs leading-[1.4] text-muted">
                 Design, development and maintenance of Carmen
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              </span>
+            </div>
+            <div className="flex flex-row flex-wrap gap-2">
               <Credit
                 href="https://github.com/z44d"
                 name="GitHub"
@@ -600,10 +561,10 @@ export default function SettingsPage() {
               >
                 @zaidballour
               </Credit>
-            </Stack>
-          </Stack>
+            </div>
+          </div>
         </Section>
-      </Stack>
+      </div>
     </Container>
   );
 }

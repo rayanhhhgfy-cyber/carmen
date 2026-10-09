@@ -2,7 +2,7 @@ import Artwork from "../components/Artwork";
 import MarqueeText from "../components/MarqueeText";
 import QueueTab from "../components/QueueTab";
 import RelatedTab from "../components/RelatedTab";
-import { Box, Chip, Container, Stack, Typography } from "@mui/material";
+import { Chip, Container } from "../components/ui";
 import { EmptyState } from "../components/TrackList";
 import { usePlayer } from "../player/PlayerContext";
 
@@ -16,10 +16,10 @@ export default function QueuePage() {
 
   if (!track) {
     return (
-      <Container maxWidth="md" sx={{ pt: 4 }}>
-        <Typography variant="h5" sx={{ mb: 2 }}>
+      <Container maxWidth="md" className="pt-6">
+        <h5 className="m-0 mb-4 text-2xl font-bold">
           Queue
-        </Typography>
+        </h5>
         <EmptyState
           title="Nothing is playing yet"
           hint="Start a song from the home page or search."
@@ -29,28 +29,18 @@ export default function QueuePage() {
   }
 
   return (
-    <Container maxWidth="md" sx={{ pt: { xs: 1.5, md: 3 } }}>
-      <Stack spacing={2}>
-        <Box>
-          <Typography variant="h5">Queue</Typography>
-          <Typography variant="body2" color="text.secondary">
+    <Container maxWidth="md" className="pt-3 md:pt-6">
+      <div className="flex flex-col gap-4">
+        <div>
+          <h5 className="m-0 text-2xl font-bold">Queue</h5>
+          <p className="m-0 text-sm leading-[1.43] text-muted">
             Now playing
-          </Typography>
-        </Box>
+          </p>
+        </div>
 
-        <Box
+        <div
           onClick={() => player.setSheetOpen(true)}
-          sx={{
-            display: 'flex',
-            gap: 2,
-            alignItems: 'center',
-            p: 1.5,
-            borderRadius: 3,
-            bgcolor: 'background.paper',
-            border: 1,
-            borderColor: 'divider',
-            cursor: 'pointer',
-          }}
+          className="flex cursor-pointer items-center gap-4 rounded-[42px] border border-line bg-surface p-3"
         >
           <Artwork
             src={track.artwork}
@@ -58,34 +48,33 @@ export default function QueuePage() {
             iconSize={28}
             sx={{ width: 64, height: 64, borderRadius: 2, flexShrink: 0 }}
           />
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+          <div className="min-w-0 flex-1">
             <MarqueeText text={track.title} variant="subtitle1" />
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+            <span className="block truncate text-xs leading-[1.4] text-muted">
               {track.artist}
-            </Typography>
+            </span>
             <Chip
               size="small"
               label={player.isPlaying ? 'Playing' : 'Paused'}
-              color="primary"
               variant="outlined"
-              sx={{ mt: 0.75, height: 20 }}
+              className="mt-[6px] !h-5 !border-accent/50 !text-accent"
             />
-          </Box>
-        </Box>
+          </div>
+        </div>
 
-        <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 3, overflow: 'hidden', bgcolor: 'background.paper' }}>
+        <div className="overflow-hidden rounded-[42px] border border-line bg-surface">
           <QueueTab />
-        </Box>
+        </div>
 
-        <Box>
-          <Typography variant="subtitle1" sx={{ px: 1, mb: 0.5 }}>
+        <div>
+          <p className="m-0 mb-1 px-2 text-base font-semibold">
             Related songs
-          </Typography>
-          <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 3, overflow: 'hidden', bgcolor: 'background.paper' }}>
+          </p>
+          <div className="overflow-hidden rounded-[42px] border border-line bg-surface">
             <RelatedTab />
-          </Box>
-        </Box>
-      </Stack>
+          </div>
+        </div>
+      </div>
     </Container>
   );
 }

@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  Container,
-  IconButton,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Button, Container, IconButton, Spinner, Tooltip } from '../components/ui';
 import type { ReactNode } from 'react';
 import { usePlayer } from '../player/PlayerContext';
 import { RECENT_LIMIT, shuffleList, useLibrary } from '../utils/library';
@@ -33,17 +24,7 @@ interface FeedCardsProps {
 function CardRow({ items, onPlaySong, songsContext }: FeedCardsProps) {
   if (!items.length) return null;
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        gap: 2,
-        overflowX: 'auto',
-        px: { xs: 2, md: 0 },
-        pb: 1,
-        scrollSnapType: 'x proximity',
-        WebkitOverflowScrolling: 'touch',
-      }}
-    >
+    <div className="flex gap-4 overflow-x-auto px-4 pb-2 [-webkit-overflow-scrolling:touch] [scroll-snap-type:x_proximity] md:px-0">
       {items.map((item, index) => (
         <MediaCard
           key={`${item.videoId || item.playlistId || index}-${index}`}
@@ -52,7 +33,7 @@ function CardRow({ items, onPlaySong, songsContext }: FeedCardsProps) {
           onPlaySong={onPlaySong}
         />
       ))}
-    </Box>
+    </div>
   );
 }
 
@@ -67,27 +48,13 @@ function SectionHeader({
   action?: ReactNode;
 }) {
   return (
-    <Box
-      sx={{
-        px: { xs: 2, md: 0 },
-        mb: 1.25,
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: 1.5,
-      }}
-    >
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-          {title}
-        </Typography>
-        {subtitle && (
-          <Typography variant="caption" color="text.secondary">
-            {subtitle}
-          </Typography>
-        )}
-      </Box>
+    <div className="mb-[10px] flex items-end gap-3 px-4 md:px-0">
+      <div className="min-w-0 flex-1">
+        <p className="m-0 text-base font-bold">{title}</p>
+        {subtitle && <span className="text-xs leading-[1.4] text-muted">{subtitle}</span>}
+      </div>
       {action}
-    </Box>
+    </div>
   );
 }
 
@@ -95,7 +62,7 @@ function SectionHeader({
  * Responsive grid of artwork cards.
  *
  * Pages load **adaptively**: one page is rendered and, while a sentinel
- * just under the grid is still near the viewport, the next one is added —
+ * just under the grid is still near the viewport, the next page is added —
  * 600px before the reader reaches the end, with no button to press.  A
  * first page that does not even fill the screen tops itself up until it
  * does, and it stops at the last card.
@@ -134,17 +101,7 @@ function CardGrid({ items, onPlaySong, songsContext, pageSize = 12 }: FeedCardsP
 
   return (
     <>
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: 'repeat(auto-fill, minmax(140px, 1fr))',
-            md: 'repeat(auto-fill, minmax(158px, 1fr))',
-          },
-          gap: { xs: 1.75, md: 2.5 },
-          px: { xs: 2, md: 0 },
-        }}
-      >
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3.5 px-4 md:grid-cols-[repeat(auto-fill,minmax(158px,1fr))] md:gap-5 md:px-0">
         {visible.map((item, index) => (
           <MediaCard
             key={`${item.videoId || index}-${index}`}
@@ -154,8 +111,8 @@ function CardGrid({ items, onPlaySong, songsContext, pageSize = 12 }: FeedCardsP
             onPlaySong={onPlaySong}
           />
         ))}
-      </Box>
-      {hasMore && <Box ref={sentinelRef} aria-hidden sx={{ height: 1 }} />}
+      </div>
+      {hasMore && <div ref={sentinelRef} aria-hidden className="h-[1px]" />}
     </>
   );
 }
@@ -263,11 +220,11 @@ export default function HomePage() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ pt: { xs: 2, md: 3 }, px: { xs: 0, md: 3 } }}>
-      <Stack spacing={3.5}>
+    <Container maxWidth="lg" className="!px-0 pt-4 md:!px-6 md:pt-6">
+      <div className="flex flex-col gap-7">
         {/* The feed only moves when the reader says so: pull it down on a
             phone, press this on a bigger screen. */}
-        <Box sx={{ px: { xs: 2, md: 0 }, display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="flex justify-end px-4 md:px-0">
           <Tooltip title="Refresh feed">
             <span>
               <IconButton
@@ -276,18 +233,18 @@ export default function HomePage() {
                 disabled={refreshing}
               >
                 {refreshing ? (
-                  <CircularProgress size={20} color="primary" />
+                  <Spinner size={20} />
                 ) : (
                   <RefreshIcon fontSize="small" />
                 )}
               </IconButton>
             </span>
           </Tooltip>
-        </Box>
+        </div>
 
         {/* ── Recently played (max 10) ─────────────────────────────────── */}
         {recentTracks.length > 0 && (
-          <Box>
+          <div>
             <SectionHeader
               title="Recently played"
               subtitle={`Last ${recentTracks.length} of ${RECENT_LIMIT} songs`}
@@ -308,21 +265,20 @@ export default function HomePage() {
               songsContext={recentTracks}
               onPlaySong={(raw, context) => player.playTrack(raw, context || recentTracks)}
             />
-          </Box>
+          </div>
         )}
 
         {/* ── Suggested songs (shuffled, max 100) ──────────────────────── */}
         {suggestedTracks.length > 0 && (
-          <Box>
+          <div>
             <SectionHeader
               title="Suggested for you"
               subtitle={`${suggestedTracks.length} song${
                 suggestedTracks.length === 1 ? '' : 's'
               } gathered from songs you play`}
               action={
-                <Stack direction="row" spacing={0.5} alignItems="center">
+                <div className="flex flex-row items-center gap-1">
                   <Button
-                    size="small"
                     startIcon={<ShuffleIcon fontSize="small" />}
                     onClick={() => player.playAll(suggestedTracks, 0)}
                   >
@@ -337,7 +293,7 @@ export default function HomePage() {
                       <ShuffleIcon fontSize="small" color="disabled" />
                     </IconButton>
                   </Tooltip>
-                </Stack>
+                </div>
               }
             />
             <CardGrid
@@ -345,18 +301,18 @@ export default function HomePage() {
               songsContext={suggestionContext}
               onPlaySong={playFromSuggestions}
             />
-          </Box>
+          </div>
         )}
 
         {!hasPersonalFeed && (
-          <Box sx={{ px: 2 }}>
+          <div className="px-4">
             <EmptyState
               title="Nothing here yet"
               hint="Songs you play show up here: the last 10 plays plus up to 100 suggestions from their related songs."
             />
-          </Box>
+          </div>
         )}
-      </Stack>
+      </div>
     </Container>
   );
 }

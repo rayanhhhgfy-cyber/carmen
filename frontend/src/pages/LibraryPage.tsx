@@ -12,12 +12,13 @@
  * view instead of a route (the route stays `/library`), so closing it
  * remounts the Playlists page and it reloads its data on its own.
  */
-import { useCallback, useEffect, useState, type SyntheticEvent } from 'react';
-import { Box, Container, Tab, Tabs, Typography } from '@mui/material';
+import { useCallback, useEffect, useState } from 'react';
 
+import { Container, Tab, Tabs } from '../components/ui';
 import { listDownloads } from '../db/repos/downloads';
 import { useEffectsEnabled } from '../settings/store';
 import type { DownloadedSong } from '../types/models';
+import { cn } from '../utils/cn';
 import AlbumsSection from './library/AlbumsSection';
 import ArtistsSection from './library/ArtistsSection';
 import PlaylistsSection from './library/PlaylistsSection';
@@ -98,52 +99,43 @@ export default function LibraryPage() {
     }
   }, []);
 
-  const handleTabChange = (_event: SyntheticEvent, next: unknown) => {
+  // MIGRATION: the kit Tabs calls `onChange(value)` — no MUI event argument.
+  const handleTabChange = (next: unknown) => {
     if ((TAB_IDS as readonly string[]).includes(next as string)) {
       selectTab(next as LibraryTab);
     }
   };
 
   return (
-    <Container maxWidth="lg" sx={{ pt: { xs: 2, md: 3 }, pb: { xs: 4, md: 6 } }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+    <Container maxWidth="lg" className="pb-8 pt-4 md:pb-12 md:pt-6">
+      <div className="mb-4 flex items-center gap-3">
         <LibraryIcon color="primary" sx={{ fontSize: 34 }} />
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
-            Library
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
+        <div className="min-w-0">
+          <h5 className="m-0 text-2xl font-extrabold leading-[1.2]">Library</h5>
+          <span className="text-xs leading-[1.4] text-muted">
             Playlists, downloads and collections on this device
-          </Typography>
-        </Box>
-      </Box>
+          </span>
+        </div>
+      </div>
 
       {/* Sticky under the app bar's Toolbar (56/64px); translucent + blurred
           like the bar itself so rows fade away beneath it while scrolling —
           the blur drops out in low battery mode (the tint alone still
-          separates it from the rows underneath). */}
+          separates it from the rows underneath).
+          MIGRATION: `scrollButtons="auto"` / `allowScrollButtonsMobile` dropped
+          — the kit strip scrolls natively with hidden scrollbars. */}
       <Tabs
         value={tab}
         onChange={handleTabChange}
         variant="scrollable"
-        scrollButtons="auto"
-        allowScrollButtonsMobile
         aria-label="Library sections"
-        sx={{
-          position: 'sticky',
-          top: { xs: 56, md: 64 },
-          mb: 2.5,
-          minHeight: 46,
-          borderBottom: 1,
-          borderColor: 'divider',
-          bgcolor: (theme) =>
-            theme.palette.mode === 'dark' ? 'rgba(10,13,11,0.88)' : 'rgba(246,247,246,0.92)',
-          backdropFilter: effectsEnabled ? 'blur(12px)' : 'none',
-          '& .MuiTab-root': { textTransform: 'none', fontWeight: 700 },
-        }}
+        className={cn(
+          'sticky top-14 md:top-16 mb-5 min-h-[46px] border-b border-line bg-bg/[0.92] dark:bg-bg/[0.88]',
+          effectsEnabled && 'backdrop-blur-[12px]',
+        )}
       >
         {TAB_IDS.map((id) => (
-          <Tab key={id} value={id} label={TAB_LABELS[id]} />
+          <Tab key={id} value={id} label={TAB_LABELS[id]} className="!font-bold" />
         ))}
       </Tabs>
 

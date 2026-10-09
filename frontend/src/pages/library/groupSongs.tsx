@@ -7,7 +7,6 @@
  * the card live here once. Groups keep the first artwork / browse id
  * encountered — later rows only fill gaps — and sort alphabetically.
  */
-import { Box, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
 import MarqueeText from '../../components/MarqueeText';
@@ -74,29 +73,19 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
   const navigate = useNavigate();
 
   return (
-    <Box
-      component="button"
+    <button
       type="button"
       disabled={!to}
       onClick={() => {
         if (to) navigate(to);
       }}
-      sx={{
-        width: '100%',
+      className={
         // Opt out of the automatic (min-content) minimum so a long name
         // clips + scrolls inside the cell instead of inflating the card.
-        minWidth: 0,
-        p: 0,
-        m: 0,
-        border: 0,
-        background: 'none',
-        textAlign: 'left',
-        cursor: to ? 'pointer' : 'default',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0.75,
-        '&:hover .group-art': to ? { transform: 'scale(1.04)' } : undefined,
-      }}
+        `m-0 flex w-full min-w-0 flex-col gap-[6px] border-0 bg-transparent p-0 text-left ${
+          to ? 'cursor-pointer hover:[&_.group-art]:[transform:scale(1.04)]' : 'cursor-default'
+        }`
+      }
     >
       <Artwork
         className="group-art"
@@ -112,19 +101,16 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
           transition: 'transform 220ms ease',
         }}
       />
-      <Box sx={{ minWidth: 0 }}>
+      <div className="min-w-0">
         <MarqueeText text={group.name} variant="body2" sx={{ fontWeight: 600 }} />
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+        <span className="block text-xs leading-[1.4] text-muted">
           {group.count} song{group.count === 1 ? '' : 's'}
-        </Typography>
-      </Box>
-    </Box>
+        </span>
+      </div>
+    </button>
   );
 }
 
 /** Responsive card grid used by both catalogue pages. */
-export const GRID_SX = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(132px, 1fr))',
-  gap: 2,
-} as const;
+export const GRID_CLASS =
+  'grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-4';

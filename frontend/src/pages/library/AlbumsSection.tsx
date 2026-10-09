@@ -8,11 +8,11 @@
  * behaved the same way).
  */
 import { useMemo } from 'react';
-import { Box, Skeleton } from '@mui/material';
 
+import { Shimmer } from '../../components/ui';
 import { EmptyHint, PageSummary } from './common';
 import { AlbumIcon } from './glyphs';
-import { GRID_SX, GroupCard, groupSongs, type CataloguePageProps } from './groupSongs';
+import { GRID_CLASS, GroupCard, groupSongs, type CataloguePageProps } from './groupSongs';
 
 export default function AlbumsSection({ songs, loading = false }: CataloguePageProps) {
   const albums = useMemo(
@@ -28,35 +28,35 @@ export default function AlbumsSection({ songs, loading = false }: CataloguePageP
 
   if (loading && !songs.length) {
     return (
-      <Box component="section">
+      <section>
         <PageSummary>Loading…</PageSummary>
-        <Box sx={GRID_SX}>
+        <div className={GRID_CLASS}>
           {[0, 1, 2, 3, 4].map((index) => (
-            <Skeleton key={index} variant="rounded" height={170} />
+            <Shimmer key={index} variant="rounded" height={170} />
           ))}
-        </Box>
-      </Box>
+        </div>
+      </section>
     );
   }
 
   if (!songs.length) {
     return (
-      <Box component="section">
+      <section>
         <EmptyHint
           icon={<AlbumIcon sx={{ fontSize: 40 }} />}
           title="No albums yet"
           hint="Albums appear automatically as songs are downloaded."
         />
-      </Box>
+      </section>
     );
   }
 
   return (
-    <Box component="section">
+    <section>
       <PageSummary>
         {`${albums.length} album${albums.length === 1 ? '' : 's'} in your downloads`}
       </PageSummary>
-      <Box sx={GRID_SX}>
+      <div className={GRID_CLASS}>
         {albums.map((album) => (
           <GroupCard
             key={album.key}
@@ -65,7 +65,7 @@ export default function AlbumsSection({ songs, loading = false }: CataloguePageP
             to={album.browseId ? `/collection/album/${encodeURIComponent(album.browseId)}` : null}
           />
         ))}
-      </Box>
-    </Box>
+      </div>
+    </section>
   );
 }

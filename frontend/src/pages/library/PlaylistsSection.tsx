@@ -7,9 +7,10 @@
  * action sits on the summary line.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Box, Button, IconButton, Menu, MenuItem, Skeleton, Tooltip, Typography } from '@mui/material';
 
 import MarqueeText from '../../components/MarqueeText';
+import { Button, IconButton, Shimmer, Tooltip } from '../../components/ui';
+import { Menu, MenuItem } from '../../components/ui/Overlay';
 import {
   createPlaylist,
   deletePlaylist,
@@ -103,12 +104,14 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
   const empty = !loading && playlists.length === 0;
 
   return (
-    <Box component="section">
+    <section>
       <PageSummary
         action={
+          // MIGRATION: the kit Button has no `outlined` variant — the text
+          // variant plus a border class is the closest match.
           <Button
-            size="small"
-            variant="outlined"
+            variant="text"
+            className="border border-accent/50"
             startIcon={<PlusIcon />}
             onClick={() => setForm({ mode: 'create', playlist: null })}
           >
@@ -122,46 +125,28 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
       </PageSummary>
 
       {loading && playlists.length === 0 ? (
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 2 }}>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
           {[0, 1, 2, 3].map((index) => (
-            <Skeleton key={index} variant="rounded" height={196} />
+            <Shimmer key={index} variant="rounded" height={196} />
           ))}
-        </Box>
+        </div>
       ) : empty ? (
         <EmptyHint
           title="No playlists yet"
           hint="Create one to group songs from your downloads, favorites or the web."
         />
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-            gap: 2,
-          }}
-        >
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
           {playlists.map((playlist) => (
-            <Box key={playlist.id} sx={{ position: 'relative' }}>
-              <Box
-                component="button"
+            <div key={playlist.id} className="relative">
+              <button
                 type="button"
                 onClick={() => onOpen(playlist.id)}
-                sx={{
-                  width: '100%',
+                className={
                   // No automatic minimum: a long playlist name clips +
                   // scrolls inside the cell instead of inflating the card.
-                  minWidth: 0,
-                  p: 0,
-                  m: 0,
-                  border: 0,
-                  background: 'none',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                  '&:hover .playlist-art': { transform: 'scale(1.03)' },
-                }}
+                  'm-0 flex w-full min-w-0 cursor-pointer flex-col gap-2 border-0 bg-transparent p-0 text-left hover:[&_.playlist-art]:[transform:scale(1.03)]'
+                }
               >
                 <Artwork
                   className="playlist-art"
@@ -177,44 +162,40 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                     transition: 'transform 220ms ease',
                   }}
                 />
-                <Box sx={{ minWidth: 0 }}>
+                <div className="min-w-0">
                   <MarqueeText text={playlist.name} variant="body2" sx={{ fontWeight: 600 }} />
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  <span className="block text-xs leading-[1.4] text-muted">
                     {playlist.trackCount} song{playlist.trackCount === 1 ? '' : 's'}
-                  </Typography>
-                </Box>
-              </Box>
+                  </span>
+                </div>
+              </button>
 
-              <Tooltip title="Playlist actions" placement="top">
-                <IconButton
-                  size="small"
-                  aria-label={`Actions for ${playlist.name}`}
-                  onClick={(event) => setMenu({ anchor: event.currentTarget, playlist })}
-                  sx={{
-                    position: 'absolute',
-                    top: 6,
-                    right: 6,
-                    width: 30,
-                    height: 30,
-                    bgcolor: 'rgba(0, 0, 0, 0.45)',
-                    color: '#fff',
-                    '&:hover': { bgcolor: 'rgba(0, 0, 0, 0.65)' },
-                  }}
-                >
-                  <MoreVertIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
-            </Box>
+              {/* The kit Tooltip wraps its child in a `relative` span, so the
+                  absolute anchoring moves onto an outer span (MUI's Tooltip
+                  added no DOM node, and the button overlays the card corner). */}
+              <span className="absolute right-[6px] top-[6px]">
+                <Tooltip title="Playlist actions" placement="top">
+                  <IconButton
+                    size="small"
+                    aria-label={`Actions for ${playlist.name}`}
+                    onClick={(event) => setMenu({ anchor: event.currentTarget, playlist })}
+                    className="h-[30px] w-[30px] bg-[rgba(0,0,0,0.45)] !p-0 !text-white hover:!bg-[rgba(0,0,0,0.65)]"
+                  >
+                    <MoreVertIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+              </span>
+            </div>
           ))}
-        </Box>
+        </div>
       )}
 
+      {/* MIGRATION: `anchorOrigin` / `transformOrigin` dropped — the kit Menu
+          positions itself from the anchor and flips when it would overflow. */}
       <Menu
-        anchorEl={menu?.anchor}
+        anchorEl={menu?.anchor ?? null}
         open={Boolean(menu)}
         onClose={() => setMenu(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <MenuItem
           onClick={() => {
@@ -222,7 +203,7 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
             setMenu(null);
           }}
         >
-          <EditIcon fontSize="small" sx={{ mr: 1.5 }} />
+          <EditIcon fontSize="small" />
           Rename
         </MenuItem>
         <MenuItem
@@ -231,7 +212,7 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
             setMenu(null);
           }}
         >
-          <TrashIcon fontSize="small" sx={{ mr: 1.5 }} />
+          <TrashIcon fontSize="small" />
           Delete
         </MenuItem>
       </Menu>
@@ -253,6 +234,6 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
         onConfirm={() => void handleDelete()}
         onClose={() => setDeleteFor(null)}
       />
-    </Box>
+    </section>
   );
 }

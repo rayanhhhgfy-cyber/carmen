@@ -6,16 +6,8 @@
  * ordered track rows with a per-track remove action.
  */
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Box,
-  Button,
-  IconButton,
-  Skeleton,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
 
+import { Button, IconButton, Shimmer, Tooltip } from '../../components/ui';
 import {
   deletePlaylist,
   getPlaylist,
@@ -125,34 +117,34 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
 
   if (loading) {
     return (
-      <Box component="section">
-        <Skeleton variant="text" width={120} height={32} />
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ mt: 1 }}>
-          <Skeleton variant="rounded" width={180} height={180} />
-          <Box sx={{ flex: 1 }}>
-            <Skeleton variant="text" width="55%" height={40} />
-            <Skeleton variant="text" width="35%" />
-            <Skeleton variant="text" width="70%" />
-          </Box>
-        </Stack>
-      </Box>
+      <section>
+        <Shimmer variant="text" width={120} height={32} />
+        <div className="mt-2 flex flex-col gap-6 sm:flex-row">
+          <Shimmer variant="rounded" width={180} height={180} />
+          <div className="flex-1">
+            <Shimmer variant="text" width="55%" height={40} />
+            <Shimmer variant="text" width="35%" />
+            <Shimmer variant="text" width="70%" />
+          </div>
+        </div>
+      </section>
     );
   }
 
   if (!playlist) {
     return (
-      <Box component="section">
+      <section>
         <BackButton onBack={onBack} />
         <EmptyHint title="Playlist not found" hint="It may have been deleted." />
-      </Box>
+      </section>
     );
   }
 
   return (
-    <Box component="section">
+    <section>
       <BackButton onBack={onBack} />
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ mb: 2.5 }}>
+      <div className="mb-5 flex flex-col gap-6 sm:flex-row">
         <Artwork
           src={cover}
           alt=""
@@ -168,48 +160,32 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
           }}
         />
 
-        <Box sx={{ flex: 1, minWidth: 0, textAlign: { xs: 'center', sm: 'left' } }}>
-          <Typography variant="overline" color="text.secondary">
+        <div className="min-w-0 flex-1 text-center sm:text-left">
+          {/* MIGRATION: MUI's `overline` variant — not in the conventions
+              table; hand-mapped (span, 12px, uppercase, 2.66 line-height,
+              no letter-spacing since the app font is not Roboto). */}
+          <span className="text-xs font-normal uppercase leading-[2.66] text-muted">
             Playlist
-          </Typography>
-          <Typography variant="h5" sx={{ fontWeight: 800 }}>
-            {playlist.name}
-          </Typography>
+          </span>
+          <h5 className="m-0 text-2xl font-extrabold">{playlist.name}</h5>
           {playlist.description && (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{
-                mt: 0.5,
-                whiteSpace: 'pre-line',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-            >
+            <p className="m-0 mt-2 overflow-hidden whitespace-pre-line text-sm leading-[1.43] text-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
               {playlist.description}
-            </Typography>
+            </p>
           )}
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+          <span className="mt-[6px] block text-xs leading-[1.4] text-muted">
             {songs.length} track{songs.length === 1 ? '' : 's'}
-          </Typography>
+          </span>
 
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{ mt: 2, justifyContent: { xs: 'center', sm: 'flex-start' }, flexWrap: 'wrap', rowGap: 1 }}
-          >
-            <Button
-              variant="contained"
-              startIcon={<PlayArrowIcon />}
-              disabled={!songs.length}
-              onClick={playAll}
-            >
+          <div className="mt-4 flex flex-wrap justify-center gap-2 gap-y-2 sm:justify-start">
+            <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={!songs.length} onClick={playAll}>
               Play all
             </Button>
+            {/* MIGRATION: the kit Button has no `outlined` variant — the text
+                variant plus a border class is the closest match. */}
             <Button
-              variant="outlined"
+              variant="text"
+              className="border border-accent/50"
               startIcon={<ShuffleIcon />}
               disabled={!songs.length}
               onClick={shuffleAll}
@@ -226,9 +202,9 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
                 <TrashIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-          </Stack>
-        </Box>
-      </Stack>
+          </div>
+        </div>
+      </div>
 
       {songs.length === 0 ? (
         <EmptyHint
@@ -236,7 +212,7 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
           hint="Add songs with the playlist button on any row in Songs, Home or Search."
         />
       ) : (
-        <Box>
+        <div>
           {songs.map((song) => (
             <SongRow
               key={song.videoId}
@@ -247,7 +223,7 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
               onRemove={() => void handleRemove(song.videoId)}
             />
           ))}
-        </Box>
+        </div>
       )}
 
       <PlaylistFormDialog
@@ -267,7 +243,7 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
         onConfirm={() => void handleDelete()}
         onClose={() => setDeleteOpen(false)}
       />
-    </Box>
+    </section>
   );
 }
 
@@ -275,7 +251,7 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
 function BackButton({ onBack }: { onBack: () => void }) {
   return (
     <Tooltip title="Back to library">
-      <IconButton aria-label="Back to library" onClick={onBack} sx={{ mb: 1 }}>
+      <IconButton aria-label="Back to library" onClick={onBack} className="mb-2">
         <ArrowBackIcon />
       </IconButton>
     </Tooltip>

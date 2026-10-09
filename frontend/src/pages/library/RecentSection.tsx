@@ -5,9 +5,9 @@
  * The tab bar owns the title, so only the freshness line stays.
  */
 import { useEffect, useState } from 'react';
-import { Box, Skeleton, Typography, useTheme } from '@mui/material';
 
 import MarqueeText from '../../components/MarqueeText';
+import { Shimmer } from '../../components/ui';
 import { recentDownloads } from '../../db/repos/downloads';
 import { usePlayer } from '../../player/PlayerContext';
 import type { DownloadedSong } from '../../types/models';
@@ -16,7 +16,6 @@ import { Artwork, MusicNoteIcon } from './glyphs';
 
 export default function RecentSection() {
   const player = usePlayer();
-  const theme = useTheme();
   const [songs, setSongs] = useState<DownloadedSong[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -40,54 +39,30 @@ export default function RecentSection() {
   }, []);
 
   return (
-    <Box component="section">
+    <section>
       <PageSummary>Your last saves, newest first</PageSummary>
 
       {loading && !songs.length ? (
-        <Box sx={{ display: 'flex', gap: 2, overflow: 'hidden' }}>
+        <div className="flex gap-4 overflow-hidden">
           {[0, 1, 2, 3].map((index) => (
-            <Skeleton key={index} variant="rounded" width={136} height={172} />
+            <Shimmer key={index} variant="rounded" width={136} height={172} />
           ))}
-        </Box>
+        </div>
       ) : songs.length === 0 ? (
         <EmptyHint dense title="Nothing downloaded yet" hint="saved songs land here" />
       ) : (
-        <Box sx={{ position: 'relative' }}>
-          <Box
-            sx={{
-              display: 'flex',
-              gap: 2,
-              overflowX: 'auto',
-              pb: 1,
-              scrollSnapType: 'x proximity',
-              '&::-webkit-scrollbar': { height: 8 },
-              '&::-webkit-scrollbar-thumb': { bgcolor: 'action.hover', borderRadius: 4 },
-            }}
-          >
+        <div className="relative">
+          <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-hover [&::-webkit-scrollbar]:h-2 [scroll-snap-type:x_proximity]">
             {songs.map((song) => (
-              <Box
+              <button
                 key={song.videoId}
-                component="button"
                 type="button"
                 onClick={() => player.playTrack(song, songs)}
-                sx={{
-                  width: 136,
-                  flex: '0 0 136px',
+                className={
                   // No automatic minimum: a long title must clip + scroll
                   // inside the tile, not widen it over its neighbours.
-                  minWidth: 0,
-                  p: 0,
-                  m: 0,
-                  border: 0,
-                  background: 'none',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  scrollSnapAlign: 'start',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 0.75,
-                  '&:hover .recent-art': { transform: 'scale(1.04)' },
-                }}
+                  'm-0 flex w-[136px] min-w-0 cursor-pointer flex-col gap-[6px] snap-start border-0 bg-transparent p-0 text-left [flex:0_0_136px] hover:[&_.recent-art]:[transform:scale(1.04)]'
+                }
               >
                 <Artwork
                   className="recent-art"
@@ -103,31 +78,26 @@ export default function RecentSection() {
                     transition: 'transform 220ms ease',
                   }}
                 />
-                <Box sx={{ minWidth: 0 }}>
+                <div className="min-w-0">
                   <MarqueeText text={song.title} variant="body2" sx={{ fontWeight: 600 }} />
-                  <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                  <span className="block truncate text-xs leading-[1.4] text-muted">
                     {song.artist}
-                  </Typography>
-                </Box>
-              </Box>
+                  </span>
+                </div>
+              </button>
             ))}
-          </Box>
+          </div>
 
           {/* Right-edge fade in the page's own background colour. */}
-          <Box
+          <div
             aria-hidden
-            sx={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 8,
-              width: 56,
-              pointerEvents: 'none',
-              background: `linear-gradient(to right, transparent, ${theme.palette.background.default})`,
+            className="pointer-events-none absolute bottom-2 right-0 top-0 w-14"
+            style={{
+              background: 'linear-gradient(to right, transparent, var(--app-bg))',
             }}
           />
-        </Box>
+        </div>
       )}
-    </Box>
+    </section>
   );
 }

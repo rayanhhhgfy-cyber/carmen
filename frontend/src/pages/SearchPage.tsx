@@ -1,18 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box,
   Chip,
   Container,
   IconButton,
-  InputAdornment,
   List,
   ListItemButton,
   ListItemText,
-  Skeleton,
-  Stack,
+  Shimmer,
   TextField,
-  Typography,
-} from '@mui/material';
+} from '../components/ui';
 import { useSearchParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
@@ -22,6 +18,7 @@ import type { Track } from '../types/models';
 import MediaCard from '../components/MediaCard';
 import TrackList, { EmptyState } from '../components/TrackList';
 import { CloseIcon, HistoryIcon, SearchIcon } from '../components/icons';
+import { cn } from '../utils/cn';
 
 const FILTERS: { id: string; label: string }[] = [
   { id: '', label: 'All' },
@@ -167,12 +164,10 @@ export default function SearchPage() {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ pt: { xs: 2, md: 3 } }}>
-      <Stack spacing={2}>
-        <Box>
-          <Typography variant="h5" sx={{ mb: 1.5 }}>
-            Search
-          </Typography>
+    <Container maxWidth="lg" className="pt-4 md:pt-6">
+      <div className="flex flex-col gap-4">
+        <div>
+          <h5 className="m-0 mb-3 text-2xl font-bold">Search</h5>
           <TextField
             fullWidth
             value={input}
@@ -181,83 +176,69 @@ export default function SearchPage() {
               setInput(event.target.value);
               setShowSuggestions(true);
             }}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => window.setTimeout(() => setShowSuggestions(false), 150)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') submit();
-            }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon color="action" />
-                  </InputAdornment>
-                ),
-                endAdornment: input ? (
-                  <InputAdornment position="end">
-                    <IconButton size="small" aria-label="Clear search" onClick={() => submit('')}>
-                      <CloseIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ) : null,
-                sx: { borderRadius: 999, bgcolor: 'background.paper' },
+            startAdornment={<SearchIcon color="action" />}
+            endAdornment={
+              input ? (
+                <IconButton size="small" aria-label="Clear search" onClick={() => submit('')}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              ) : null
+            }
+            className="[&_div]:!rounded-full"
+            inputProps={{
+              // The pill field used to carry these on the input slot.
+              onFocus: () => setShowSuggestions(true),
+              onBlur: () => window.setTimeout(() => setShowSuggestions(false), 150),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') submit();
               },
             }}
           />
 
           {showSuggestions && suggestions.length > 0 && (
-            <List
-              sx={{
-                mt: 0.5,
-                bgcolor: 'background.paper',
-                borderRadius: 3,
-                border: 1,
-                borderColor: 'divider',
-                py: 0.5,
-                position: 'relative',
-                zIndex: 2,
-              }}
-            >
+            <List className="relative z-[2] mt-1 rounded-[42px] border border-line bg-surface !py-1">
               {suggestions.map((suggestion) => (
                 <ListItemButton
                   key={suggestion}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => submit(suggestion)}
-                  sx={{ borderRadius: 2, mx: 0.5 }}
+                  className="mx-1 !rounded-[28px]"
                 >
                   <HistoryIcon fontSize="small" color="action" sx={{ mr: 1.5 }} />
-                  <ListItemText primary={suggestion} primaryTypographyProps={{ variant: 'body2' }} />
+                  <ListItemText primary={suggestion} primaryClassName="font-normal" />
                 </ListItemButton>
               ))}
             </List>
           )}
-        </Box>
+        </div>
 
-        <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5 }}>
+        <div className="flex flex-row gap-2 overflow-x-auto pb-1">
           {FILTERS.map((option) => (
             <Chip
               key={option.id || 'all'}
               label={option.label}
-              color={filter === option.id ? 'primary' : 'default'}
               variant={filter === option.id ? 'filled' : 'outlined'}
               onClick={() => setFilter(option.id)}
-              sx={{ flexShrink: 0 }}
+              className={cn(
+                'flex-shrink-0',
+                filter === option.id && '!border-transparent !bg-accent !text-accent-fg',
+              )}
             />
           ))}
-        </Stack>
+        </div>
 
         {loading && (
-          <Stack spacing={1.5}>
+          <div className="flex flex-col gap-3">
             {[0, 1, 2, 3, 4].map((row) => (
-              <Stack key={row} direction="row" spacing={2} alignItems="center">
-                <Skeleton variant="rounded" width={46} height={46} />
-                <Box sx={{ flex: 1 }}>
-                  <Skeleton variant="text" width="60%" />
-                  <Skeleton variant="text" width="35%" />
-                </Box>
-              </Stack>
+              <div key={row} className="flex flex-row items-center gap-4">
+                <Shimmer variant="rounded" width={46} height={46} />
+                <div className="flex-1">
+                  <Shimmer variant="text" width="60%" className="mb-[5px]" />
+                  <Shimmer variant="text" width="35%" />
+                </div>
+              </div>
             ))}
-          </Stack>
+          </div>
         )}
 
         {error && <EmptyState title="Search failed" hint={error} />}
@@ -267,29 +248,18 @@ export default function SearchPage() {
         )}
 
         {!loading && songs.length > 0 && (
-          <Box>
-            <Typography variant="subtitle1" sx={{ mb: 0.5 }}>
-              Songs
-            </Typography>
+          <div>
+            <p className="m-0 mb-1 text-base font-semibold">Songs</p>
             <TrackList tracks={songs} />
-          </Box>
+          </div>
         )}
 
         {!loading && others.length > 0 && (
-          <Box>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
+          <div>
+            <p className="m-0 mb-2 text-base font-semibold">
               {songs.length ? 'More results' : 'Results'}
-            </Typography>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: {
-                  xs: 'repeat(auto-fill, minmax(140px, 1fr))',
-                  md: 'repeat(auto-fill, minmax(170px, 1fr))',
-                },
-                gap: 2.5,
-              }}
-            >
+            </p>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-5 md:grid-cols-[repeat(auto-fill,minmax(170px,1fr))]">
               {others.map((item, index) => (
                 <MediaCard
                   key={cardKey(item, index)}
@@ -299,10 +269,10 @@ export default function SearchPage() {
                   onPlaySong={(raw) => player.playTrack(raw, songs)}
                 />
               ))}
-            </Box>
-          </Box>
+            </div>
+          </div>
         )}
-      </Stack>
+      </div>
     </Container>
   );
 }

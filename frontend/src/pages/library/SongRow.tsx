@@ -7,14 +7,16 @@
  * a sibling of the play button (never nested inside it).
  */
 import { useState } from 'react';
-import { Box, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material';
 
+import { IconButton, Tooltip } from '../../components/ui';
+import { Menu, MenuItem } from '../../components/ui/Overlay';
 import { useFlag } from '../../db/flags';
 import { toggleFavorite } from '../../db/repos/favorites';
 import { usePlayer } from '../../player/PlayerContext';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Track } from '../../types/models';
 import { formatTime } from '../../utils/format';
+import { cn } from '../../utils/cn';
 import AddToPlaylistDialog from './AddToPlaylistDialog';
 import {
   Artwork,
@@ -55,25 +57,25 @@ function Equalizer() {
   // Accent line art again — the readable accent, never the raw white one.
   const { accentFg } = useTheme();
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.4, height: 14, pr: 1 }} aria-hidden>
+    <div className="flex h-[14px] items-end gap-[3.2px] pr-2" aria-hidden>
+      {/* MIGRATION: the three bars used to inline their own emotion
+          `@keyframes row-eq` (each with its own `scale`), but same-name
+          keyframes overwrite each other in the stylesheet — the last bar's
+          definition (0.65 → scaleY 0.2275…0.65) won for all three. One
+          shared keyframes block reproduces that rendered behaviour; the
+          per-bar stagger survives via the animation delays. */}
+      <style>{'@keyframes row-eq{from{transform:scaleY(0.2275)}to{transform:scaleY(0.65)}}'}</style>
       {[0.4, 1, 0.65].map((scale, position) => (
-        <Box
+        <span
           key={position}
-          sx={{
-            width: 3,
-            borderRadius: 2,
-            bgcolor: accentFg,
-            height: 14,
-            transformOrigin: 'bottom',
+          className="block h-[14px] w-[3px] origin-bottom rounded-[28px]"
+          style={{
+            backgroundColor: accentFg,
             animation: `row-eq 900ms ${position * 140}ms ease-in-out infinite alternate`,
-            '@keyframes row-eq': {
-              from: { transform: `scaleY(${scale * 0.35})` },
-              to: { transform: `scaleY(${scale})` },
-            },
           }}
         />
       ))}
-    </Box>
+    </div>
   );
 }
 
@@ -107,36 +109,17 @@ export default function SongRow({
   };
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.5,
-        pr: 1,
-        borderRadius: 2,
-        bgcolor: active ? 'action.selected' : 'transparent',
-        '&:hover': { bgcolor: 'action.hover' },
-      }}
+    <div
+      className={cn(
+        'flex items-center gap-2 rounded-[28px] pr-2 hover:bg-hover',
+        // `action.selected` has no token — 16% of the text colour, as before.
+        active && 'bg-[color-mix(in_srgb,var(--app-text)_16%,transparent)]',
+      )}
     >
-      <Box
-        component="button"
+      <button
         type="button"
         onClick={() => player.playTrack(track, contextTracks)}
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.25,
-          px: 1,
-          py: 0.75,
-          border: 0,
-          background: 'none',
-          color: 'inherit',
-          textAlign: 'left',
-          cursor: 'pointer',
-          borderRadius: 2,
-        }}
+        className="m-0 flex min-w-0 flex-1 cursor-pointer items-center gap-[10px] rounded-[28px] border-0 bg-transparent px-2 py-[6px] text-left text-inherit"
       >
         <Artwork
           src={track.artwork}
@@ -145,39 +128,34 @@ export default function SongRow({
           iconSize={20}
           sx={{ width: 42, height: 42, borderRadius: 1.5, flexShrink: 0 }}
         />
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Typography
-            variant="body2"
-            noWrap
-            sx={{
-              fontWeight: active ? 700 : 500,
-              color: active ? accentFg : 'text.primary',
-            }}
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              'm-0 truncate text-sm leading-[1.43]',
+              active ? 'font-bold' : 'font-medium',
+            )}
+            style={active ? { color: accentFg } : undefined}
           >
             {track.title}
-          </Typography>
-          <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+          </p>
+          <div className="flex min-w-0 items-center gap-1">
             {track.isExplicit && (
               <ExplicitIcon sx={{ fontSize: 13, color: 'text.secondary', flexShrink: 0 }} />
             )}
-            <Typography variant="caption" noWrap sx={{ color: 'text.secondary' }}>
+            <span className="truncate text-xs leading-[1.4] text-muted">
               {track.albumName ? `${track.artist}  •  ${track.albumName}` : track.artist}
-            </Typography>
-          </Stack>
-        </Box>
-      </Box>
+            </span>
+          </div>
+        </div>
+      </button>
 
-      <Stack direction="row" alignItems="center" spacing={0.25} sx={{ flexShrink: 0 }}>
+      <div className="flex shrink-0 items-center gap-[2px]">
         {playing ? (
           <Equalizer />
         ) : (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ minWidth: 34, textAlign: 'right', display: { xs: 'none', sm: 'block' } }}
-          >
+          <span className="hidden min-w-[34px] text-right text-xs leading-[1.4] text-muted sm:block">
             {track.duration ? formatTime(track.duration) : ''}
-          </Typography>
+          </span>
         )}
 
         {(showDownloaded || downloaded) && (
@@ -218,14 +196,14 @@ export default function SongRow({
             <MoreVertIcon fontSize="small" />
           </IconButton>
         )}
-      </Stack>
+      </div>
 
+      {/* MIGRATION: `anchorOrigin` / `transformOrigin` dropped — the kit Menu
+          positions itself from the anchor and flips when it would overflow. */}
       <Menu
         anchorEl={menuAnchor}
         open={Boolean(menuAnchor)}
         onClose={() => setMenuAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <MenuItem
           onClick={() => {
@@ -233,7 +211,7 @@ export default function SongRow({
             setMenuAnchor(null);
           }}
         >
-          <PlayArrowIcon fontSize="small" sx={{ mr: 1.5 }} />
+          <PlayArrowIcon fontSize="small" />
           Play
         </MenuItem>
         <MenuItem
@@ -242,7 +220,7 @@ export default function SongRow({
             setMenuAnchor(null);
           }}
         >
-          <QueueMusicIcon fontSize="small" sx={{ mr: 1.5 }} />
+          <QueueMusicIcon fontSize="small" />
           Play next
         </MenuItem>
         <MenuItem
@@ -251,7 +229,7 @@ export default function SongRow({
             onRemove?.();
           }}
         >
-          <TrashIcon fontSize="small" sx={{ mr: 1.5 }} />
+          <TrashIcon fontSize="small" />
           Remove from this playlist
         </MenuItem>
       </Menu>
@@ -261,6 +239,6 @@ export default function SongRow({
         track={track}
         onClose={() => setAddingToPlaylist(false)}
       />
-    </Box>
+    </div>
   );
 }

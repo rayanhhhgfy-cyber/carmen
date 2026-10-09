@@ -31,6 +31,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import { cn } from '../../utils/cn';
 
+// One import surface: `../components/ui` re-exports the field and overlay
+// kits so call sites never need to know which file a widget lives in.
+export * from './Field';
+export * from './Overlay';
+
 /* ── Feedback ─────────────────────────────────────────────────────────── */
 
 interface SpinnerProps {

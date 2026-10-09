@@ -10,11 +10,11 @@
  * combined section did for every artist.
  */
 import { useMemo } from 'react';
-import { Box, Skeleton } from '@mui/material';
 
+import { Shimmer } from '../../components/ui';
 import { EmptyHint, PageSummary } from './common';
 import { UserIcon } from './glyphs';
-import { GRID_SX, GroupCard, groupSongs, type CataloguePageProps } from './groupSongs';
+import { GRID_CLASS, GroupCard, groupSongs, type CataloguePageProps } from './groupSongs';
 
 export default function ArtistsSection({ songs, loading = false }: CataloguePageProps) {
   // No artist browse id on `Track` — artists jump to a search instead.
@@ -25,35 +25,35 @@ export default function ArtistsSection({ songs, loading = false }: CataloguePage
 
   if (loading && !songs.length) {
     return (
-      <Box component="section">
+      <section>
         <PageSummary>Loading…</PageSummary>
-        <Box sx={GRID_SX}>
+        <div className={GRID_CLASS}>
           {[0, 1, 2, 3, 4].map((index) => (
-            <Skeleton key={index} variant="rounded" height={170} />
+            <Shimmer key={index} variant="rounded" height={170} />
           ))}
-        </Box>
-      </Box>
+        </div>
+      </section>
     );
   }
 
   if (!songs.length) {
     return (
-      <Box component="section">
+      <section>
         <EmptyHint
           icon={<UserIcon sx={{ fontSize: 40 }} />}
           title="No artists yet"
           hint="Artists appear automatically as songs are downloaded."
         />
-      </Box>
+      </section>
     );
   }
 
   return (
-    <Box component="section">
+    <section>
       <PageSummary>
         {`${artists.length} artist${artists.length === 1 ? '' : 's'} in your downloads`}
       </PageSummary>
-      <Box sx={GRID_SX}>
+      <div className={GRID_CLASS}>
         {artists.map((artist) => (
           <GroupCard
             key={artist.key}
@@ -62,7 +62,7 @@ export default function ArtistsSection({ songs, loading = false }: CataloguePage
             to={`/search?query=${encodeURIComponent(artist.name)}`}
           />
         ))}
-      </Box>
-    </Box>
+      </div>
+    </section>
   );
 }
