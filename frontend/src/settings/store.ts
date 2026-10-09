@@ -213,7 +213,14 @@ export function useLowBatteryMode(): boolean {
  * intent.
  */
 export function useEffectsEnabled(): boolean {
-  return !useLowBatteryMode() && useSettings().blurEffects;
+  // HOOKS MUST NEVER SIT BEHIND `&&`/`||`: short-circuiting used to skip
+  // `useSettings()` whenever low battery mode turned on, dropping the
+  // calling component's hook count by one and crashing it with
+  // "Rendered fewer hooks than expected". Both hooks run unconditionally;
+  // only the booleans are combined.
+  const lowBattery = useLowBatteryMode();
+  const blurEffects = useSettings().blurEffects;
+  return !lowBattery && blurEffects;
 }
 
 /**
@@ -223,7 +230,12 @@ export function useEffectsEnabled(): boolean {
  * it *is* a giant blur.
  */
 export function useArtworkBackground(): boolean {
-  return useSettings().artworkBackground && !useLowBatteryMode();
+  // Unconditional hooks, combined afterwards — see useEffectsEnabled:
+  // skipping `useLowBatteryMode()` behind `settings.artworkBackground`
+  // crashed every toggling consumer the same way.
+  const { artworkBackground } = useSettings();
+  const lowBattery = useLowBatteryMode();
+  return artworkBackground && !lowBattery;
 }
 
 /**
@@ -233,5 +245,8 @@ export function useArtworkBackground(): boolean {
  * catalogue requests and a small video per album, once).
  */
 export function useAnimatedArtwork(): boolean {
-  return useSettings().animatedArtwork && !useLowBatteryMode();
+  // Unconditional hooks, combined afterwards — see useEffectsEnabled.
+  const { animatedArtwork } = useSettings();
+  const lowBattery = useLowBatteryMode();
+  return animatedArtwork && !lowBattery;
 }
