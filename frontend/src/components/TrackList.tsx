@@ -1,5 +1,6 @@
-import { Box, Divider, List, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
+
+import { Divider, List } from './ui';
 import TrackRow from './TrackRow';
 import type { Track, TrackMeta } from '../types/models';
 
@@ -31,7 +32,7 @@ export default function TrackList({
   return (
     <List dense={dense} disablePadding>
       {tracks.map((track, index) => (
-        <Box key={`${track.videoId}-${index}`}>
+        <div key={`${track.videoId}-${index}`}>
           <TrackRow
             track={track}
             contextTracks={tracks}
@@ -41,7 +42,7 @@ export default function TrackList({
           {showDividers && index < tracks.length - 1 && (
             <Divider component="li" variant="inset" />
           )}
-        </Box>
+        </div>
       ))}
     </List>
   );
@@ -50,15 +51,9 @@ export default function TrackList({
 /** Centered placeholder for an empty list. */
 export function EmptyState({ title, hint }: { title: string; hint?: ReactNode }) {
   return (
-    <Box sx={{ py: 6, textAlign: 'center', px: 3 }}>
-      <Typography variant="subtitle1" color="text.secondary">
-        {title}
-      </Typography>
-      {hint && (
-        <Typography variant="caption" color="text.disabled">
-          {hint}
-        </Typography>
-      )}
-    </Box>
+    <div className="px-6 py-12 text-center">
+      <p className="m-0 text-base font-semibold text-muted">{title}</p>
+      {hint && <span className="text-xs leading-[1.4] text-disabled">{hint}</span>}
+    </div>
   );
 }

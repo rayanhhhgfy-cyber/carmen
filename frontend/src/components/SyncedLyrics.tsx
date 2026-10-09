@@ -1,10 +1,10 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Typography } from '@mui/material';
+import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { usePlayhead } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import type { LyricLine } from '../types/models';
+import { cn } from '../utils/cn';
 
 /**
  * Synced lyrics engine — rAF glide + windowed rows, zero renders per tick.
@@ -112,49 +112,43 @@ const LyricRow = memo(function LyricRow({
 }) {
   const handleClick = useCallback(() => onSelect(line.timeMs), [onSelect, line.timeMs]);
   return (
-    <Typography
-      component="button"
+    <button
       type="button"
       aria-current={active || undefined}
       onClick={handleClick}
-      sx={{
-        border: 'none',
-        background: 'none',
-        p: 1.25,
-        m: 0,
-        display: 'block',
-        width: '100%',
-        borderRadius: 2,
-        textAlign: 'center',
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        // unitless line height: every row keeps the same height even
-        // as the active line changes weight — nothing reflows mid-song
-        lineHeight: 1.8,
-        fontSize: { xs: '1.1rem', md: '1.15rem' },
-        fontWeight: active ? 700 : 600,
-        color: active ? accentFg : 'text.primary',
-        opacity: active ? 1 : past ? 0.42 : 0.7,
-        // a transform never touches layout, so the highlight cannot
-        // shift the lines around it while the song plays
-        transform: active ? 'scale(1.05)' : 'scale(1)',
-        transformOrigin: 'center',
-        transition:
-          'color 200ms ease, opacity 200ms ease, transform 240ms cubic-bezier(.2,.8,.2,1)',
+      className={cn(
+        'm-0 block w-full cursor-pointer rounded-[28px] border-none bg-transparent p-[10px]',
+        'text-center text-[1.1rem] md:text-[1.15rem] text-body',
+        active
+          ? 'opacity-100 hover:opacity-100'
+          : past
+            ? 'opacity-[0.42] hover:opacity-50'
+            : 'opacity-70 hover:opacity-[0.85]',
         // a line the reader tapped keeps :hover (and focus) on touch
         // screens — the highlight has to follow the song, not the
         // finger, so only focus-visible still draws a ring
-        '&:hover': { opacity: active ? 1 : past ? 0.5 : 0.85 },
-        '&:focus:not(:focus-visible)': { outline: 'none' },
-        '&:focus-visible': {
-          outline: '2px solid',
-          outlineColor: accentFg,
-          outlineOffset: 2,
-        },
-      }}
+        '[&:focus:not(:focus-visible)]:outline-none focus-visible:outline-offset-2 focus-visible:[outline:2px_solid_var(--lyric-ring)]',
+      )}
+      style={
+        {
+          fontFamily: 'inherit',
+          // unitless line height: every row keeps the same height even
+          // as the active line changes weight — nothing reflows mid-song
+          lineHeight: 1.8,
+          fontWeight: active ? 700 : 600,
+          color: active ? accentFg : undefined,
+          // a transform never touches layout, so the highlight cannot
+          // shift the lines around it while the song plays
+          transform: active ? 'scale(1.05)' : 'scale(1)',
+          transformOrigin: 'center',
+          transition:
+            'color 200ms ease, opacity 200ms ease, transform 240ms cubic-bezier(.2,.8,.2,1)',
+          '--lyric-ring': accentFg,
+        } as CSSProperties
+      }
     >
       {line.text || '♪'}
-    </Typography>
+    </button>
   );
 });
 
@@ -341,19 +335,12 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
       {/* `translateZ(0)` + will-change promote the scroller to its own
           compositor layer, so the eased scrollTop and the transform-positioned
           rows never wait on style/layout work (spec: hardware acceleration). */}
-      <Box
+      <div
         ref={scrollerRef}
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          position: 'relative',
-          overflowY: 'auto',
-          px: { xs: 2, sm: 3 },
-          py: 1,
+        className="relative min-h-0 flex-1 overflow-y-auto px-2 py-2 will-change-transform sm:px-3 [transform:translateZ(0)]"
+        style={{
           // room below the last line so it can still travel to the middle
-          pb: '30vh',
-          transform: 'translateZ(0)',
-          willChange: 'transform',
+          paddingBottom: '30vh',
           // the head and tail of the viewport fade instead of cutting off
           maskImage:
             'linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 96px), transparent 100%)',
@@ -361,23 +348,19 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
             'linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 96px), transparent 100%)',
         }}
       >
-        <Box sx={{ position: 'relative', height: virtualizer.getTotalSize() }}>
+        <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
           {rows.map((row) => {
             const line = lines[row.index];
             if (!line) return null;
             return (
-              <Box
+              <div
                 key={row.key}
                 data-index={row.index}
                 ref={virtualizer.measureElement}
-                sx={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
+                className="absolute left-0 top-0 w-full will-change-transform"
+                style={{
                   // windowed rows are positioned on the compositor only
                   transform: `translateY(${row.start}px)`,
-                  willChange: 'transform',
                 }}
               >
                 <LyricRow
@@ -387,11 +370,11 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
                   accentFg={accentFg}
                   onSelect={handleSelect}
                 />
-              </Box>
+              </div>
             );
           })}
-        </Box>
-      </Box>
+        </div>
+      </div>
     </>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
+
 import {
-  Box,
   Collapse,
   Divider,
   IconButton,
@@ -8,14 +8,13 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Menu,
-  MenuItem,
-  Typography,
-} from '@mui/material';
+} from './ui';
+import { Menu, MenuItem } from './ui/Overlay';
 import { useFlag } from '../db/flags';
 import { usePlayer } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import type { Track, TrackMeta } from '../types/models';
+import { cn } from '../utils/cn';
 import { formatTime } from '../utils/format';
 import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
@@ -41,30 +40,38 @@ export interface TrackRowProps {
   meta?: TrackMeta | null;
 }
 
+/**
+ * MIGRATION: the bars used to carry their own `@keyframes eq-bar` inside
+ * `sx`; one concatenated block reproduces the same cascade (same name, so
+ * the last rule wins — exactly like the emotion injections did).
+ */
+const EQ_KEYFRAMES = [0.4, 1, 0.65]
+  .map(
+    (scale) => `@keyframes eq-bar {
+  from { transform: scaleY(${scale * 0.35}); }
+  to { transform: scaleY(${scale}); }
+}`,
+  )
+  .join('\n');
+
 function Equalizer() {
   // The bars are accent-coloured line art — read the readable accent here so
   // a white high-performance accent stays visible on a light row.
   const { accentFg } = useTheme();
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.4, height: 16 }} aria-hidden>
+    <div className="flex h-4 items-end gap-[3.2px]" aria-hidden>
+      <style>{EQ_KEYFRAMES}</style>
       {[0.4, 1, 0.65].map((scale, position) => (
-        <Box
+        <div
           key={position}
-          sx={{
-            width: 3,
-            borderRadius: 2,
-            bgcolor: accentFg,
-            height: 16,
-            transformOrigin: 'bottom',
+          className="h-4 w-[3px] origin-bottom rounded-[28px]"
+          style={{
+            backgroundColor: accentFg,
             animation: `eq-bar 900ms ${position * 140}ms ease-in-out infinite alternate`,
-            '@keyframes eq-bar': {
-              from: { transform: `scaleY(${scale * 0.35})` },
-              to: { transform: `scaleY(${scale})` },
-            },
           }}
         />
       ))}
-    </Box>
+    </div>
   );
 }
 
@@ -97,32 +104,23 @@ export default function TrackRow({
 
   return (
     <>
-      <ListItem
-        disablePadding
-        secondaryAction={
-          <Box sx={{ display: 'flex', alignItems: 'center', pr: 0.5 }}>
-            {active && player.isPlaying ? <Equalizer /> : (
-              <Typography variant="caption" color="text.secondary" sx={{ mr: 1, minWidth: 34, textAlign: 'right' }}>
-                {track.duration ? formatTime(track.duration) : ''}
-              </Typography>
-            )}
-            <IconButton
-              size="small"
-              aria-label={`Actions for ${track.title}`}
-              onClick={(event) => setAnchor(event.currentTarget)}
-            >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        }
-      >
+      {/* MUI's `secondaryAction` rendered as a sibling of the row button —
+          kept that way so ⋯ clicks never bubble into the play handler. */}
+      <ListItem disablePadding className="relative flex items-center text-left">
         <ListItemButton
           onClick={() => player.playTrack(track, contextTracks)}
-          sx={{
-            borderRadius: 2,
-            py: 0.75,
-            bgcolor: active ? 'action.selected' : 'transparent',
-            '&:hover': { bgcolor: active ? 'action.hover' : 'action.hover' },
+          className={cn(
+            'font-ui',
+            active
+              ? 'bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.16)] dark:hover:bg-hover'
+              : 'bg-transparent',
+          )}
+          style={{
+            paddingTop: 6,
+            paddingBottom: 6,
+            paddingLeft: 16,
+            paddingRight: 48,
+            borderRadius: 28,
           }}
         >
           {artwork ? (
@@ -132,39 +130,37 @@ export default function TrackRow({
                 alt=""
                 icon={MusicNoteIcon}
                 iconSize={22}
-                sx={{ width: 44, height: 44, borderRadius: 1.5 }}
+                style={{ width: 44, height: 44, borderRadius: 21 }}
               />
             </ListItemIcon>
           ) : index !== null ? (
-            <Typography
-              variant="body2"
-              color={active ? accentFg : 'text.secondary'}
-              sx={{ width: 46, textAlign: 'center', fontWeight: 600 }}
+            <p
+              className="m-0 w-[46px] text-center text-sm font-semibold leading-[1.43] text-muted"
+              style={active ? { color: accentFg } : undefined}
             >
               {index + 1}
-            </Typography>
+            </p>
           ) : (
             <ListItemIcon sx={{ minWidth: 46 }}>
               <Artwork
                 src={null}
                 icon={MusicNoteIcon}
                 iconSize={22}
-                sx={{ width: 44, height: 44, borderRadius: 1.5 }}
+                style={{ width: 44, height: 44, borderRadius: 21 }}
               />
             </ListItemIcon>
           )}
           <ListItemText
             primary={
-              <Typography
-                variant="body2"
-                noWrap
-                sx={{ fontWeight: active ? 700 : 500, color: active ? accentFg : 'text.primary' }}
+              <p
+                className="m-0 truncate text-sm leading-[1.43] text-body"
+                style={{ fontWeight: active ? 700 : 500, color: active ? accentFg : undefined }}
               >
                 {track.title}
-              </Typography>
+              </p>
             }
             secondary={
-              <Typography variant="caption" noWrap sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <span className="flex items-center gap-1 truncate text-xs leading-[1.4] text-body">
                 {track.isExplicit && <ExplicitIcon sx={{ fontSize: 13 }} />}
                 {/* Passive badges on the meta line — the trailing slot keeps the ⋯ menu / duration only.
                     `titleAccess` marks them meaningful for screen readers (SvgIcon is aria-hidden otherwise). */}
@@ -181,16 +177,32 @@ export default function TrackRow({
                   />
                 )}
                 {track.artist}
-              </Typography>
+              </span>
             }
           />
         </ListItemButton>
+        <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center pr-1">
+          {active && player.isPlaying ? <Equalizer /> : (
+            <span className="mr-2 min-w-[34px] text-right text-xs leading-[1.4] text-muted">
+              {track.duration ? formatTime(track.duration) : ''}
+            </span>
+          )}
+          <IconButton
+            size="small"
+            aria-label={`Actions for ${track.title}`}
+            onClick={(event) => setAnchor(event.currentTarget)}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+        </div>
       </ListItem>
 
-      <Collapse in={detailsOpen} timeout="auto" unmountOnExit>
-        <Box sx={{ px: 2, pb: 1.5, pl: 9 }}>
-          <Divider sx={{ mb: 1 }} />
-          <Typography variant="caption" color="text.secondary">
+      {/* MIGRATION: `unmountOnExit` dropped — the kit's framer Collapse
+          already unmounts once its exit animation finishes. */}
+      <Collapse in={detailsOpen} timeout="auto">
+        <div className="pb-3 pl-[72px] pr-2">
+          <Divider className="mb-2" />
+          <span className="text-xs leading-[1.4] text-muted">
             {[
               track.albumName,
               track.duration ? formatTime(track.duration) : null,
@@ -198,18 +210,19 @@ export default function TrackRow({
             ]
               .filter(Boolean)
               .join('  •  ')}
-          </Typography>
-        </Box>
+          </span>
+        </div>
       </Collapse>
 
+      {/* MIGRATION: `anchorOrigin`/`transformOrigin` dropped — the kit Menu
+          anchors under the element and flips when it would overflow. */}
       <Menu
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={() => setAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <MenuItem
+          className="font-ui"
           onClick={() => {
             player.playTrack(track, contextTracks);
             setAnchor(null);
@@ -219,6 +232,7 @@ export default function TrackRow({
           Play
         </MenuItem>
         <MenuItem
+          className="font-ui"
           onClick={() => {
             player.playNext(track);
             setAnchor(null);
@@ -228,6 +242,7 @@ export default function TrackRow({
           Play next
         </MenuItem>
         <MenuItem
+          className="font-ui"
           onClick={() => {
             player.addToQueue(track);
             setAnchor(null);
@@ -237,6 +252,7 @@ export default function TrackRow({
           Add to queue
         </MenuItem>
         <MenuItem
+          className="font-ui"
           onClick={() => {
             setDetailsOpen((value) => !value);
             setAnchor(null);
@@ -245,9 +261,9 @@ export default function TrackRow({
           <ListItemIcon><InfoIcon fontSize="small" /></ListItemIcon>
           {detailsOpen ? 'Hide details' : 'Show details'}
         </MenuItem>
-        <MenuItem>
+        <MenuItem className="font-ui">
           <DownloadButton track={track} meta={meta} size="small" />
-          <Typography variant="body2">Download MP3</Typography>
+          <p className="m-0 text-sm leading-[1.43]">Download MP3</p>
         </MenuItem>
       </Menu>
     </>

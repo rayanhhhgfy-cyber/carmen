@@ -11,15 +11,52 @@
  * always keeps the ellipsis, and the animation pauses while off-screen.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { Box, Typography } from '@mui/material';
-import type { TypographyProps } from '@mui/material';
+import type { CSSProperties, HTMLAttributes } from 'react';
 
-export interface MarqueeTextProps extends Omit<TypographyProps, 'children'> {
+import { cn } from '../utils/cn';
+
+/** MUI variants call sites still pass, and the tag/classes each one maps to. */
+type MarqueeVariant =
+  | 'h5'
+  | 'h6'
+  | 'subtitle1'
+  | 'subtitle2'
+  | 'body1'
+  | 'body2'
+  | 'caption'
+  | 'button';
+
+const VARIANT_TAG: Record<MarqueeVariant, 'h5' | 'h6' | 'p' | 'span'> = {
+  h5: 'h5',
+  h6: 'h6',
+  subtitle1: 'p',
+  subtitle2: 'p',
+  body1: 'p',
+  body2: 'p',
+  caption: 'span',
+  button: 'span',
+};
+
+const VARIANT_CLASS: Record<MarqueeVariant, string> = {
+  h5: 'm-0 text-2xl font-bold',
+  h6: 'm-0 text-xl font-bold leading-[1.6] tracking-[-0.01em]',
+  subtitle1: 'm-0 text-base font-semibold',
+  subtitle2: 'm-0 text-sm font-medium',
+  body1: 'm-0 text-base leading-[1.5]',
+  body2: 'm-0 text-sm leading-[1.43]',
+  caption: 'text-xs leading-[1.4]',
+  button: 'text-sm font-semibold',
+};
+
+export interface MarqueeTextProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
   /** The single-line string to show (and scroll when it does not fit). */
   text: string;
   /** Glide speed in CSS pixels per second. */
   speed?: number;
+  /** MUI `variant` — mapped through the table above (MUI default: body1). */
+  variant?: MarqueeVariant;
+  /** MUI `sx` — plain CSS values, merged into the inline style. */
+  sx?: CSSProperties;
 }
 
 /** A shorter cycle would flicker on barely-overflowing titles. */
@@ -27,13 +64,24 @@ const MIN_CYCLE_SEC = 4;
 /** Share of a cycle spent gliding — the rest is the two holds. */
 const GLIDE_SHARE = 0.84;
 
+/**
+ * MIGRATION: the `@keyframes` used to live in the component's `sx`;
+ * `styles.css` is off limits, so each instance ships them in a `<style>`
+ * child — identical rules, so the usual last-one-in-the-document wins.
+ */
+const MARQUEE_KEYFRAMES = `@keyframes marquee-glide {
+  0%, 8% { transform: translateX(0); }
+  92%, 100% { transform: translateX(calc(var(--marquee-shift) * -1)); }
+}`;
+
 export default function MarqueeText({
   text,
   speed = 45,
+  variant = 'body1',
   sx,
   ...typography
 }: MarqueeTextProps) {
-  const boxRef = useRef<HTMLElement | null>(null);
+  const boxRef = useRef<HTMLParagraphElement | null>(null);
   const copyRef = useRef<HTMLSpanElement | null>(null);
   // Width of one copy in px; 0 = fits (or nothing to scroll) → plain ellipsis.
   const [shift, setShift] = useState(0);
@@ -97,36 +145,31 @@ export default function MarqueeText({
       } as CSSProperties)
     : undefined;
 
+  const Tag = VARIANT_TAG[variant] as 'p';
+
   return (
-    <Typography
+    <Tag
       ref={boxRef}
-      noWrap
       {...typography}
-      sx={{
-        overflow: 'hidden',
+      className={cn(
+        VARIANT_CLASS[variant],
+        // MUI gave every Typography the interface font — tokens track it here.
+        'font-ui overflow-hidden whitespace-nowrap',
         // The glide renders both copies side by side — no ellipsis mid-scroll.
-        textOverflow: scrolling ? 'clip' : undefined,
-        ...sx,
-        '@keyframes marquee-glide': {
-          '0%, 8%': { transform: 'translateX(0)' },
-          '92%, 100%': { transform: 'translateX(calc(var(--marquee-shift) * -1))' },
-        },
-      }}
+        scrolling ? 'text-clip' : 'text-ellipsis',
+        typography.className,
+      )}
+      style={{ ...typography.style, ...sx }}
     >
-      <Box
-        component="span"
-        style={trackStyle}
-        sx={scrolling ? { display: 'inline-block' } : undefined}
-      >
-        <Box component="span" ref={copyRef}>
-          {text}
-        </Box>
+      <style>{MARQUEE_KEYFRAMES}</style>
+      <span className={scrolling ? 'inline-block' : undefined} style={trackStyle}>
+        <span ref={copyRef}>{text}</span>
         {scrolling && (
-          <Box component="span" aria-hidden="true" sx={{ display: 'inline-block' }}>
+          <span aria-hidden="true" className="inline-block">
             {text}
-          </Box>
+          </span>
         )}
-      </Box>
-    </Typography>
+      </span>
+    </Tag>
   );
 }

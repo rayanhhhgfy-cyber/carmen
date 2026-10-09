@@ -1,4 +1,4 @@
-import { CircularProgress, IconButton, Tooltip } from '@mui/material';
+import { IconButton, Tooltip } from './ui';
 
 import { CheckCircleIcon, DownloadIcon } from './icons';
 import { useFlag } from '../db/flags';
@@ -13,6 +13,10 @@ interface DownloadButtonProps {
   waitForCache?: () => Promise<void>;
   size?: 'small' | 'medium';
 }
+
+/** Ring geometry copied from MUI's `CircularProgress` (SIZE 44, thickness 3.6). */
+const RING_RADIUS = (44 - 3.6) / 2;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 /**
  * Download / progress control for a song.
@@ -43,22 +47,47 @@ export default function DownloadButton({
         ? (job.error ?? 'Download failed — tap to retry')
         : 'Download for offline listening';
 
+  const ringSize = size === 'small' ? 18 : 20;
+  const ringValue = Math.round((job?.progress ?? 0) * 100);
+
   return (
     <Tooltip title={label} placement="top">
       <span>
+        {/* MIGRATION: the kit has no `success` colour. `done` disables the
+            button anyway, so the old disabled-grey cascade matched the kit's
+            `disabled:` styling — `color` stays "default". */}
         <IconButton
           size={size}
           aria-label={label}
           disabled={running || done}
           onClick={() => startDownload(track, meta, { waitForCache })}
-          color={done ? 'success' : 'default'}
         >
           {running ? (
-            <CircularProgress
-              size={size === 'small' ? 18 : 20}
-              variant="determinate"
-              value={Math.round((job?.progress ?? 0) * 100)}
-            />
+            /* MIGRATION: the kit `Spinner` only spins — the determinate ring is
+                hand-drawn with MUI's exact geometry, accent colour and
+                dashoffset transition (it used to be `CircularProgress
+                variant="determinate"`). */
+            <svg
+              role="progressbar"
+              aria-valuenow={ringValue}
+              width={ringSize}
+              height={ringSize}
+              viewBox="22 22 44 44"
+              className="block text-accent"
+              style={{ transform: 'rotate(-90deg)' }}
+            >
+              <circle
+                cx={44}
+                cy={44}
+                r={RING_RADIUS}
+                fill="none"
+                strokeWidth={3.6}
+                stroke="currentColor"
+                strokeDasharray={RING_CIRCUMFERENCE.toFixed(3)}
+                strokeDashoffset={(((100 - ringValue) / 100) * RING_CIRCUMFERENCE).toFixed(3)}
+                style={{ transition: 'stroke-dashoffset 300ms cubic-bezier(0.4, 0, 0.2, 1)' }}
+              />
+            </svg>
           ) : done ? (
             <CheckCircleIcon fontSize={size} />
           ) : (

@@ -1,4 +1,4 @@
-import { Box, Skeleton, Stack, Typography } from '@mui/material';
+import { Shimmer } from './ui';
 import TrackList, { EmptyState } from './TrackList';
 import { usePlayer } from '../player/PlayerContext';
 
@@ -13,17 +13,17 @@ export default function RelatedTab() {
 
   if (loading) {
     return (
-      <Box sx={{ px: 2, py: 1 }}>
+      <div className="px-2 py-1">
         {[0, 1, 2, 3, 4].map((row) => (
-          <Stack key={row} direction="row" spacing={2} alignItems="center" sx={{ py: 1 }}>
-            <Skeleton variant="rounded" width={44} height={44} />
-            <Box sx={{ flex: 1 }}>
-              <Skeleton variant="text" width="70%" />
-              <Skeleton variant="text" width="40%" />
-            </Box>
-          </Stack>
+          <div key={row} className="flex flex-row items-center gap-4 py-2">
+            <Shimmer variant="rounded" width={44} height={44} />
+            <div className="flex-1">
+              <Shimmer width="70%" />
+              <Shimmer width="40%" />
+            </div>
+          </div>
         ))}
-      </Box>
+      </div>
     );
   }
 
@@ -32,11 +32,11 @@ export default function RelatedTab() {
   }
 
   return (
-    <Box sx={{ height: '100%', overflowY: 'auto', px: 1, py: 1 }}>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ px: 1, mb: 0.5 }}>
+    <div className="h-full overflow-y-auto px-1 py-1">
+      <p className="m-0 mb-1 px-1 text-sm font-medium text-muted">
         More like this — plays automatically when the queue ends
-      </Typography>
+      </p>
       <TrackList tracks={related} showDividers={false} />
-    </Box>
+    </div>
   );
 }

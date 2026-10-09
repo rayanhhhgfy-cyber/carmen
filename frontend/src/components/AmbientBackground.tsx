@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Box, alpha, useTheme } from '@mui/material';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { usePlayer } from '../player/PlayerContext';
+import { useTheme } from '../theme/ThemeContext';
 import { pickArtwork, primaryArtwork } from '../utils/track';
 import { extractColor, loadArtwork } from '../utils/artwork';
+import { alpha } from '../utils/color';
 
 /**
  * How long one cover washes out as the next washes in — inside the spec's
@@ -47,7 +48,7 @@ const LAYER_STYLE: CSSProperties = {
  */
 export default function AmbientBackground() {
   const player = usePlayer();
-  const theme = useTheme();
+  const { resolved } = useTheme();
   // `pickArtwork` takes any candidate shape; wrapping the thumbnail list in
   // `{ thumbnails }` keeps the same selection as passing the array itself.
   const artwork =
@@ -60,7 +61,7 @@ export default function AmbientBackground() {
   /** What the DOM is actually showing — guards double-resolves and races. */
   const paintedRef = useRef<string | null>(null);
   const [color, setColor] = useState<string | null>(null);
-  const dark = theme.palette.mode === 'dark';
+  const dark = resolved === 'dark';
   const washOpacity = dark ? 0.25 : 0.17;
 
   useEffect(() => {
@@ -99,14 +100,10 @@ export default function AmbientBackground() {
   const layers = wash ? (fading && fading !== wash ? [fading, wash] : [wash]) : fading ? [fading] : [];
 
   return (
-    <Box
+    <div
       aria-hidden
-      sx={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: -1,
-        overflow: 'hidden',
-        pointerEvents: 'none',
+      className="pointer-events-none fixed inset-0 z-[-1] overflow-hidden"
+      style={{
         opacity: wash || fading ? 1 : 0,
         // 1.2s: slow enough to read as the room changing color when a new
         // track starts, fast enough to feel tied to it (spec window: 1–1.5s)
@@ -127,25 +124,23 @@ export default function AmbientBackground() {
           />
         ))}
       </AnimatePresence>
-      <Box
-        sx={{
-          position: 'absolute',
-          inset: 0,
+      <div
+        className="absolute inset-0"
+        style={{
           // half the extracted cover colour as well — 50% artwork theme
-          bgcolor: color ? alpha(color, dark ? 0.08 : 0.06) : 'transparent',
+          backgroundColor: color ? alpha(color, dark ? 0.08 : 0.06) : 'transparent',
           // same 1.2s beat as the wash above, so both move as one
           transition: 'background-color 1200ms ease',
         }}
       />
-      <Box
-        sx={{
-          position: 'absolute',
-          inset: 0,
+      <div
+        className="absolute inset-0"
+        style={{
           background: dark
             ? 'linear-gradient(180deg, rgba(10,13,11,0.62) 0%, rgba(10,13,11,0.86) 55%, rgba(10,13,11,0.95) 100%)'
             : 'linear-gradient(180deg, rgba(246,247,246,0.7) 0%, rgba(246,247,246,0.88) 55%, rgba(246,247,246,0.95) 100%)',
         }}
       />
-    </Box>
+    </div>
   );
 }

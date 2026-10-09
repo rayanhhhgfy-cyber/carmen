@@ -1,10 +1,9 @@
-import { Box, Chip, Stack, Typography } from '@mui/material';
-import type { SxProps, Theme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
 import { useFlags } from '../db/flags';
 import { primaryArtwork } from '../utils/track';
 import Artwork from './Artwork';
+import { Chip } from './ui';
 import { DownloadIcon, HeartFilledIcon, PlayArrowIcon } from './icons';
 import MarqueeText from './MarqueeText';
 
@@ -38,7 +37,7 @@ export function resolveCard(item: unknown): CardAction | null {
     return { kind: 'artist', key: `artist-${record.browseId}` };
   }
   if (record.videoId) return { kind: 'song', key: `song-${String(record.videoId)}` };
-  if (record.browseId) return { kind: 'album', key: `album-${String(record.browseId)}` };
+  if (record.browseId) return { kind: 'album', key: `album-${record.browseId}` };
   return null;
 }
 
@@ -56,6 +55,12 @@ export interface MediaCardProps {
   songsContext?: unknown[] | null;
   width?: number | string;
 }
+
+/** MUI's default elevation shadows (this theme never overrides them). */
+const ELEVATION_1 =
+  '0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12)';
+const ELEVATION_3 =
+  '0px 3px 3px -2px rgba(0, 0, 0, 0.2), 0px 3px 4px 0px rgba(0, 0, 0, 0.14), 0px 1px 8px 0px rgba(0, 0, 0, 0.12)';
 
 export default function MediaCard({
   item,
@@ -119,94 +124,55 @@ export default function MediaCard({
   };
 
   const shape = card.kind === 'song' ? 'rounded' : 'circle';
-  const buttonSx: SxProps<Theme> = {
-    width: boxWidth as never,
-    flex: isFluid ? 'auto' : `0 0 ${boxWidth}`,
-    // Grid/flex children default to an automatic minimum of their
-    // min-content width — a nowrap title would inflate the card over its
-    // neighbours and defeat MarqueeText's overflow measurement.
-    minWidth: 0,
-    p: 0,
-    m: 0,
-    border: 'none',
-    background: 'none',
-    textAlign: 'left',
-    cursor: 'pointer',
-    scrollSnapAlign: 'start',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 1,
-    '&:hover .card-art': { transform: 'scale(1.04)' },
-    '&:hover .card-play': { opacity: 1, transform: 'translateY(0)' },
-  };
 
+  // Grid/flex children default to an automatic minimum of their min-content
+  // width — a nowrap title would inflate the card over its neighbours and
+  // defeat MarqueeText's overflow measurement (`min-w-0` keeps it honest).
   return (
-    <Box component="button" type="button" onClick={handleClick} sx={buttonSx}>
-      <Box sx={{ position: 'relative', width: '100%', aspectRatio: '1 / 1' }}>
+    <button
+      type="button"
+      onClick={handleClick}
+      className="m-0 flex min-w-0 cursor-pointer snap-start flex-col gap-2 border-none bg-transparent p-0 text-left font-ui hover:[&_.card-art]:[transform:scale(1.04)] hover:[&_.card-play]:translate-y-0 hover:[&_.card-play]:opacity-100"
+      style={{ width: boxWidth, flex: isFluid ? 'auto' : `0 0 ${boxWidth}` }}
+    >
+      <div className="relative aspect-square w-full">
         <Artwork
           className="card-art"
           src={artwork}
           alt=""
           iconSize={44}
-          sx={{
+          style={{
             position: 'absolute',
             inset: 0,
-            borderRadius: shape === 'circle' ? '50%' : 2,
+            borderRadius: shape === 'circle' ? '50%' : 28,
             transition: 'transform 220ms ease',
-            boxShadow: 1,
+            boxShadow: ELEVATION_1,
           }}
         />
         {(isDownloaded || isFavorite) && (
-          <Stack
-            direction="row"
-            spacing={0.5}
-            sx={{
-              position: 'absolute',
-              top: 6,
-              left: 6,
-              px: 0.75,
-              py: 0.25,
-              borderRadius: 999,
-              bgcolor: 'rgba(0,0,0,0.62)',
-              color: '#fff',
-              alignItems: 'center',
-            }}
-          >
+          <div className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-full bg-[rgba(0,0,0,0.62)] px-[6px] py-0.5 text-white">
             {isDownloaded && <DownloadIcon sx={{ fontSize: 13 }} />}
             {isFavorite && <HeartFilledIcon sx={{ fontSize: 13 }} />}
-          </Stack>
+          </div>
         )}
         {card.kind === 'song' && (
-          <Box
-            className="card-play"
-            sx={{
-              position: 'absolute',
-              right: 6,
-              bottom: 6,
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              display: 'grid',
-              placeItems: 'center',
-              bgcolor: 'primary.main',
-              color: 'primary.contrastText',
-              opacity: 0,
-              transform: 'translateY(6px)',
-              transition: 'all 200ms ease',
-              boxShadow: 3,
-            }}
+          <div
+            className="card-play absolute bottom-1.5 right-1.5 grid h-9 w-9 translate-y-1.5 place-items-center rounded-full bg-accent text-accent-fg opacity-0 transition-all duration-200 ease-[ease]"
+            style={{ boxShadow: ELEVATION_3 }}
           >
             <PlayArrowIcon />
-          </Box>
+          </div>
         )}
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
+      </div>
+      <div className="min-w-0">
         <MarqueeText text={title} variant="body2" sx={{ fontWeight: 600 }} />
-        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+        <span className="block truncate text-xs leading-[1.4] text-muted">
           {subtitle || (card.kind === 'song' ? 'Song' : card.kind)}
-        </Typography>
-      </Box>
-      {record.isExplicit === true && <Chip label="E" size="small" variant="outlined" sx={{ height: 18 }} />}
-    </Box>
+        </span>
+      </div>
+      {record.isExplicit === true && (
+        <Chip label="E" size="small" variant="outlined" style={{ height: 18 }} />
+      )}
+    </button>
   );
 }
