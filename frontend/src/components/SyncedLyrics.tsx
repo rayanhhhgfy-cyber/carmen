@@ -204,7 +204,12 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
     if (!element || suspendedRef.current) return;
     const delta = targetRef.current - element.scrollTop;
     if (Math.abs(delta) < FOLLOW_EPSILON) return;
-    const next = element.scrollTop + delta * FOLLOW_EASE;
+    const max = Math.max(0, element.scrollHeight - element.clientHeight);
+    const next = Math.min(element.scrollTop + delta * FOLLOW_EASE, max);
+    // A target past the box's end (a near-final line that cannot reach the
+    // centre) settles here — the browser would clamp the write and the
+    // mismatch would spin the loop forever.
+    if (Math.abs(next - element.scrollTop) < FOLLOW_EPSILON) return;
     authoredTopRef.current = next;
     element.scrollTop = next;
     rafRef.current = requestAnimationFrame(step);
@@ -238,7 +243,21 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
   const syncTo = useCallback(
     (timeMs: number) => {
       const idx = activeIndexAt(linesRef.current, Math.max(0, timeMs));
-      if (idx === activeIdxRef.current) return;
+      if (idx === activeIdxRef.current) {
+        // Index unchanged — but a glide may have been cancelled out from
+        // under us (StrictMode's second mount passes run after the cleanup).
+        // If no frame is pending and the view is not on target, re-arm.
+        const element = scrollerRef.current;
+        if (
+          !suspendedRef.current &&
+          rafRef.current === null &&
+          element &&
+          Math.abs(targetRef.current - element.scrollTop) > FOLLOW_EPSILON
+        ) {
+          glideToActive();
+        }
+        return;
+      }
       activeIdxRef.current = idx;
       setActiveIdx(idx); // the only render a line change costs
       if (!suspendedRef.current) glideToActive();
@@ -321,8 +340,19 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
 
   useEffect(
     () => () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-      if (resumeTimerRef.current !== null) window.clearTimeout(resumeTimerRef.current);
+      // Null the refs after cancelling: `rafRef non-null` must mean "a frame
+      // is pending", or `startGlide`'s guard refuses to schedule ever again.
+      // (StrictMode's mount/unmount pass runs this cleanup while the same
+      // instance is reused — a stale id here used to kill the follow for
+      // good, which is why opening lyrics mid-song never scrolled.)
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (resumeTimerRef.current !== null) {
+        window.clearTimeout(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
     },
     [],
   );
