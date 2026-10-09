@@ -1,3 +1,9 @@
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { localArtworkDataUrl } from "../../offline/source";
+import { DEFAULT_SETTINGS, getSettingsSnapshot, subscribeSettings } from "../../settings/store";
+import type { Track, TrackMeta } from "../../types/models";
+import { syncedLines } from "../../utils/lyrics";
+
 /**
  * System level playback — macOS Now Playing / Control Center, Windows media
  * controls, Android lock screens, iOS lock-screen artwork — through the Web
@@ -17,12 +23,7 @@
  * `lockScreenArtwork.ts` feeds a hidden `<video>` so iOS projects motion
  * artwork onto the lock screen — both without touching React state per tick.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import { localArtworkDataUrl } from '../../offline/source';
-import { DEFAULT_SETTINGS, getSettingsSnapshot, subscribeSettings } from '../../settings/store';
-import type { Track, TrackMeta } from '../../types/models';
-import { syncedLines } from '../../utils/lyrics';
 import {
   LYRIC_LINE_PREFIX,
   useLockScreenLyricTracker,
@@ -259,7 +260,7 @@ export function useMediaSession({
     const base = buildMetadata(current, meta, localCover);
     const line = lockLyricsEnabled ? lyricLineRef.current : null;
     media.metadata = new MediaMetadata(
-      line ? { ...base, artist: `${LYRIC_LINE_PREFIX} ${line}` } : base,
+      line ? { ...base, artist: LYRIC_LINE_PREFIX ? `${LYRIC_LINE_PREFIX} ${line}` : line, album: undefined } : base,
     );
   }, [media, current, meta, localCover, lockLyricsEnabled]);
 

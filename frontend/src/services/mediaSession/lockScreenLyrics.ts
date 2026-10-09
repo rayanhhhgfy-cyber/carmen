@@ -1,8 +1,12 @@
+import { useEffect, useRef } from "react";
+import type { LyricLine } from "../../types/models";
+import { activeLineIndexAt } from "../../utils/lyrics";
+
 /**
  * Lock-screen lyrics — mirrors the **currently sung line** into the OS media
- * widget by repainting `MediaMetadata.artist` as `💬 <line>`, so the lock
- * screen / Control Center / car display of every platform shows what is
- * playing right now while `metadata.title` keeps the real track name.
+ * widget by repainting `MediaMetadata.artist` with the line itself (the
+ * title keeps the real track name), so the lock screen / Control Center /
+ * car display of every platform shows what is playing right now.
  *
  * The contract that keeps this free:
  *
@@ -19,13 +23,14 @@
  * (`meta.lyrics.synced` from PlayerContext) — the mirror works whether or
  * not the sheet is open.
  */
-import { useEffect, useRef } from 'react';
 
-import type { LyricLine } from '../../types/models';
-import { activeLineIndexAt } from '../../utils/lyrics';
 
-/** How the line is prefixed on the widget's artist slot. */
-export const LYRIC_LINE_PREFIX = '💬';
+/**
+ * Optional decoration for the widget's artist slot. Empty by decision: the
+ * line reads best on its own — `publishMetadata` joins the prefix and the
+ * text only when a prefix is actually set, so no stray space is left.
+ */
+export const LYRIC_LINE_PREFIX = '';
 
 export interface LockScreenLyricTracker {
   /** `<audio>` whose playhead defines the active line. */

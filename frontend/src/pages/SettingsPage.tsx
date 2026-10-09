@@ -449,9 +449,9 @@ export default function SettingsPage() {
                 </p>
                 <span className="block text-xs leading-[1.4] text-muted">
                   Mirrors the currently sung line onto the lock screen,
-                  Control Center and car displays — 💬 in front of the line,
-                  while the track title stays where it belongs. Updates only
-                  when the line changes, never while it is being sung.
+                  Control Center and car displays — the track title stays
+                  where it belongs. Updates only when the line changes,
+                  never while it is being sung.
                 </span>
               </div>
               <Switch

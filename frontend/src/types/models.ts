@@ -172,10 +172,10 @@ export interface AppSettings {
   artworkBackground: boolean;
   /**
    * Lock-screen lyrics — mirrors the currently sung line into the OS media
-   * widget's `metadata.artist` (`💬 <line>`), so the lock screen / Control
-   * Center / car display shows what is playing right now. Updates fire
-   * only when the active synced line changes, never per playhead tick
-   * (see `services/mediaSession/lockScreenLyrics`).
+   * widget's `metadata.artist`, so the lock screen / Control Center / car
+   * display shows what is playing right now (the title keeps the track
+   * name). Updates fire only when the active synced line changes, never per
+   * playhead tick (see `services/mediaSession/lockScreenLyrics`).
    */
   lockScreenLyrics: boolean;
   /**
