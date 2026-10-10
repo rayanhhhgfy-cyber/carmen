@@ -12,14 +12,14 @@ Carmen is three cooperating pieces:
 
 | Piece | Location | Technology |
 |---|---|---|
-| Desktop / Android shell | `src-tauri/` | Tauri v2 (Rust), identifier `com.samma3ni.carmen` |
+| Desktop / Android shell | `src-tauri/` | Tauri v2 (Rust), identifier `com.z44d.carmen` |
 | App UI | `frontend/` | React 18 + TypeScript + Vite 6 + MUI |
 | Music backend | `server/` | FastAPI wrapping `ytmusicapi` + `yt-dlp` |
 
 ```text
         ┌──────────────────────────────────────────────────────────┐
         │  Tauri v2 shell — src-tauri/ (Rust)                      │
-        │  identifier: com.samma3ni.carmen                         │
+        │  identifier: com.z44d.carmen                         │
         │  · close-to-tray lifecycle + system tray (src/tray.rs)   │
         │  · commands: app_info, storage_paths, battery_status     │
         │  · plugins: fs · sql (SQLite) · opener · window-state    │
@@ -213,7 +213,7 @@ Details of what that does:
 - Equivalent explicit forms: `npm run tauri -- dev` or `npx tauri dev`
   (both from the repo root; the config is picked up automatically).
 - `src-tauri/tauri.conf.json` — the knobs that matter:
-  - `bundle.targets: "all"`, `identifier: com.samma3ni.carmen`
+  - `bundle.targets: "all"`, `identifier: com.z44d.carmen`
   - `beforeBuildCommand: npm run build:frontend`, `frontendDist: ../frontend/dist`
   - `app.security.assetProtocol.enable` + scope **`$APPDATA/**`** — the
     frontend can only stream assets from inside the app data dir
@@ -238,9 +238,9 @@ Details of what that does:
 
   | OS | Path |
   |---|---|
-  | Windows | `%APPDATA%\com.samma3ni.carmen\` |
-  | macOS | `~/Library/Application Support/com.samma3ni.carmen/` |
-  | Linux | `~/.local/share/com.samma3ni.carmen/` (or `$XDG_DATA_HOME/…`) |
+  | Windows | `%APPDATA%\com.z44d.carmen\` |
+  | macOS | `~/Library/Application Support/com.z44d.carmen/` |
+  | Linux | `~/.local/share/com.z44d.carmen/` (or `$XDG_DATA_HOME/…`) |
 
   Contents: `songs/` (one folder per downloaded track — `audio.<ext>`,
   `artwork.<ext>`, `lyrics.<lrc|txt>` and, when the album has one,
@@ -354,7 +354,7 @@ npm run android:init        # = tauri android init → creates src-tauri/gen/and
   ships a `.gitignore` that already excludes `keystore.properties` and
   `local.properties`).
 - Init reads the app name/identifier from `src-tauri/tauri.conf.json`
-  (`Carmen` / `com.samma3ni.carmen`).
+  (`Carmen` / `com.z44d.carmen`).
 
 **Signing key (Play Store upload key)**
 

@@ -614,12 +614,12 @@ cd app && npm test && npm run typecheck && git add -A && git commit -m "feat(the
        --skip-git-init --skip-install --pm npm --directory /tmp/carmen-init
   # copy android/ into app/, then reconcile:
   #  - settings.gradle rootProject.name → 'Carmen'   (matches app.json name)
-  #  - app/build.gradle: applicationId/namespace 'com.samma3ni.carmen'
-  #  - MainActivity/MainApplication package → com.samma3ni.carmen
+  #  - app/build.gradle: applicationId/namespace 'com.z44d.carmen'
+  #  - MainActivity/MainApplication package → com.z44d.carmen
   #  - gradle wrapper + AGP/Kotlin versions kept exactly as the template ships
   ```
 - [ ] **Step 2: Verify Android** — `cd app/android && ./gradlew assembleDebug` → `BUILD SUCCESSFUL` (SDK + JDK 17 present; first run downloads Gradle — run it in the background with a long timeout).
-- [ ] **Step 3: macOS shell** — `npm i -D react-native-macos@0.83.0` (or via `npx react-native-macos-init` which adds it) → generates `app/macos/`; reconcile project name `Carmen` + bundle id `com.samma3ni.carmen`. Verify: `npx react-native run-macos --mode Debug` if Xcode exists, else `pod install --project-directory=macos` + `xcodebuild -list` as a smoke test.
+- [ ] **Step 3: macOS shell** — `npm i -D react-native-macos@0.83.0` (or via `npx react-native-macos-init` which adds it) → generates `app/macos/`; reconcile project name `Carmen` + bundle id `com.z44d.carmen`. Verify: `npx react-native run-macos --mode Debug` if Xcode exists, else `pod install --project-directory=macos` + `xcodebuild -list` as a smoke test.
 - [ ] **Step 4: Windows shell** — `npx react-native-windows-init --overwrite --version 0.83.2` (adds the `react-native-windows` dep + `windows/`). If the init CLI refuses to run on a non-Windows host, record it and leave generation to `windows.yml`'s first CI run (the workflow already runs the same init) — do NOT fake the folder.
 - [ ] **Step 5: Scripts + commit**
   ```bash
