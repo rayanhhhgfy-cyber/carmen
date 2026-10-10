@@ -82,8 +82,9 @@ const TAB_CLASS = 'min-h-[50px] min-w-0 !font-semibold';
  *   (`min(1120px, 100vw − 64px)` × `min(760px, 100vh − 64px)`), split into
  *   two columns: the cover on the left, and
  *   info → scrubber → transport → lyrics / queue / related on the right.
- *   Both columns manage their own overflow, so nothing spills even when the
- *   window is short.
+ *   The sheet itself never scrolls on either axis — only the lyrics /
+ *   queue / related lists do, inside their own boxes — so a stray gesture
+ *   near the scrubber thumb can never move the page under the finger.
  *
  * Mounting is unchanged: `Layout` renders this once and the player
  * context's `sheetOpen` / `setSheetOpen` drive the open/close mechanics.
@@ -584,9 +585,14 @@ export default function PlayerSheet() {
 
   // ── Phone: main view (cover → hero info → scrubber → transport → bar) ──
   const mobileMain = (
-    // on a short screen the column scrolls instead of clipping; the
+    // the column never scrolls: a stray scroll or swipe while reaching for
+    // the scrubber thumb used to move the whole page under the finger.
+    // `overflow-y-auto` alone also computes `overflow-x` to `auto`, which
+    // is what let the sheet pan sideways — both axes are locked now. The
+    // layout is sized to fit (the cover caps itself at 44vh), so on a
+    // short screen the bottom simply clips instead of scrolling; the
     // bottom padding clears the home indicator where the OS reports one
-    <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-[max(env(safe-area-inset-bottom),1rem)] pt-1">
+    <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-[max(env(safe-area-inset-bottom),1rem)] pt-1">
       {artworkBox}
       {mobileTitleBlock}
       {errorAlert}
@@ -637,7 +643,10 @@ export default function PlayerSheet() {
       </div>
 
       {/* ── Right: info → scrubber → transport → panels ─────────────── */}
-      <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto pr-1">
+      {/* no scrolling on the column itself (neither axis): gestures aimed
+          at the scrubber thumb must never move the page. Only the
+          lyrics / queue / related lists scroll, inside their own boxes */}
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden pr-1">
         {titleBlock}
         {errorAlert}
         {scrubber}
