@@ -158,8 +158,8 @@ npm run dev:frontend        # = npm --prefix frontend run dev → vite
   1420 is the Tauri dev default and matches `devUrl` in
   `src-tauri/tauri.conf.json`.
 - **API base URL**: `frontend/src/api.ts` reads
-  `import.meta.env.VITE_API_BASE`, falling back to the hosted demo backend
-  (`http://23.95.128.182:7181`) when unset. For the local backend create
+  `import.meta.env.VITE_API_BASE`, falling back to the hosted backend
+  (`https://api-carmen-v1.syr.qzz.io`) when unset. For the local backend create
   `frontend/.env.development`:
   ```bash
   echo 'VITE_API_BASE=http://localhost:8000' > frontend/.env.development

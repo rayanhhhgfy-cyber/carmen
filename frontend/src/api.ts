@@ -4,7 +4,7 @@
 import { getSettingsSnapshot } from './settings/store';
 import type { LyricsProvider } from './types/models';
 
-const ENV_BASE = import.meta.env.VITE_API_BASE || 'http://23.95.128.182:7181';
+const ENV_BASE = import.meta.env.VITE_API_BASE || 'https://api-carmen-v1.syr.qzz.io';
 
 function trimBase(value: unknown): string {
   return String(value || '').replace(/\/+$/, '');
