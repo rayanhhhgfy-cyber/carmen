@@ -12,8 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pyrogram import Client
 
-from . import state
-from .core import init_ytm
+from . import debuglog, state
+from .core import AUDIO_CACHE_DIR, AUDIO_CACHE_LIMIT, init_ytm
 from .errors import EXPOSE_HEADERS, CatchAllErrors
 from .routes import router
 
@@ -26,6 +26,11 @@ TG_NAME = os.environ.get("TG_NAME", "ytmusic_cache")
 TG_API_ID = os.environ.get("API_ID")
 TG_API_HASH = os.environ.get("API_HASH")
 TG_BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+# DEBUG_LOGS=1 → colored root logger that shows every line the app logs
+# (uvicorn's default dictConfig leaves root at WARNING and drops them) —
+# no-op when the flag is unset, so normal output stays exactly as before.
+debuglog.configure()
 
 for key in ["NODE_CHANNEL_FD", "NODE_OPTIONS"]:
     os.environ.pop(key, None)
@@ -67,6 +72,37 @@ async def lifespan(app: FastAPI):
                 secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
                 out.write(f".youtube.com\tTRUE\t/\t{secure}\t0\t{name}\t{value}\n")
     print("Successfully created server/cookies.txt!")
+
+    if debuglog.enabled():
+        try:
+            await state.rds.ping()
+        except Exception:  # noqa: BLE001
+            redis_note = "unreachable — the cache falls back to uncached"
+        else:
+            redis_note = "ok · localhost:6379"
+        tg_note = (
+            f"ok · chat {CHAT_ID}"
+            if state.tg_client and CHAT_ID
+            else "client up · CHAT_ID unset — caching disabled"
+            if state.tg_client
+            else "not configured — songs stream without the TG cache"
+        )
+        debuglog.banner(
+            "carmen api · DEBUG_LOGS",
+            [
+                ("port", str(PORT)),
+                (
+                    "browser.json",
+                    f"ok · {BROWSER_PATH}"
+                    if BROWSER_PATH.is_file()
+                    else f"MISSING · {BROWSER_PATH}",
+                ),
+                ("redis", redis_note),
+                ("telegram", tg_note),
+                ("audio cache", f"{AUDIO_CACHE_DIR} · newest {AUDIO_CACHE_LIMIT} files"),
+                ("logging", "DEBUG · colored · one line per request"),
+            ],
+        )
 
     yield
 
@@ -110,11 +146,21 @@ app.add_middleware(
     expose_headers=EXPOSE_HEADERS,
 )
 
+# Debug: with DEBUG_LOGS=1 the per-request timer joins the stack last, so it
+# sits outside everything above (including CORS) and measures every completed
+# body — streaming responses included.  Never added otherwise.
+if debuglog.enabled():
+    app.add_middleware(debuglog.RequestTimer)
+
 app.include_router(router)
 
 
 async def main():
-    config = uvicorn.Config(app=app, host="0.0.0.0", port=PORT)
+    # With DEBUG_LOGS on, skip uvicorn's dictConfig so the root handler
+    # configured by debuglog.configure() keeps formatting every line
+    # (its own access line would duplicate RequestTimer).
+    options = {"log_config": None} if debuglog.enabled() else {}
+    config = uvicorn.Config(app=app, host="0.0.0.0", port=PORT, **options)
     server = uvicorn.Server(config)
 
     await server.serve()

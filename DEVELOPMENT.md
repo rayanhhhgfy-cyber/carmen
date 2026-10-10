@@ -126,6 +126,12 @@ sudo apt install redis-server && sudo systemctl start redis-server   # Linux
   - `BROWSER_PATH` — default `browser.json` (relative to the working directory)
   - Optional Telegram audio cache: `API_ID`, `API_HASH`, `BOT_TOKEN`, `TG_NAME`
     (skipped with a log line when unset)
+  - `DEBUG_LOGS=1` — verbose TUI logging: colored `HH:MM:SS.mss LVL logger │
+    message` lines for every request (method, path, status, total ms), every
+    cache hit/miss, which tier served each `/stream` (disk-cache / telegram /
+    relay / download) with per-step timings, TG uploads with size + duration,
+    and a startup banner with port / redis / telegram / cache state.  Off by
+    default; `NO_COLOR` keeps the lines but drops the ANSI colors.
 - **Docs**: interactive Swagger at `http://localhost:8000/docs`, ReDoc at `/redoc`.
 - **Startup side effects** (inside the FastAPI `lifespan`, never at import time):
   initializes the `YTMusic` client from `browser.json`, creates the Redis
