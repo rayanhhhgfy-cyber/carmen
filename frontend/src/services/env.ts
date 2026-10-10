@@ -4,7 +4,7 @@
  * `platform/env.ts` stays the single source of truth for the raw flags (it is
  * also the Tauri IPC bridge); this module is the `services/`-layer facade the
  * browser/PWA work reads from, extended with the Apple-mobile fact that the
- * lock-screen artwork pipeline needs. Nothing here allocates or listens —
+ * media-session widget needs. Nothing here allocates or listens —
  * every value is a module-load constant.
  */
 import { isDesktop, isTauri } from '../platform/env';
@@ -19,8 +19,9 @@ export const isBrowser: boolean = !isTauri;
  * `Macintosh` in its user agent and only tells the truth through
  * `maxTouchPoints`.
  *
- * This is the gate of everything iOS-lock-screen: the animated artwork
- * pipeline (`services/mediaSession/lockScreenArtwork`) runs nowhere else.
+ * This is the gate of the iOS-specific media-session behaviour: the lock
+ * screen keeps previous/next **track** buttons instead of the ±10s seek
+ * ones (`services/mediaSession`).
  */
 export const isIOS: boolean =
   typeof navigator !== 'undefined' &&

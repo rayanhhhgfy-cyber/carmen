@@ -13,19 +13,26 @@ import {
 import { apiGet, fetchTrackMeta, streamUrl } from '../api';
 import { loadPlayback } from '../db/repos/playback';
 import {
+  isDownloaded,
   localAssetSource,
+  localArtworkDataUrl,
   localBlobSource,
   localLyrics,
   type AudioSource,
 } from '../offline/source';
 import { emitTrayState, isTauri, onTrayAction } from '../platform/env';
 import { useSettings } from '../settings/store';
-import type { LyricsProvider, RepeatMode, Track, TrackMeta } from '../types/models';
+import type {
+  LyricsProvider,
+  RepeatMode,
+  Track,
+  TrackLyrics,
+  TrackMeta,
+} from '../types/models';
 import { addSuggestions, recordPlay } from '../utils/library';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
 import { useMediaSession } from '../services/mediaSession';
-import { useLockScreenArtwork } from '../services/mediaSession/lockScreenArtwork';
 import { useAdaptiveAccent } from '../theme/adaptiveAccent';
 
 /**
@@ -514,22 +521,63 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return payload;
     };
 
-    fetchTrackMeta(videoId, provider)
-      .then(async (payload) => {
-        if (cancelled) return;
-        setMeta(await mergeLocal(payload));
-      })
-      .catch(async () => {
-        // No network (or server down): fall back to what the download kept.
-        if (cancelled) return;
-        try {
-          const local = await localLyrics(videoId);
-          if (local) setMeta({ videoId, lyrics: local });
-        } catch {
-          /* metadata is optional, playback continues without it */
-        }
-      });
+    const fetchRemote = (): void => {
+      fetchTrackMeta(videoId, provider)
+        .then(async (payload) => {
+          if (cancelled) return;
+          setMeta(await mergeLocal(payload));
+        })
+        .catch(async () => {
+          // No network (or server down): fall back to what the download kept.
+          if (cancelled) return;
+          try {
+            const local = await localLyrics(videoId);
+            if (local) setMeta({ videoId, lyrics: local });
+          } catch {
+            /* metadata is optional, playback continues without it */
+          }
+        });
+    };
 
+    // A downloaded song already carries its own cover and lyrics: the
+    // payload is built straight from those and `/browsing/track` is never
+    // asked over the network. Only a download *without* a lyrics file falls
+    // back to the server — the one case where the network is the only place
+    // the lyrics are still left.
+    if (isDownloaded(videoId)) {
+      void (async () => {
+        let lyrics: TrackLyrics | null = null;
+        try {
+          lyrics = await localLyrics(videoId);
+        } catch {
+          /* read failure counts as "nothing stored" */
+        }
+        if (cancelled) return;
+        if (!lyrics) {
+          fetchRemote();
+          return;
+        }
+        let thumb: string | null = null;
+        try {
+          thumb = await localArtworkDataUrl(videoId);
+        } catch {
+          /* the lyrics alone already spare the round trip */
+        }
+        if (cancelled) return;
+        setMeta({
+          videoId,
+          title: current?.title,
+          album: current?.albumName,
+          thumbnails: thumb ? [{ url: thumb, width: 512, height: 512 }] : undefined,
+          lyrics,
+        });
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    fetchRemote();
     return () => {
       cancelled = true;
     };
@@ -572,22 +620,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     onNext: () => next(),
     onSeek: seek,
   });
-
-  // ── iOS lock-screen motion artwork (hidden video, Now Playing untouched)
-  // Stable per track so the hook's effect only ever re-runs on song change.
-  const motionRef = useMemo(
-    () =>
-      current
-        ? {
-            videoId: current.videoId,
-            album: current.albumName,
-            title: current.title,
-            artist: current.artist,
-          }
-        : null,
-    [current],
-  );
-  useLockScreenArtwork(motionRef, audioRef);
 
   // ── Local home library: recent plays + suggested songs ─────────────────
 

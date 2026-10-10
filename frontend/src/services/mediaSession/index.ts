@@ -6,8 +6,8 @@ import { syncedLines } from "../../utils/lyrics";
 
 /**
  * System level playback — macOS Now Playing / Control Center, Windows media
- * controls, Android lock screens, iOS lock-screen artwork — through the Web
- * Media Session API. One manager owns everything the OS is told about this
+ * controls, Android lock screens — through the Web Media Session API. One
+ * manager owns everything the OS is told about this
  * app's audio.
  *
  * The module is deliberately defensive: every entry point is feature
@@ -19,28 +19,35 @@ import { syncedLines } from "../../utils/lyrics";
  * widget keeps working with no network at all.
  *
  * Lock-screen lyrics (`lockScreenLyrics.ts`) additionally repaint
- * `metadata.artist` with the currently sung line, and the iOS-only
- * `lockScreenArtwork.ts` feeds a hidden `<video>` so iOS projects motion
- * artwork onto the lock screen — both without touching React state per tick.
+ * `metadata.artist` with the currently sung line — all without touching
+ * React state per tick.
  */
 
 import {
   LYRIC_LINE_PREFIX,
   useLockScreenLyricTracker,
 } from './lockScreenLyrics';
+import { isIOS } from '../env';
 
 const YTIMG = 'https://i.ytimg.com';
 
 /**
- * macOS maps `seekbackward` / `seekforward` to the widget's skip buttons and
- * labels them "5 seconds back / forward", replacing the ⏮ ⏭ track buttons.
- * Skipping those two registrations keeps previous/next track on the widget
+ * Actions whose *labels* decide what the lock screen / widget shows:
+ *
+ * - macOS maps `seekbackward` / `seekforward` to the widget's skip buttons
+ *   and labels them "5 seconds back / forward", replacing the ⏮ ⏭ track
+ *   buttons.
+ * - iOS / iPadOS does the same thing with "previous / next 10 seconds"
+ *   buttons whenever those two actions are handled.
+ *
+ * Skipping both registrations keeps previous/next **track** on the widget
  * there, while Android / Windows still get their native seek buttons.
  */
 const isMacOS = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || '');
+const keepsTrackButtons = isMacOS || isIOS;
 
 /** Actions the widget can send; unsupported ones are dropped one by one. */
-const ACTIONS: MediaSessionAction[] = isMacOS
+const ACTIONS: MediaSessionAction[] = keepsTrackButtons
   ? ['play', 'pause', 'previoustrack', 'nexttrack', 'seekto']
   : [
       'play',
