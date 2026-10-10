@@ -3,6 +3,7 @@ import functools
 import logging
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from yt_dlp.utils import DownloadError
 
-from .. import state
+from .. import debuglog, state
 from ..core import (
     AUDIO_CACHE_DIR,
     STREAM_CLIENTS,
@@ -86,6 +87,11 @@ def _chat_id() -> int | str:
         return CHAT_ID
 
 
+# Background "cache this play" tasks — one entry per video while a download
+# for it runs, so a burst of range requests cannot stack up yt-dlp passes.
+_play_ensures: set[str] = set()
+
+
 async def _get_tg_msg_id(vid_id: str) -> int | None:
     """Return the Telegram message ID for a cached audio, or None."""
     raw = await state.rds.hget("vids", vid_id)
@@ -96,8 +102,27 @@ async def _forget_tg_msg_id(vid_id: str) -> None:
     """Drop a stale `vids` entry so the normal path can re-upload later."""
     try:
         await state.rds.hdel("vids", vid_id)
+        await state.rds.hdel("vid_sizes", vid_id)
     except Exception as exc:  # noqa: BLE001
         log.debug("Could not forget Telegram mapping for %s: %s", vid_id, exc)
+
+
+async def _get_tg_size_record(vid_id: str) -> int | None:
+    """Byte count recorded when this audio was uploaded, if we know it."""
+    try:
+        raw = await state.rds.hget("vid_sizes", vid_id)
+        return int(raw) if raw else None
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Could not read the size record for %s: %s", vid_id, exc)
+        return None
+
+
+async def _set_tg_size_record(vid_id: str, size: int) -> None:
+    """Remember what Telegram holds so a later check can spot drift."""
+    try:
+        await state.rds.hset("vid_sizes", vid_id, size)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Could not record the size for %s: %s", vid_id, exc)
 
 
 async def _upload_to_tg(vid_id: str, path: str):
@@ -112,13 +137,26 @@ async def _upload_to_tg(vid_id: str, path: str):
 
     while True:
         try:
+            started = time.perf_counter()
             msg = await state.tg_client.send_document(
                 _chat_id(),
                 path,
                 file_name=Path(path).name,
             )
             await state.rds.hset("vids", vid_id, msg.id)
-            log.info("Uploaded %s to Telegram (msg %s)", vid_id, msg.id)
+            try:
+                size = Path(path).stat().st_size
+            except OSError:
+                size = 0
+            if size:
+                await _set_tg_size_record(vid_id, size)
+            log.info(
+                "Uploaded %s to Telegram (msg %s, %s, %s)",
+                vid_id,
+                msg.id,
+                debuglog.fmt_bytes(size),
+                debuglog.fmt_ms((time.perf_counter() - started) * 1000),
+            )
             break
         except Exception as exc:  # noqa: BLE001
             # FloodWaitError has a `value` attribute (seconds to wait)
@@ -131,21 +169,69 @@ async def _upload_to_tg(vid_id: str, path: str):
             break
 
 
+async def _tg_copy_matches(vid_id: str, msg_id: int, path: Path | str) -> bool | None:
+    """
+    Whether the mapped Telegram copy still matches the file on disk.
+
+    ``True`` when it is current, ``False`` when it must be replaced (the
+    byte counts differ — e.g. a doubled copy written by an old race), and
+    ``None`` when Telegram could not be asked right now, so the mapping is
+    left alone and checked again on the next play.
+    """
+    try:
+        local = Path(path).stat().st_size
+    except OSError:
+        return True  # nothing to compare against — leave the mapping alone
+    recorded = await _get_tg_size_record(vid_id)
+    if recorded is not None:
+        return recorded == local
+    # Legacy entry uploaded before sizes were recorded: ask Telegram once.
+    try:
+        message = await state.tg_client.get_messages(_chat_id(), msg_id)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Could not verify the Telegram copy of %s: %s", vid_id, exc)
+        return None
+    if message is None or getattr(message, "empty", False):
+        return False
+    document = getattr(message, "document", None)
+    remote = int(getattr(document, "file_size", 0) or 0)
+    if remote == local:
+        await _set_tg_size_record(vid_id, local)
+        return True
+    log.warning(
+        "Telegram copy of %s (msg %s) is %s but disk has %s — re-uploading",
+        vid_id,
+        msg_id,
+        debuglog.fmt_bytes(remote),
+        debuglog.fmt_bytes(local),
+    )
+    return False
+
+
 async def _ensure_tg_copy(vid_id: str, path: Path | str) -> None:
     """
-    Background: make sure the Telegram cache holds one copy of this audio.
+    Background: make sure the Telegram cache holds one good copy of this audio.
 
     Called wherever a complete file lands on disk (relay tee, full download,
-    a disk-cache copy that predates the Telegram cache).  No-ops without a
-    configured client, when a message id is already mapped, and while an
-    upload for the same id is still running — the `state.py` upload events
-    keep concurrent triggers from sending duplicates into the channel.
+    a disk-cache copy that predates the Telegram cache).  A mapping whose
+    recorded byte count equals the file on disk is left alone; a mapping
+    that drifted — a doubled copy from an old race, a message deleted behind
+    our back — is dropped and replaced with the disk file, so the channel
+    can never keep serving stale bytes.  No-ops without a configured client
+    and while an upload for the same id is still running — the `state.py`
+    upload events keep concurrent triggers from sending duplicates.
     """
     if not state.tg_client or not CHAT_ID:
         return
+    stale_msg_id: int | None = None
     try:
-        if await _get_tg_msg_id(vid_id):
-            return
+        msg_id = await _get_tg_msg_id(vid_id)
+        if msg_id:
+            match = await _tg_copy_matches(vid_id, msg_id, path)
+            if match is not False:
+                # True = verified current; None = Telegram unreachable now.
+                return
+            stale_msg_id = msg_id
         running = state.get_upload_event(vid_id)
         if running:
             await running.wait()
@@ -156,10 +242,70 @@ async def _ensure_tg_copy(vid_id: str, path: Path | str) -> None:
         log.warning("Telegram copy check failed for %s: %s", vid_id, exc)
         return
     try:
+        if stale_msg_id is not None:
+            try:
+                await state.tg_client.delete_messages(_chat_id(), stale_msg_id)
+                log.info(
+                    "Deleted the stale Telegram message for %s (msg %s)",
+                    vid_id,
+                    stale_msg_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # The re-upload below re-maps the id either way; the old
+                # bubble just lingers in the chat until someone prunes it.
+                log.warning(
+                    "Could not delete stale Telegram message %s for %s: %s",
+                    stale_msg_id,
+                    vid_id,
+                    exc,
+                )
         await _upload_to_tg(vid_id, str(path))
     finally:
         state.pop_upload_event(vid_id)
         event.set()
+
+
+async def _ensure_tg_copy_for_play(vid_id: str) -> None:
+    """
+    Background after a play that found no file on disk.
+
+    Songs used to reach the Telegram cache only when the player happened to
+    read a relayed response down to the very last byte — a song that was
+    skipped away was never cached at all.  This task closes that gap: it
+    brings the file down in the background (once per song) and hands it to
+    :func:`_ensure_tg_copy`, which uploads it or verifies the copy that is
+    already mapped.  The in-flight set deduplicates the range-request burst
+    a single play fires, and a mapped copy whose size was recorded at upload
+    time is trusted without touching the network.
+    """
+    if not state.tg_client or not CHAT_ID or vid_id in _play_ensures:
+        return
+    _play_ensures.add(vid_id)
+    try:
+        msg_id = await _get_tg_msg_id(vid_id)
+        if msg_id and await _get_tg_size_record(vid_id) is not None:
+            # Mapped and size-verified earlier — Telegram already has it.
+            return
+        path = find_cached_audio(vid_id)
+        if path is None:
+            loop = asyncio.get_running_loop()
+            try:
+                path = Path(
+                    await loop.run_in_executor(
+                        state.executor, functools.partial(download_audio, vid_id)
+                    )
+                )
+            except DurationLimitExceeded as exc:
+                log.debug("Not caching %s in the background: %s", vid_id, exc)
+                return
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Background caching failed for %s: %s", vid_id, exc)
+                return
+        await _ensure_tg_copy(vid_id, path)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Background Telegram caching failed for %s: %s", vid_id, exc)
+    finally:
+        _play_ensures.discard(vid_id)
 
 
 async def _tg_media_response(
@@ -168,11 +314,12 @@ async def _tg_media_response(
     """
     Serve the audio of a Telegram-cached message, range requests included.
 
-    Returns ``None`` only when the message is definitively gone (deleted,
-    or the channel no longer exposes it) — the caller then forgets the
-    mapping and falls back to the normal YouTube path.  Every other
-    failure raises, so a Telegram outage can be told apart from a stale
-    entry.
+    Returns ``None`` when the mapping is unusable — the message is gone, or
+    its byte count no longer matches the size recorded at upload time (a
+    doubled copy from an old race) — and forgets the mapping itself, so the
+    relay below serves good bytes and the background ensure re-uploads a
+    clean copy.  Every other failure raises, so a Telegram outage can be
+    told apart from a stale entry.
 
     The bytes stream straight from the channel in pyrogram's 1 MiB chunks;
     when the response covers the whole file the chunks are also mirrored
@@ -180,10 +327,29 @@ async def _tg_media_response(
     """
     message = await state.tg_client.get_messages(_chat_id(), msg_id)
     if message is None or getattr(message, "empty", False):
+        log.warning(
+            "Telegram message %s for %s is gone — forgetting it", msg_id, vid_id
+        )
+        await _forget_tg_msg_id(vid_id)
         return None
     document = getattr(message, "document", None)
     total = int(getattr(document, "file_size", 0) or 0)
     if document is None or total <= 0:
+        await _forget_tg_msg_id(vid_id)
+        return None
+
+    # A copy that no longer matches the byte count recorded when it was
+    # uploaded has drifted (an old race wrote a doubled file): drop the
+    # mapping rather than build the response from poisoned bytes.
+    recorded = await _get_tg_size_record(vid_id)
+    if recorded is not None and recorded != total:
+        log.warning(
+            "Telegram copy of %s is %s but %s were recorded — forgetting it",
+            vid_id,
+            debuglog.fmt_bytes(total),
+            debuglog.fmt_bytes(recorded),
+        )
+        await _forget_tg_msg_id(vid_id)
         return None
 
     # ── Range header (single range; anything else = full body) ──────────
@@ -268,7 +434,16 @@ async def _tg_media_response(
                     tee.close()
                 except OSError:
                     tee_ok = False
-                if tee_ok and written == total and tmp_path is not None:
+                if (
+                    tee_ok
+                    and written == total
+                    and tmp_path is not None
+                    # A background download may be racing for the same final
+                    # path — let it win instead of interleaving two writers
+                    # on one file.  (It converges: the audit either uploads
+                    # or verifies the copy either way.)
+                    and vid_id not in _play_ensures
+                ):
                     final = AUDIO_CACHE_DIR / f"{vid_id}.m4a"
                     try:
                         os.replace(tmp_path, final)
@@ -435,6 +610,14 @@ async def _proxy_audio(
     )
 
 
+def _size_detail(path: Path) -> str:
+    """``3.58 MiB`` for a tier log line — empty when the file cannot be statted."""
+    try:
+        return debuglog.fmt_bytes(path.stat().st_size)
+    except OSError:
+        return ""
+
+
 # ── Stream endpoint ─────────────────────────────────────────────────────────
 
 
@@ -496,6 +679,7 @@ async def stream_audio(
     complete file the server holds is uploaded in the background, so the
     ``vids`` hash converges over time.
     """
+    started = time.perf_counter()
     cached = find_cached_audio(vidId)
     if cached:
         try:
@@ -509,9 +693,19 @@ async def stream_audio(
             log.warning("Cached audio for %s disappeared before serving", vidId)
         else:
             # Older copies may predate the Telegram cache — fill it in the
-            # background without touching the response.
+            # background without touching the response.  This also verifies
+            # that an already-mapped copy still matches the file byte for
+            # byte, and re-uploads it when it does not.
             asyncio.create_task(_ensure_tg_copy(vidId, cached))
+            debuglog.tier(vidId, "disk-cache", started, _size_detail(cached), log)
             return response
+
+    # Every play counts: a song that is skipped away never completes a
+    # relay pass, so cache it in the background — downloads are deduped per
+    # video, and a mapped copy whose size was recorded is trusted without
+    # touching the network.  No-op without a configured Telegram client.
+    if state.tg_client and CHAT_ID:
+        asyncio.create_task(_ensure_tg_copy_for_play(vidId))
 
     # 2) Telegram channel — the `vids` hash maps this id to a message id
     if state.tg_client and CHAT_ID:
@@ -532,15 +726,12 @@ async def stream_audio(
                 )
             else:
                 if tg_response is not None:
+                    debuglog.tier(
+                        vidId, "telegram", started, f"msg {tg_msg_id}", log
+                    )
                     return tg_response
-                # Definitively gone — forget it so the normal path can
-                # re-download and re-upload on its next run.
-                log.warning(
-                    "Telegram message %s for %s is gone — forgetting it",
-                    tg_msg_id,
-                    vidId,
-                )
-                await _forget_tg_msg_id(vidId)
+                # Unusable mapping — `_tg_media_response` already forgot it;
+                # the relay below answers with the good bytes.
 
     loop = asyncio.get_running_loop()
     skip: set = set()
@@ -548,9 +739,10 @@ async def stream_audio(
     # 3) relay through the server
     while len(skip) <= len(STREAM_CLIENTS):
         try:
-            target = await loop.run_in_executor(
-                state.executor, functools.partial(resolve_stream_url, vidId, skip)
-            )
+            with debuglog.timed(f"resolve_stream_url {vidId}", log):
+                target = await loop.run_in_executor(
+                    state.executor, functools.partial(resolve_stream_url, vidId, skip)
+                )
         except DurationLimitExceeded as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
@@ -566,7 +758,11 @@ async def stream_audio(
             break
 
         try:
-            return await _proxy_audio(request, target, vidId)
+            response = await _proxy_audio(request, target, vidId)
+            debuglog.tier(
+                vidId, "relay", started, f"client {target.client or 'default'}", log
+            )
+            return response
         except _UpstreamRejected as exc:
             log.warning(
                 "CDN rejected the %s stream for %s: %s",
@@ -615,6 +811,8 @@ async def stream_audio(
             status_code=502,
             detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
+
+    debuglog.tier(vidId, "download", started, _size_detail(Path(path)), log)
 
     # Background: keep a Telegram copy of the freshly downloaded audio
     asyncio.create_task(_ensure_tg_copy(vidId, path))
