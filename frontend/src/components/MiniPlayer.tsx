@@ -21,7 +21,12 @@ export interface MiniPlayerProps {
  */
 function MiniProgress({ effectsEnabled }: { effectsEnabled: boolean }) {
   const { currentTime, duration, buffered: bufferedSecs } = usePlayhead();
-  const progress = duration ? (currentTime / duration) * 100 : 0;
+  // `duration` is metadata-preferred (see PlayerContext); clamp both rails so
+  // an untrustworthy container that plays past the true length can't overflow
+  // them.
+  const progress = duration
+    ? Math.min((currentTime / duration) * 100, 100)
+    : 0;
   const buffered = duration ? Math.min((bufferedSecs / duration) * 100, 100) : 0;
 
   return (

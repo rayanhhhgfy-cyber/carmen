@@ -216,7 +216,7 @@ Downloads live in the app's own data directory (identifier
 songs/<videoId>/
 ├── audio.m4a        # the stream, stored verbatim
 ├── artwork.jpg      # best available cover (maxresdefault when it exists)
-├── lyrics.lrc       # synced lyrics when the song has them
+├── track.json       # /browsing/track payload: lyrics + duration_seconds
 └── motion.mp4       # animated cover, when the album has one
 ```
 

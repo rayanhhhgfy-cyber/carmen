@@ -1,6 +1,6 @@
 /**
  * `downloads` — the offline catalogue: which songs live on disk, where their
- * audio / artwork / lyrics files are, and when they were downloaded.
+ * audio / artwork / `track.json` files are, and when they were downloaded.
  *
  * Only raw, unconverted files are recorded (see `offline/downloads.ts`).
  */
@@ -9,7 +9,6 @@ import {
   allDownloadRecords as allDownloadRows,
   deleteDownloadRecord,
   getDownloadRecord,
-  patchDownloadLyricsRecord,
   putDownloadRecord,
   putTrackRecord,
   type DownloadRow,
@@ -204,23 +203,6 @@ export async function deleteDownloadRow(videoId: string): Promise<void> {
   }
   const db = await getDb();
   await db.execute('DELETE FROM downloads WHERE video_id = $1', [videoId]);
-}
-
-/** Updates the lyrics file of an existing download. */
-export async function updateLyricsPath(
-  videoId: string,
-  lyricsPath: string | null,
-  lyricsSynced: boolean,
-): Promise<void> {
-  if (usingFallback) {
-    await patchDownloadLyricsRecord(videoId, lyricsPath, lyricsSynced);
-    return;
-  }
-  const db = await getDb();
-  await db.execute(
-    'UPDATE downloads SET lyrics_path = $1, lyrics_synced = $2 WHERE video_id = $3',
-    [lyricsPath, lyricsSynced ? 1 : 0, videoId],
-  );
 }
 
 /** Downloaded video ids — hydrated once at boot for synchronous lookups. */

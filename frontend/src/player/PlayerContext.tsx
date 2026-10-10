@@ -143,7 +143,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  // What the `<audio>` element reports for the container — untrustworthy on
+  // its own (a fragmented or corrupted m4a can claim a doubled length), so it
+  // is only the last-resort fallback for the exposed duration below.
+  const [elementDuration, setElementDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
 
   const [shuffle, setShuffle] = useState(false);
@@ -316,7 +319,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setMeta(null);
       positionRef.current = 0;
       setCurrentTime(0);
-      setDuration(0);
+      setElementDuration(0);
       resumeRef.current = null;
       setCurrent(track);
       if (options.openSheet) setSheetOpen(true);
@@ -422,7 +425,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setMeta(null);
     positionRef.current = 0;
     setCurrentTime(0);
-    setDuration(0);
+    setElementDuration(0);
     resumeRef.current = null;
     setCurrent(last!);
   }, [history, seek]);
@@ -856,6 +859,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  /**
+   * The song's *real* length, sourced from metadata — never from the bytes on
+   * the wire. `/browsing/track`'s `duration_seconds` is authoritative: the m4a
+   * served by `/stream` may carry no duration tag at all, or a corrupted /
+   * doubled container that claims far more than the true length. The audio
+   * element's own duration is the last-resort fallback only.
+   */
+  const duration =
+    current?.durationSeconds || meta?.duration_seconds || elementDuration || 0;
+
   /** The per-tick position value, kept apart from the stable one above. */
   const playhead = useMemo<PlayheadContextValue>(
     () => ({ currentTime, duration, buffered }),
@@ -885,7 +898,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }}
         onLoadedMetadata={(event) => {
           const element = event.currentTarget;
-          setDuration(element.duration || 0);
+          setElementDuration(element.duration || 0);
           // Restore the saved playhead exactly once per restored session.
           if (resumeRef.current !== null && Number.isFinite(element.duration)) {
             const target = Math.min(
@@ -899,7 +912,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           }
           syncBuffered();
         }}
-        onDurationChange={(event) => setDuration(event.currentTarget.duration || 0)}
+        onDurationChange={(event) =>
+          setElementDuration(event.currentTarget.duration || 0)
+        }
         onEnded={handleEnded}
         onError={() => void handleError()}
       />

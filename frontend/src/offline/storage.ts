@@ -7,7 +7,7 @@
  * Layout:
  *   <app data>/songs/<videoId>/audio.<m4a|webm|ogg|mp3>
  *   <app data>/songs/<videoId>/artwork.<jpg|webp|png>
- *   <app data>/songs/<videoId>/lyrics.<lrc|txt>
+ *   <app data>/songs/<videoId>/track.json   (full /browsing/track payload: lyrics + duration)
  *   <app data>/songs/<videoId>/motion.mp4   (animated cover, when there is one)
  *   <app data>/motion/<key>.mp4     (animated covers of streamed albums)
  *   <app data>/artwork/…            (spare covers for OS media controls)
@@ -76,6 +76,17 @@ export async function songFolder(videoId: string): Promise<string | null> {
   const folder = `${base}/${videoId}`;
   await mkdir(folder, { recursive: true }).catch(() => {});
   return folder;
+}
+
+/**
+ * `songs/<videoId>` **without creating it** — for read-only probes (e.g. is
+ * there a `track.json`?) where `songFolder`'s on-demand `mkdir` would litter
+ * empty folders for songs that were never downloaded.
+ */
+export async function songFolderPath(videoId: string): Promise<string | null> {
+  if (!isTauri) return `songs/${videoId}`;
+  const base = await songsDir();
+  return base ? `${base}/${videoId}` : null;
 }
 
 export async function fileExists(path: string): Promise<boolean> {

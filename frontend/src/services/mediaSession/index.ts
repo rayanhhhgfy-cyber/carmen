@@ -380,6 +380,11 @@ export function useMediaSession({
   }, [media, audioRef]);
 
   // ── 4. Position state ───────────────────────────────────────────────────
+  // Same metadata-preferred duration as the player (see PlayerContext): the
+  // element's own number is only the fallback, never the source of truth.
+  // Hoisted to function scope so the effect's dependency array can see it.
+  const trustedDuration = current?.durationSeconds || meta?.duration_seconds || 0;
+
   useEffect(() => {
     const audio = audioOf(audioRef);
     if (!media || !audio || typeof media.setPositionState !== 'function') return undefined;
@@ -406,7 +411,11 @@ export function useMediaSession({
       }
       const element = audioOf(audioRef);
       if (!element) return;
-      const duration = element.duration;
+      const duration =
+        trustedDuration ||
+        (Number.isFinite(element.duration) && element.duration > 0
+          ? element.duration
+          : NaN);
       if (!Number.isFinite(duration) || duration <= 0) {
         clear();
         return;
@@ -445,7 +454,7 @@ export function useMediaSession({
         /* ignore */
       }
     };
-  }, [media, audioRef, videoId]);
+  }, [media, audioRef, videoId, trustedDuration]);
 
   // ── 5. Teardown ─────────────────────────────────────────────────────────
   useEffect(

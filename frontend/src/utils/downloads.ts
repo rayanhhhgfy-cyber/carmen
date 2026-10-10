@@ -3,11 +3,17 @@
  *
  * There is no conversion and no tagging step anymore: the bytes that come out
  * of `/stream` are stored verbatim as `audio.<ext>` next to the high-res
- * cover (`artwork.<ext>`), the lyrics (`lyrics.lrc` / `lyrics.txt`) and the
- * animated cover (`motion.mp4`, when the album has one) inside the app
- * sandbox, and the SQLite row is written afterwards.
+ * cover (`artwork.<ext>`), the full `/browsing/track/{id}` payload
+ * (`track.json` — the single source of truth for lyrics *and*
+ * `duration_seconds`) and the animated cover (`motion.mp4`, when the album
+ * has one) inside the app sandbox, and the SQLite row is written afterwards.
  *
- *   <app data>/songs/<videoId>/{audio.m4a, artwork.jpg, lyrics.lrc, motion.mp4}
+ *   <app data>/songs/<videoId>/{audio.m4a, artwork.jpg, track.json, motion.mp4}
+ *
+ * No standalone `lyrics.lrc` / `lyrics.txt` is written anymore — the lyrics
+ * ride along inside `track.json` (see `localLyrics`). The audio file itself is
+ * never trusted for its duration (fragmented / corrupted m4a can claim a
+ * doubled length): `duration_seconds` from the payload is the authority.
  *
  * ffmpeg / MP3 / ID3 are deliberately gone — see DEVELOPMENT.md.
  */
@@ -18,7 +24,6 @@ import {
   getDownload,
   insertDownload,
   listDownloads,
-  updateLyricsPath,
 } from '../db/repos/downloads';
 import { upsertTrack } from '../db/repos/tracks';
 import { deleteSongFolder, songFolder, writeBinary, writeText } from '../offline/storage';
@@ -30,7 +35,7 @@ import {
   markRemoved,
 } from '../offline/source';
 import type { Track, TrackMeta } from '../types/models';
-import { plainLyrics, syncedLines, toLrc } from './lyrics';
+import { plainLyrics, syncedLines } from './lyrics';
 import { cdnArtwork, pickArtwork } from './track';
 
 // ── Observable download store ───────────────────────────────────────────────
@@ -267,6 +272,23 @@ function withAlbumFrom(track: Track, meta: TrackMeta | null): Track {
   return { ...track, albumName: name, album: { name, id } };
 }
 
+/**
+ * Sets the duration of a track from its `/browsing/track/{id}` payload.
+ *
+ * The m4a on disk is never the source of truth for length (a fragmented or
+ * corrupted container can claim a doubled duration), so the payload's
+ * `duration_seconds` is written into the SQLite row and is what the player
+ * shows — online *and* offline. When the payload carries one it wins over
+ * whatever a search result or queue entry already held.
+ */
+function withDurationFrom(track: Track, meta: TrackMeta | null): Track {
+  const seconds = meta?.duration_seconds;
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) {
+    return track;
+  }
+  return { ...track, durationSeconds: seconds, duration: track.duration ?? null };
+}
+
 function isRunning(videoId: string): boolean {
   const job = store.jobs[videoId];
   return Boolean(job && (job.status === 'running' || job.status === 'done'));
@@ -341,36 +363,34 @@ export function startDownload(
     }
     patchJob(videoId, { progress: 0.8 });
 
-    // 4 — synced lyrics (.lrc) or plain text (.txt)
-    patchJob(videoId, { step: 'Fetching lyrics', progress: 0.82 });
-    let lyricsPath: string | null = null;
-    let lyricsSynced = false;
+    // 4 — the full `/browsing/track/{id}` payload → `track.json`.
+    // This is the single offline source of truth: it carries the lyrics (so
+    // no separate .lrc/.txt is written) *and* the authoritative
+    // `duration_seconds`, which the audio file itself can never be trusted
+    // for (fragmented / corrupted m4a claims a doubled length).
+    patchJob(videoId, { step: 'Fetching track data', progress: 0.82 });
     let enriched = meta;
     try {
       let payload = meta;
-      if (!payload?.lyrics?.synced && !payload?.lyrics?.unsynced) {
+      // Re-fetch whenever the passed meta is missing either the lyrics or the
+      // duration — `track.json` must be complete on its own.
+      if (
+        (!payload?.lyrics?.synced && !payload?.lyrics?.unsynced) ||
+        typeof payload?.duration_seconds !== 'number'
+      ) {
         payload = await apiGet(`/browsing/track/${videoId}`);
       }
       enriched = payload;
-      const synced = syncedLines(payload);
-      const plain = plainLyrics(payload);
-      if (synced) {
-        lyricsPath = `${folder}/lyrics.lrc`;
-        await writeText(lyricsPath, `${toLrc(synced)}\n`);
-        lyricsSynced = true;
-      } else if (plain) {
-        lyricsPath = `${folder}/lyrics.txt`;
-        await writeText(lyricsPath, `${plain}\n`);
-      }
+      await writeText(`${folder}/track.json`, JSON.stringify(payload));
     } catch {
-      /* lyrics are best effort */
+      /* track.json is best effort — the song still plays without it */
     }
 
     // 4b — animated cover (Apple motion artwork), when the album has one.
-    // Best effort, like the cover and the lyrics: the catalogue may be slow
+    // Best effort, like the cover and track.json: the catalogue may be slow
     // or unreachable, but a song already on disk must still finish saving.
     patchJob(videoId, { step: 'Fetching animated cover', progress: 0.87 });
-    const savedTrack = withAlbumFrom(track, enriched);
+    const savedTrack = withDurationFrom(withAlbumFrom(track, enriched), enriched);
     try {
       const motionRef = {
         album: savedTrack.albumName,
@@ -395,11 +415,20 @@ export function startDownload(
       track: savedTrack,
       audioPath,
       artworkPath,
-      lyricsPath,
-      lyricsSynced,
+      // No standalone lyrics file anymore — `track.json` carries the lyrics,
+      // so the legacy columns stay null for new downloads.
+      lyricsPath: null,
+      lyricsSynced: false,
       bytes: audioBytes.byteLength,
     });
-    markDownloaded({ videoId, audioPath, artworkPath, lyricsPath, lyricsSynced, downloadedAt: Date.now() });
+    markDownloaded({
+      videoId,
+      audioPath,
+      artworkPath,
+      lyricsPath: null,
+      lyricsSynced: false,
+      downloadedAt: Date.now(),
+    });
     setFlag('downloaded', videoId, true);
 
     patchJob(videoId, { status: 'done', step: 'Saved', progress: 1 });
@@ -421,13 +450,11 @@ export function startDownload(
 }
 
 /**
- * Stores the lyrics of a track next to its audio.
+ * Stores the track metadata of a song next to its (potential) audio — the
+ * same `track.json` the download pipeline writes, so lyrics saved this way
+ * are read back by `localLyrics` exactly like a full download's.
  *
- * Timestamped lyrics are written as **`.lrc`** — the `[mm:ss.cc]` dialect the
- * lyrics panel renders — while a song that only came back with plain text is
- * stored as `.txt`.
- *
- * @returns the file name, or `null` when there is nothing to save
+ * @returns the file name, or `null` when the payload is unusable
  */
 export async function downloadLyrics(track: Track, meta: TrackMeta | null): Promise<string | null> {
   const synced = syncedLines(meta);
@@ -437,18 +464,13 @@ export async function downloadLyrics(track: Track, meta: TrackMeta | null): Prom
   const folder = await songFolder(track.videoId);
   if (!folder) return null;
 
-  const fileName = synced ? 'lyrics.lrc' : 'lyrics.txt';
-  const path = `${folder}/${fileName}`;
-  await writeText(path, synced ? `${toLrc(synced)}\n` : `${plain}\n`);
+  // The lyrics panel reads `track.json`; persist the payload verbatim so the
+  // offline copy matches what `/browsing/track` would return.
+  const path = `${folder}/track.json`;
+  await writeText(path, JSON.stringify(meta));
 
-  try {
-    await updateLyricsPath(track.videoId, path, Boolean(synced));
-  } catch {
-    /* the file is on disk either way */
-  }
-
-  setNotice('success', `Saved "${fileName}" for "${track.title}"`);
-  return fileName;
+  setNotice('success', `Saved "track.json" for "${track.title}"`);
+  return 'track.json';
 }
 
 /** Removes a song's folder and its row (Library → Songs, long-press/menu). */

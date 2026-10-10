@@ -241,9 +241,10 @@ Details of what that does:
   | Linux | `~/.local/share/com.z44d.carmen/` (or `$XDG_DATA_HOME/…`) |
 
   Contents: `songs/` (one folder per downloaded track — `audio.<ext>`,
-  `artwork.<ext>`, `lyrics.<lrc|txt>` and, when the album has one,
-  `motion.mp4`), `motion/` (the animated-cover disk cache for streamed
-  albums), `artwork/` (cover art cache for OS media controls), `carmen.db`
+  `artwork.<ext>`, `track.json` (the `/browsing/track` payload: lyrics +
+  `duration_seconds`) and, when the album has one, `motion.mp4`), `motion/`
+  (the animated-cover disk cache for streamed albums), `artwork/`
+  (cover art cache for OS media controls), `carmen.db`
   (SQLite, managed by `tauri-plugin-sql`). The frontend never hardcodes these
   — it calls `storage_paths` once at boot.
 

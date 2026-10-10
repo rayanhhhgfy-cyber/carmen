@@ -286,17 +286,3 @@ export async function deleteDownloadRecord(videoId: string): Promise<void> {
     /* already gone */
   }
 }
-
-export async function patchDownloadLyricsRecord(
-  videoId: string,
-  lyricsPath: string | null,
-  lyricsSynced: boolean,
-): Promise<void> {
-  const db = await openStore();
-  if (!db) return;
-  try {
-    await db.downloads.update(videoId, { lyricsPath, lyricsSynced });
-  } catch {
-    /* record gone — nothing to patch */
-  }
-}

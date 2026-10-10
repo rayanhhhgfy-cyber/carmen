@@ -13,9 +13,9 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 
 import { allDownloadRecords, type DownloadRecord } from '../db/repos/downloads';
 import { isTauri } from '../platform/env';
-import type { TrackLyrics } from '../types/models';
-import { parseLrc } from '../utils/lyrics';
-import { readBinary, readText, toBase64 } from './storage';
+import type { TrackLyrics, TrackMeta } from '../types/models';
+import { parseLrc, plainLyrics, syncedLines } from '../utils/lyrics';
+import { readBinary, readText, songFolderPath, toBase64 } from './storage';
 
 const records = new Map<string, DownloadRecord>();
 let hydrated = false;
@@ -155,10 +155,37 @@ export function invalidateLocalCaches(videoId: string): void {
 /**
  * Lyrics of a downloaded song, read straight from disk.
  *
- * This is what makes the lyrics panel work with no network at all: the
- * `.lrc` written at download time is parsed back into timed lines.
+ * New downloads keep the whole `/browsing/track/{id}` payload as `track.json`,
+ * so the lyrics (and the authoritative `duration_seconds`) live there — no
+ * separate `.lrc` file is written anymore. Older downloads that still have a
+ * `lyrics.lrc` / `lyrics.txt` keep working through the fallback below.
+ *
+ * This is what makes the lyrics panel work with no network at all.
  */
 export async function localLyrics(videoId: string): Promise<TrackLyrics | null> {
+  // Preferred: the `track.json` saved next to the audio (a full TrackMeta).
+  const folder = await songFolderPath(videoId);
+  if (folder) {
+    const raw = await readText(`${folder}/track.json`);
+    if (raw) {
+      try {
+        const payload = JSON.parse(raw) as TrackMeta | null;
+        const synced = syncedLines(payload);
+        const plain = plainLyrics(payload);
+        if (synced || plain) {
+          return {
+            synced: synced ?? null,
+            unsynced: plain ?? synced?.map((line) => line.text).join('\n') ?? null,
+            source: payload?.lyrics?.source ?? 'Local file',
+          };
+        }
+      } catch {
+        /* unreadable / not JSON — fall through to the legacy lyrics file */
+      }
+    }
+  }
+
+  // Legacy: a standalone `.lrc` / `.txt` written by an older version.
   const record = getLocalRecord(videoId);
   if (!record?.lyricsPath) return null;
   const text = await readText(record.lyricsPath);

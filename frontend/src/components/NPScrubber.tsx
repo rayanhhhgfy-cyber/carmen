@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 
 import { ProgressBar } from '../components/ui';
 import { useEffectsEnabled } from '../settings/store';
-import { usePlayhead, usePlayer } from '../player/PlayerContext';
+import { usePlayhead } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import { alpha } from '../utils/color';
 import { cn } from '../utils/cn';
@@ -38,11 +38,10 @@ const STEP = 0.5;
 export default function NPScrubber({ onSeek }: NPScrubberProps) {
   // The playhead lives in its own context (`usePlayhead`), so these
   // per-tick updates repaint just this bar — never the whole player.
-  const { currentTime, duration: audioDuration, buffered } = usePlayhead();
-  // Until the audio reports its own length (metadata lands in
-  // milliseconds), fall back to what the track metadata already knows.
-  const { current } = usePlayer();
-  const duration = audioDuration || current?.durationSeconds || 0;
+  // `duration` is already metadata-preferred (see PlayerContext): it trusts
+  // `/browsing/track`'s `duration_seconds`, not the possibly-untrustworthy
+  // duration the audio element parses out of the m4a container.
+  const { currentTime, duration, buffered } = usePlayhead();
   const [scrub, setScrub] = useState<number | null>(null);
   // The glowing accent track is a painted effect — flat while high
   // performance mode is on.
