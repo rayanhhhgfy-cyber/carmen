@@ -65,7 +65,7 @@ server is optional in dev — the client boots against the public demo API and
 you can point it anywhere from *Settings → Server URL*.
 
 ```bash
-git clone https://github.com/z44d/Samma3ni.git && cd Samma3ni
+git clone https://github.com/z44d/carmen.git && cd carmen
 npm install
 
 npm run dev           # desktop app (Tauri dev, hot reload)
@@ -87,12 +87,13 @@ Three independent pieces — deploy any subset.
 
 ### 1 · The server
 
-**Requirements:** Python 3.11, Redis, [Bun ≤ 1.3.14](https://bun.com)
-(stream-signature decryption runs through it — newer Bun is rejected by
-yt-dlp/ytmusicapi), and a `browser.json` holding live YouTube Music cookies.
+**Requirements:** Python 3.11, Redis,
+[Deno](https://docs.deno.com) (yt-dlp decrypts stream-URL signatures through
+a JS runtime and the server selects Deno — `js_runtimes` in
+`server/core.py`), and a `browser.json` holding live YouTube Music cookies.
 
 ```bash
-git clone https://github.com/z44d/Samma3ni.git /opt/carmen && cd /opt/carmen
+git clone https://github.com/z44d/carmen.git /opt/carmen && cd /opt/carmen
 python3.11 -m venv venv
 ./venv/bin/pip install -r server/requirements.txt
 ```
@@ -159,17 +160,29 @@ VITE_API_BASE=https://api.carmen.example.com npm run build   # → dist/
 ```
 
 Ship `dist/` on any static host — nginx, Caddy, Cloudflare Pages, GitHub
-Pages. Two rules:
+Pages. For nginx the repo ships a ready-made vhost,
+[`deploy/nginx.conf`](deploy/nginx.conf), that serves the build on
+**port 5432** with the caching rules baked in (`index.html` revalidated,
+content-hashed `/assets/*` kept forever). To start it:
 
-- `index.html` → no cache; `/assets/*` (content-hashed) → cache forever:
+```bash
+sudo mkdir -p /var/www/carmen
+sudo cp -r frontend/dist/. /var/www/carmen/
+sudo cp deploy/nginx.conf /etc/nginx/conf.d/carmen.conf
 
-  ```nginx
-  location /assets/ { expires 1y; add_header Cache-Control "public, immutable"; }
-  location = /index.html { add_header Cache-Control "no-cache"; }
-  ```
+sudo nginx -t                        # config sanity check
+sudo systemctl enable --now nginx    # first start (already running? reload)
+```
 
+Then open `http://<host>:5432`.
+
+The same two rules apply wherever else you host it:
+
+- `index.html` → no cache; `/assets/*` (content-hashed) → cache forever.
 - **HTTPS is required** on iOS for *Add to Home Screen* (the app runs
-  full-screen standalone) and for the browser's persistent storage.
+  full-screen standalone) and for the browser's persistent storage — the
+  shipped config is plain HTTP on 5432, so put a TLS terminator in front
+  for home-screen installs.
 
 CORS is already open on the API (`*`), so any origin works. Users can still
 repoint the app at another server from *Settings → Server URL* — it overrides
@@ -209,8 +222,9 @@ songs/<videoId>/
 
 ## 🧠 Worth knowing
 
-- **Bun must stay ≤ 1.3.14** — the audio pipeline shells out to Bun for
-  signature decryption and newer versions are rejected upstream.
+- **Deno powers stream decryption** — yt-dlp runs the player's signature
+  script through a JS runtime; the server configures Deno (`js_runtimes` in
+  `server/core.py`), so it must be on the server's PATH.
 - **No stream URLs ever leave the API** — responses are sanitized
   (tracking tokens stripped) and audio is proxied, Range-aware, through
   `/stream`.

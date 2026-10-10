@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project overview
-FastAPI backend (`server/`) wrapping `ytmusicapi` to expose YouTube Music endpoints (browsing, search, watch, playlists, podcasts). Despite `package.json`/`README.md` being leftover from `bun init`, there is **no TS app and no `index.ts`** — ignore `bun run index.ts`. Bun is only used at runtime by ytmusicapi as a JS runtime for stream-URL signature decryption.
+FastAPI backend (`server/`) wrapping `ytmusicapi` to expose YouTube Music endpoints (browsing, search, watch, playlists, podcasts). There is **no TS app and no `index.ts`** — ignore any leftover `bun run index.ts` references. npm is the JS tooling (two lockfiles: root + `frontend/`); server-side stream-signature decryption runs through yt-dlp, which the server configures to use **Deno** (`js_runtimes` in `server/core.py`).
 
 ## Run the server
 ```bash
@@ -22,7 +22,7 @@ FastAPI backend (`server/`) wrapping `ytmusicapi` to expose YouTube Music endpoi
 
 ## Gotchas
 - `browser.json` contains real auth cookies / SAPISID tokens — gitignored, never commit. `test.py` and `STUFF.md` hold the same credentials and scratch notes (cookie conversion, yt-dlp commands).
-- Bun must stay ≤ **1.3.14** (yt-dlp/ytmusicapi rejects newer versions); current is 1.3.11.
+- **Deno** must be on the server's PATH: yt-dlp decrypts stream-URL signatures through a JS runtime and `server/core.py` selects `deno` (`js_runtimes`) — without it, `/stream` cannot resolve URLs.
 - "Taste profile" and library-scoped endpoints require the authenticated cookies in `browser.json`.
 - No test suite, no CI, no pinned linter config (ruff has been run ad hoc — `.ruff_cache` exists but no config file). Verify changes by running the server, not via JS/TS tooling.
 - The installed venv can lag `requirements.txt` (e.g. `yt-dlp` is in requirements but not yet installed in `venv/`).

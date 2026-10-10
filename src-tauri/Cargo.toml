@@ -2,7 +2,7 @@
 name = "carmen"
 version = "1.0.0"
 description = "Carmen — offline-first, cross-platform music player"
-authors = ["Samma3ni"]
+authors = ["z44d"]
 edition = "2021"
 rust-version = "1.77.2"
 

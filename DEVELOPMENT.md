@@ -56,10 +56,8 @@ Carmen is three cooperating pieces:
 | `server/` | FastAPI app: `__main__.py` (app + lifespan), `core.py`, `routes/`, `cache.py`, `sanitizers.py`, `state.py` |
 | `venv/` | Python **3.11** virtualenv (gitignored) |
 | `browser.json` | Live YouTube Music auth cookies — **gitignored, never commit** |
-| `docs/plans/react-native-conversion.md` | Long-term conversion plan / spec (contains historical CI + DEVELOPMENT.md outlines) |
 | `.github/workflows/` | `ci.yml`, `build-desktop.yml`, `build-android.yml` (see §10) |
 | `AGENTS.md` | Agent-facing project notes (mirrors parts of this guide) |
-| `bun.lock` | Bun is used at runtime by ytmusicapi for stream-signature decryption (see §2) |
 
 ---
 
@@ -73,7 +71,7 @@ Carmen is three cooperating pieces:
 | Node.js | 20+ | CI pins Node 20 |
 | npm | 10+ | Two lockfiles: root + `frontend/` — install **both** |
 | Python | 3.11 **inside `./venv`** | The system `python3` may be 3.14 — **never** use it; always `./venv/bin/python` / `./venv/bin/pip` |
-| Bun | **≤ 1.3.14** | ytmusicapi/yt-dlp shell out to a JS runtime to decrypt stream-URL signatures; Bun ≥ 1.3.15 is rejected. Current local version: 1.3.11 (`bun.lock`) |
+| Deno | any recent | yt-dlp decrypts stream-URL signatures through a JS runtime and the server selects Deno (`js_runtimes` in `server/core.py`); install it server-side or `/stream` cannot resolve URLs |
 | Git | any recent | Conventional commits, see §13 |
 
 **Platform extras**

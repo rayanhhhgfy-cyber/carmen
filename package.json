@@ -15,8 +15,7 @@
     "android:init": "tauri android init"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.5.0",
-    "@types/bun": "latest"
+    "@tauri-apps/cli": "^2.5.0"
   },
   "peerDependencies": {
     "typescript": "^5"
