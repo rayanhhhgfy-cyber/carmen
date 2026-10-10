@@ -145,7 +145,10 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                 className={
                   // No automatic minimum: a long playlist name clips +
                   // scrolls inside the cell instead of inflating the card.
-                  'm-0 flex w-full min-w-0 cursor-pointer flex-col gap-2 border-0 bg-transparent p-0 text-left hover:[&_.playlist-art]:[transform:scale(1.03)]'
+                  // The stretch must be explicit: WebKit's UA sheet pins
+                  // align-items: flex-start on <button> (older macOS
+                  // WKWebView would size the text cell to the whole name).
+                  'm-0 flex w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 border-0 bg-transparent p-0 text-left hover:[&_.playlist-art]:[transform:scale(1.03)]'
                 }
               >
                 <Artwork
@@ -162,7 +165,7 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                     transition: 'transform 220ms ease',
                   }}
                 />
-                <div className="min-w-0">
+                <div className="w-full min-w-0">
                   <MarqueeText text={playlist.name} variant="body2" sx={{ fontWeight: 600 }} />
                   <span className="block text-xs leading-[1.4] text-muted">
                     {playlist.trackCount} song{playlist.trackCount === 1 ? '' : 's'}

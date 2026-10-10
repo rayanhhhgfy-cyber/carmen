@@ -128,11 +128,15 @@ export default function MediaCard({
   // Grid/flex children default to an automatic minimum of their min-content
   // width — a nowrap title would inflate the card over its neighbours and
   // defeat MarqueeText's overflow measurement (`min-w-0` keeps it honest).
+  // The stretch has to be explicit: WebKit's UA stylesheet pins
+  // `align-items: flex-start` on <button>, so on older macOS WKWebView
+  // (Tauri) the text cell would otherwise size to the full nowrap title
+  // instead of the card, and the marquee would never engage.
   return (
     <button
       type="button"
       onClick={handleClick}
-      className="m-0 flex min-w-0 cursor-pointer snap-start flex-col gap-2 border-none bg-transparent p-0 text-left font-ui hover:[&_.card-art]:[transform:scale(1.04)] hover:[&_.card-play]:translate-y-0 hover:[&_.card-play]:opacity-100"
+      className="m-0 flex min-w-0 cursor-pointer snap-start flex-col items-stretch gap-2 border-none bg-transparent p-0 text-left font-ui hover:[&_.card-art]:[transform:scale(1.04)] hover:[&_.card-play]:translate-y-0 hover:[&_.card-play]:opacity-100"
       style={{ width: boxWidth, flex: isFluid ? 'auto' : `0 0 ${boxWidth}` }}
     >
       <div className="relative aspect-square w-full">
@@ -164,7 +168,7 @@ export default function MediaCard({
           </div>
         )}
       </div>
-      <div className="min-w-0">
+      <div className="w-full min-w-0">
         <MarqueeText text={title} variant="body2" sx={{ fontWeight: 600 }} />
         <span className="block truncate text-xs leading-[1.4] text-muted">
           {subtitle || (card.kind === 'song' ? 'Song' : card.kind)}

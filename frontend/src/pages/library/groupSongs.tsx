@@ -82,7 +82,10 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
       className={
         // Opt out of the automatic (min-content) minimum so a long name
         // clips + scrolls inside the cell instead of inflating the card.
-        `m-0 flex w-full min-w-0 flex-col gap-[6px] border-0 bg-transparent p-0 text-left ${
+        // The stretch must be explicit: WebKit's UA sheet pins
+        // align-items: flex-start on <button> (older macOS WKWebView
+        // would size the text cell to the whole name).
+        `m-0 flex w-full min-w-0 flex-col items-stretch gap-[6px] border-0 bg-transparent p-0 text-left ${
           to ? 'cursor-pointer hover:[&_.group-art]:[transform:scale(1.04)]' : 'cursor-default'
         }`
       }
@@ -101,7 +104,7 @@ export function GroupCard({ group, shape, to }: GroupCardProps) {
           transition: 'transform 220ms ease',
         }}
       />
-      <div className="min-w-0">
+      <div className="w-full min-w-0">
         <MarqueeText text={group.name} variant="body2" sx={{ fontWeight: 600 }} />
         <span className="block text-xs leading-[1.4] text-muted">
           {group.count} song{group.count === 1 ? '' : 's'}

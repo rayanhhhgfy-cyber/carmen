@@ -61,7 +61,10 @@ export default function RecentSection() {
                 className={
                   // No automatic minimum: a long title must clip + scroll
                   // inside the tile, not widen it over its neighbours.
-                  'm-0 flex w-[136px] min-w-0 cursor-pointer flex-col gap-[6px] snap-start border-0 bg-transparent p-0 text-left [flex:0_0_136px] hover:[&_.recent-art]:[transform:scale(1.04)]'
+                  // The stretch must be explicit: WebKit's UA sheet pins
+                  // align-items: flex-start on <button> (older macOS
+                  // WKWebView would size the text cell to the whole title).
+                  'm-0 flex w-[136px] min-w-0 cursor-pointer flex-col items-stretch gap-[6px] snap-start border-0 bg-transparent p-0 text-left [flex:0_0_136px] hover:[&_.recent-art]:[transform:scale(1.04)]'
                 }
               >
                 <Artwork
@@ -78,7 +81,7 @@ export default function RecentSection() {
                     transition: 'transform 220ms ease',
                   }}
                 />
-                <div className="min-w-0">
+                <div className="w-full min-w-0">
                   <MarqueeText text={song.title} variant="body2" sx={{ fontWeight: 600 }} />
                   <span className="block truncate text-xs leading-[1.4] text-muted">
                     {song.artist}
