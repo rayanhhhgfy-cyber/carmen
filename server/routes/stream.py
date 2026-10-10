@@ -275,8 +275,10 @@ async def _ensure_tg_copy_for_play(vid_id: str) -> None:
     brings the file down in the background (once per song) and hands it to
     :func:`_ensure_tg_copy`, which uploads it or verifies the copy that is
     already mapped.  The in-flight set deduplicates the range-request burst
-    a single play fires, and a mapped copy whose size was recorded at upload
-    time is trusted without touching the network.
+    a single play fires.  A mapped copy that already has a recorded size is
+    left to the serve path, which re-checks it against the live message
+    before answering — this task only fills the gaps (no mapping, or a
+    mapping uploaded before sizes were tracked).
     """
     if not state.tg_client or not CHAT_ID or vid_id in _play_ensures:
         return
@@ -284,7 +286,8 @@ async def _ensure_tg_copy_for_play(vid_id: str) -> None:
     try:
         msg_id = await _get_tg_msg_id(vid_id)
         if msg_id and await _get_tg_size_record(vid_id) is not None:
-            # Mapped and size-verified earlier — Telegram already has it.
+            # Already mapped with a recorded size — `_tg_media_response`
+            # re-verifies it on the way out; nothing to do here.
             return
         path = find_cached_audio(vid_id)
         if path is None:
@@ -338,16 +341,26 @@ async def _tg_media_response(
         await _forget_tg_msg_id(vid_id)
         return None
 
-    # A copy that no longer matches the byte count recorded when it was
-    # uploaded has drifted (an old race wrote a doubled file): drop the
-    # mapping rather than build the response from poisoned bytes.
+    # Serve the Telegram copy only when its byte count matches the size
+    # recorded from a **verified** upload.  `vid_sizes` is written exclusively
+    # from files the server itself fetched from the CDN — a relay tee that
+    # matched the CDN's Content-Length, or a fresh yt-dlp download — so a
+    # match proves this message holds that same audio.  A mismatch, or no
+    # record at all (a mapping that predates size tracking), means the copy
+    # cannot be proven good: an old download race wrote doubled files that
+    # were then mirrored into the channel and served as ~2x-duration audio
+    # with a silent tail.  Forget the mapping and let the relay below answer
+    # with freshly fetched bytes; the background ensure re-uploads a verified
+    # copy, so the next play is served from Telegram again.  This is also
+    # what keeps the on-disk mirror (further down) from ever writing
+    # unverified bytes back into the cache.
     recorded = await _get_tg_size_record(vid_id)
-    if recorded is not None and recorded != total:
+    if recorded != total:
         log.warning(
-            "Telegram copy of %s is %s but %s were recorded — forgetting it",
+            "Telegram copy of %s is %s but the verified size is %s — forgetting it",
             vid_id,
             debuglog.fmt_bytes(total),
-            debuglog.fmt_bytes(recorded),
+            debuglog.fmt_bytes(recorded) if recorded is not None else "unknown",
         )
         await _forget_tg_msg_id(vid_id)
         return None
