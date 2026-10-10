@@ -498,6 +498,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Local cover for downloaded songs ─────────────────────────────────────
+
+  // A download stores the best cover that existed at save time (usually the
+  // maxresdefault JPEG). The player surfaces paint that file instead of the
+  // CDN chain behind `track.artwork`, which walks down to `sddefault`
+  // whenever `maxresdefault` is missing — and it costs no network at all.
+  // The data URL is cached per song (`localArtworkDataUrl`), so revisits are
+  // instant; a song without artwork keeps the CDN chain untouched.
+  useEffect(() => {
+    const videoId = current?.videoId;
+    if (!videoId || !isDownloaded(videoId)) return undefined;
+    let alive = true;
+    void localArtworkDataUrl(videoId)
+      .then((url) => {
+        if (!alive || !url) return;
+        setCurrent((track) =>
+          track && track.videoId === videoId && track.artwork !== url
+            ? { ...track, artwork: url }
+            : track,
+        );
+      })
+      .catch(() => {
+        /* unreadable file — the CDN chain stays the cover */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Enriched metadata + related songs ───────────────────────────────────
 
   useEffect(() => {

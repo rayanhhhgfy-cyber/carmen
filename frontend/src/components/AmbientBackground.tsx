@@ -51,8 +51,13 @@ export default function AmbientBackground() {
   const { resolved } = useTheme();
   // `pickArtwork` takes any candidate shape; wrapping the thumbnail list in
   // `{ thumbnails }` keeps the same selection as passing the array itself.
+  // The playing track's own cover wins first: for a downloaded song that is
+  // the file saved at download time (local-first — paints with no network),
+  // for any other track it is the CDN's largest size.
   const artwork =
-    primaryArtwork(player.current) || pickArtwork({ thumbnails: player.meta?.thumbnails });
+    player.current?.artwork ||
+    primaryArtwork(player.current) ||
+    pickArtwork({ thumbnails: player.meta?.thumbnails });
 
   /** The cover currently owning the top layer. */
   const [wash, setWash] = useState<string | null>(null);

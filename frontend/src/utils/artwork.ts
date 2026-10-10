@@ -69,7 +69,17 @@ function delay(ms: number): Promise<void> {
 
 /** True when this url already loaded successfully during this session. */
 export function isArtworkReady(url?: string | null): boolean {
-  return Boolean(url) && ready.has(url as string);
+  return Boolean(url) && (ready.has(url as string) || isLocalArtworkUrl(url as string));
+}
+
+/**
+ * Non-network artwork (`data:`, `blob:`, `asset:`) — the cover of a downloaded
+ * song read straight from the sandbox. The bytes are already in the document,
+ * so there is nothing to fetch, throttle or cache: the loader hands the URL
+ * back as-is and the tile paints it directly.
+ */
+export function isLocalArtworkUrl(url: string): boolean {
+  return Boolean(url) && !/^https?:\/\//i.test(url);
 }
 
 /* ------------------------------------------------------------------ *
@@ -247,6 +257,7 @@ async function pump(): Promise<void> {
  */
 export function loadArtwork(url?: unknown): Promise<string | null> {
   if (!url || typeof url !== 'string') return Promise.resolve(null);
+  if (isLocalArtworkUrl(url)) return Promise.resolve(url);
   if (ready.has(url)) return Promise.resolve(paintedArtwork(url) || url);
   const pending = inFlight.get(url);
   if (pending) return pending;

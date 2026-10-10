@@ -84,26 +84,29 @@ function session(): MediaSession | undefined {
  *
  * The sandboxed cover keeps the original aspect ratio (16:9 video thumbs
  * included), which macOS renders with letterboxing in the media widget — so
- * whatever we hand to the OS is squared first. Returns the input unchanged
- * when the image is already square or cannot be decoded.
+ * whatever we hand to the OS is squared first. The square's side comes back
+ * too, so the entry can carry a real `sizes` and outrank the CDN thumbnails
+ * in the widget's own largest-first pick. Returns the input unchanged (with
+ * no size) when the image cannot be decoded.
  */
-async function squareArtwork(dataUrl: string): Promise<string> {
+async function squareArtwork(dataUrl: string): Promise<{ url: string; side: number }> {
   try {
     const image = new Image();
     image.src = dataUrl;
     await image.decode();
     const { naturalWidth: w, naturalHeight: h } = image;
-    if (!w || !h || w === h) return dataUrl;
+    if (!w || !h) return { url: dataUrl, side: 0 };
+    if (w === h) return { url: dataUrl, side: w };
     const side = Math.min(w, h);
     const canvas = document.createElement('canvas');
     canvas.width = side;
     canvas.height = side;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return dataUrl;
+    if (!ctx) return { url: dataUrl, side: 0 };
     ctx.drawImage(image, (w - side) / 2, (h - side) / 2, side, side, 0, 0, side, side);
-    return canvas.toDataURL('image/jpeg', 0.9);
+    return { url: canvas.toDataURL('image/jpeg', 0.9), side };
   } catch {
-    return dataUrl;
+    return { url: dataUrl, side: 0 };
   }
 }
 
@@ -124,21 +127,39 @@ interface ArtworkEntry {
   type?: string;
 }
 
+/** A downloaded song's cover: the square-cropped data URL + its pixel side. */
+interface LocalCover {
+  url: string;
+  side: number;
+}
+
 /**
  * Artwork candidates for the widget: as many real resolutions as the payload
  * offers, topped up with the known sizes of the `i.ytimg.com` CDN.
  * JPEG only — the WebP twin some browsers refuse to paint is never used.
+ *
+ * A downloaded song's cover replaces the CDN trio entirely: the sandbox
+ * holds the best size that ever existed for it, so the widget must not
+ * rank a remote (possibly 404-walking) thumbnail above the file the app
+ * itself renders.
  */
 function buildArtwork(
   track: Track | null,
   meta: TrackMeta | null,
-  localCover: string | null,
+  localCover: LocalCover | null,
 ): ArtworkEntry[] {
   const entries: ArtworkEntry[] = [];
 
   // The downloaded cover wins: it needs no network and is what offline
-  // playback actually renders.
-  if (localCover) entries.push({ src: localCover, type: 'image/jpeg' });
+  // playback actually renders. The square's side is attached so the entry
+  // outranks the CDN thumbnails in the widget's largest-first pick.
+  if (localCover) {
+    entries.push({
+      src: localCover.url,
+      ...(localCover.side ? { sizes: `${localCover.side}x${localCover.side}` } : null),
+      type: 'image/jpeg',
+    });
+  }
 
   const seen = new Set<string>();
   const add = (url: unknown, width: unknown, height: unknown) => {
@@ -170,7 +191,7 @@ function buildArtwork(
     );
   }
 
-  if (track?.videoId) {
+  if (track?.videoId && !localCover) {
     add(`${YTIMG}/vi/${track.videoId}/maxresdefault.jpg`, 1280, 720);
     add(`${YTIMG}/vi/${track.videoId}/sddefault.jpg`, 640, 480);
     add(`${YTIMG}/vi/${track.videoId}/hqdefault.jpg`, 480, 360);
@@ -183,7 +204,7 @@ function buildArtwork(
 export function buildMetadata(
   track: Track | null,
   meta: TrackMeta | null,
-  localCover: string | null = null,
+  localCover: LocalCover | null = null,
 ): MediaMetadataInit {
   return {
     title: track?.title || 'Unknown title',
@@ -219,7 +240,7 @@ export function useMediaSession({
   const videoId = current?.videoId ?? null;
 
   // Local cover of a downloaded song, resolved asynchronously.
-  const [localCover, setLocalCover] = useState<string | null>(null);
+  const [localCover, setLocalCover] = useState<LocalCover | null>(null);
   useEffect(() => {
     let cancelled = false;
     if (!videoId) {
@@ -230,8 +251,8 @@ export function useMediaSession({
     }
     void localArtworkDataUrl(videoId)
       .then((url) => (url ? squareArtwork(url) : null))
-      .then((url) => {
-        if (!cancelled) setLocalCover(url);
+      .then((cover) => {
+        if (!cancelled) setLocalCover(cover);
       })
       .catch(() => {});
     return () => {
