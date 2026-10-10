@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..cache import cached
 from ..core import (
+    LYRICS_PROVIDERS,
     get_album,
     get_album_browse_id,
     get_artist,
@@ -26,7 +27,6 @@ from ..core import (
     get_user,
     get_user_playlists,
     get_user_videos,
-    LYRICS_PROVIDERS,
 )
 from ..filters import (
     MAX_DURATION_SECONDS,
@@ -58,7 +58,7 @@ def _guard_duration(result, video_id: str):
     response_description="List of music suggestion rows",
 )
 @sanitized
-@cached("home", ttl=300)
+@cached("home", ttl=3600)
 async def home(limit: int = 3):
     """
     Get the home page with music suggestions.
@@ -77,7 +77,7 @@ async def home(limit: int = 3):
     response_description="Suggested artists from taste profile",
 )
 @sanitized
-@cached("tasteprofile", ttl=300)
+@cached("tasteprofile", ttl=3600)
 async def tasteprofile():
     """
     Fetch suggested artists from taste profile.
@@ -111,7 +111,7 @@ async def mood_categories():
     response_description="List of playlists for the given mood",
 )
 @sanitized
-@cached("mood_playlists", ttl=600)
+@cached("mood_playlists", ttl=3600)
 async def mood_playlists(params: str):
     """
     Retrieve playlists for a given "Moods & Genres" category.
@@ -128,7 +128,7 @@ async def mood_playlists(params: str):
     response_description="Latest explore data including new releases and trending",
 )
 @sanitized
-@cached("explore", ttl=300)
+@cached("explore", ttl=3600)
 async def explore():
     """
     Get latest explore data.
@@ -145,7 +145,7 @@ async def explore():
     response_description="Charts data for the specified country",
 )
 @sanitized
-@cached("charts", ttl=600)
+@cached("charts", ttl=3600)
 async def charts(country: str = "ZZ"):
     """
     Get latest charts data.
@@ -162,7 +162,7 @@ async def charts(country: str = "ZZ"):
     response_description="Artist info with top releases",
 )
 @sanitized
-@cached("artist", ttl=600)
+@cached("artist", ttl=3600)
 async def artist(channelId: str):
     """
     Get info about an artist and their top releases.
@@ -181,7 +181,7 @@ async def artist(channelId: str):
     response_description="List of artist albums",
 )
 @sanitized
-@cached("artist_albums", ttl=600)
+@cached("artist_albums", ttl=3600)
 async def artist_albums(
     channelId: str, params: str, limit: int = 100, order: str | None = None
 ):
@@ -205,7 +205,7 @@ async def artist_albums(
     response_description="User page info",
 )
 @sanitized
-@cached("user", ttl=600)
+@cached("user", ttl=3600)
 async def user(channelId: str):
     """
     Retrieve a user's page (videos or playlists).
@@ -222,7 +222,7 @@ async def user(channelId: str):
     response_description="List of user playlists",
 )
 @sanitized
-@cached("user_playlists", ttl=600)
+@cached("user_playlists", ttl=3600)
 async def user_playlists(channelId: str, params: str):
     """
     Retrieve a list of playlists for a given user.
@@ -242,7 +242,7 @@ async def user_playlists(channelId: str, params: str):
     response_description="List of user videos",
 )
 @sanitized
-@cached("user_videos", ttl=600)
+@cached("user_videos", ttl=3600)
 async def user_videos(channelId: str, params: str):
     """
     Retrieve a list of videos for a given user.
@@ -283,7 +283,7 @@ async def album_browse_id(audioPlaylistId: str):
     response_description="Album info and tracks",
 )
 @sanitized
-@cached("album", ttl=600)
+@cached("album", ttl=3600)
 async def album(browseId: str):
     """
     Get information and tracks of an album.
@@ -300,7 +300,7 @@ async def album(browseId: str):
     response_description="Song metadata and streaming info",
 )
 @sanitized
-@cached("song", ttl=300)
+@cached("song", ttl=3600)
 async def song(videoId: str, signatureTimestamp: int | None = None):
     """
     Returns metadata and streaming information about a song or video.
@@ -356,7 +356,7 @@ async def track(videoId: str, provider: str | None = None):
     response_description="Contextually related tracks for the given song",
 )
 @sanitized
-@cached("related", ttl=600)
+@cached("related", ttl=3600)
 async def related(videoId: str, limit: int = 25):
     """
     Returns the songs that belong next to the given one: the watch queue
@@ -399,7 +399,7 @@ async def song_credits(browseId: str):
     response_description="Related content for the song",
 )
 @sanitized
-@cached("song_related", ttl=600)
+@cached("song_related", ttl=3600)
 async def song_related(browseId: str):
     """
     Gets related content for a song.
