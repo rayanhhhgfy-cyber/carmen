@@ -149,16 +149,46 @@ async function store(url: string, blob: Blob): Promise<void> {
   }
 }
 
-/** source url -> `blob:` url already handed to an `<img>`. */
+/**
+ * source url -> `blob:` url already handed to an `<img>`.
+ *
+ * A **bounded LRU**: every entry pins its Blob in memory for as long as the
+ * object URL lives, and a long session paints one cover per tile ever
+ * shown (home shelves + a 100-result search + related grids + the player)
+ * — an unbounded map here is exactly the slow accumulation that takes an
+ * iOS Safari tab down (jetsam, page reload). The oldest URLs are revoked
+ * once the cap is passed: an `<img>` that already painted keeps its decoded
+ * frame, and a tile that scrolls back into view re-creates its object URL
+ * from the persistent store (see `loadArtwork`).
+ */
 const painted = new Map<string, string>();
+
+/** Covers whose object URLs stay alive at once. */
+const PAINTED_LIMIT = 200;
+
+/** Register *objectUrl*, evicting (and revoking) the least recently used. */
+function rememberPainted(url: string, objectUrl: string): void {
+  painted.delete(url);
+  painted.set(url, objectUrl);
+  while (painted.size > PAINTED_LIMIT) {
+    const oldest = painted.keys().next().value;
+    if (oldest === undefined) break;
+    const revoked = painted.get(oldest);
+    painted.delete(oldest);
+    if (revoked) URL.revokeObjectURL(revoked);
+  }
+}
 
 /** Object URL for *url*, created at most once. Falls back to the plain URL. */
 function paintWith(url: string, blob: Blob): string {
   const existing = painted.get(url);
-  if (existing) return existing;
+  if (existing) {
+    rememberPainted(url, existing); // in use — it must survive the eviction
+    return existing;
+  }
   try {
     const objectUrl = URL.createObjectURL(blob);
-    painted.set(url, objectUrl);
+    rememberPainted(url, objectUrl);
     return objectUrl;
   } catch {
     return url;
@@ -169,12 +199,16 @@ function paintWith(url: string, blob: Blob): string {
  * Blob URL already prepared for *url*, or `null`.
  *
  * Lets a component paint the cached copy on its very first render instead of
- * showing the source URL and swapping once the blob arrives.
+ * showing the source URL and swapping once the blob arrives. A hit is also a
+ * LRU *touch* — covers still on screen never fall out of the cap.
  *
  * @param url artwork URL
  */
 export function paintedArtwork(url?: string | null): string | null {
-  return (url && painted.get(url)) || null;
+  const hit = url ? painted.get(url) : undefined;
+  if (!url || !hit) return null;
+  rememberPainted(url, hit);
+  return hit;
 }
 
 type FetchOutcome =
@@ -258,7 +292,14 @@ async function pump(): Promise<void> {
 export function loadArtwork(url?: unknown): Promise<string | null> {
   if (!url || typeof url !== 'string') return Promise.resolve(null);
   if (isLocalArtworkUrl(url)) return Promise.resolve(url);
-  if (ready.has(url)) return Promise.resolve(paintedArtwork(url) || url);
+  if (ready.has(url)) {
+    const existing = paintedArtwork(url);
+    if (existing) return Promise.resolve(existing);
+    // The object URL was evicted from the LRU cap (or revoked on a tab
+    // that painted a lot of covers) — rebuild it from the persistent
+    // store, which costs a disk read and no network at all.
+    return readStored(url).then((stored) => (stored ? paintWith(url, stored) : url));
+  }
   const pending = inFlight.get(url);
   if (pending) return pending;
 
@@ -334,39 +375,46 @@ async function sampleColor(url: string): Promise<string | null> {
       blob = await response.blob();
       void store(url, blob);
     }
+    // The bitmap is released explicitly: WebKit keeps decoded bitmaps alive
+    // well past their last reference otherwise, and one per cover is a lot
+    // of pixel memory to leave to the GC on iOS.
     const bitmap = await createImageBitmap(blob);
-    const canvas = document.createElement('canvas');
-    canvas.width = 8;
-    canvas.height = 8;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return null;
-    context.drawImage(bitmap, 0, 0, 8, 8);
-    const { data } = context.getImageData(0, 0, 8, 8);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 8;
+      canvas.height = 8;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return null;
+      context.drawImage(bitmap, 0, 0, 8, 8);
+      const { data } = context.getImageData(0, 0, 8, 8);
 
-    let red = 0;
-    let green = 0;
-    let blue = 0;
-    let weight = 0;
-    for (let index = 0; index < data.length; index += 4) {
-      const r = data[index];
-      const g = data[index + 1];
-      const b = data[index + 2];
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      // favor saturated pixels: they read as the artwork's "theme"
-      const saturation = max === 0 ? 0 : (max - min) / max;
-      const value = 0.35 + saturation;
-      red += r * value;
-      green += g * value;
-      blue += b * value;
-      weight += value;
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      let weight = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        // favor saturated pixels: they read as the artwork's "theme"
+        const saturation = max === 0 ? 0 : (max - min) / max;
+        const value = 0.35 + saturation;
+        red += r * value;
+        green += g * value;
+        blue += b * value;
+        weight += value;
+      }
+      if (!weight) return null;
+      const toHex = (channel: number) =>
+        Math.max(0, Math.min(255, Math.round(channel / weight)))
+          .toString(16)
+          .padStart(2, '0');
+      return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+    } finally {
+      bitmap.close?.();
     }
-    if (!weight) return null;
-    const toHex = (channel: number) =>
-      Math.max(0, Math.min(255, Math.round(channel / weight)))
-        .toString(16)
-        .padStart(2, '0');
-    return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
   } catch {
     return null;
   }

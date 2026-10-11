@@ -9,9 +9,7 @@ import NPScrubber from "./NPScrubber";
 import PlayerMenu from "./PlayerMenu";
 import RelatedTab from "./RelatedTab";
 import { useNavigate } from "react-router-dom";
-import { streamUrl } from "../api";
 import { useIsDesktop } from "../hooks";
-import { localAssetSource } from "../offline/source";
 import { usePlayer } from "../player/PlayerContext";
 import { useEffectsEnabled } from "../settings/store";
 import { useTheme as useAppTheme } from "../theme/ThemeContext";
@@ -203,23 +201,13 @@ export default function PlayerSheet() {
   };
 
   /**
-   * Re-point the element at a fresh source and press play.
-   *
-   * The context's own loader cannot re-run — the track id never changed —
-   * so this mirrors its offline-first order: the downloaded file when one
-   * exists, the server stream otherwise.  If the retry fails the element's
-   * `error` event routes back into the context's full fallback chain and
-   * the alert comes back with whatever message that produced.
+   * Retry plays through the context: it re-points the element at the
+   * current song's best source (downloaded file, then stream) and keeps the
+   * fallback chain's record of what the element plays in sync, so a retry
+   * that itself fails still walks the full chain and reports the real
+   * error.
    */
-  const retry = () => {
-    player.dismissError();
-    const audio = player.audioRef.current;
-    if (!audio) return;
-    audio.src = localAssetSource(track.videoId)?.url ?? streamUrl(track.videoId);
-    audio.load();
-    const attempt = audio.play();
-    if (attempt) attempt.catch(() => {});
-  };
+  const retry = () => player.retry();
 
   // ── Phone swipe gestures ───────────────────────────────────────────────
   const onStripTouchStart = (event: TouchEvent<HTMLDivElement>) => {

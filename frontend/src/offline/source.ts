@@ -125,20 +125,41 @@ export async function localBlobSource(videoId: string): Promise<AudioSource | nu
   return { url, kind: 'blob' };
 }
 
-/** Base64 cover of a downloaded song — what MediaSession gets fed. */
+/**
+ * Base64 cover of a downloaded song — what MediaSession gets fed.
+ *
+ * Bounded LRU: each entry is a whole cover as a base64 string (several
+ * hundred KB), so a session that walks through the library must not
+ * accumulate one per song — on iOS that alone is enough to take the tab
+ * down. A dropped entry is re-read from disk on the next request.
+ */
 const artworkDataUrls = new Map<string, string | null>();
 
+/** Songs whose cover data URL stays in memory at once. */
+const ARTWORK_DATA_LIMIT = 16;
+
+function rememberArtworkDataUrl(videoId: string, url: string | null): void {
+  artworkDataUrls.delete(videoId);
+  artworkDataUrls.set(videoId, url);
+  while (artworkDataUrls.size > ARTWORK_DATA_LIMIT) {
+    const oldest = artworkDataUrls.keys().next().value;
+    if (oldest === undefined) break;
+    artworkDataUrls.delete(oldest);
+  }
+}
+
 export async function localArtworkDataUrl(videoId: string): Promise<string | null> {
-  if (artworkDataUrls.has(videoId)) return artworkDataUrls.get(videoId) ?? null;
+  const cached = artworkDataUrls.get(videoId);
+  if (cached !== undefined) return cached ?? null;
   const record = getLocalRecord(videoId);
   if (!record?.artworkPath) return null;
   const bytes = await readBinary(record.artworkPath);
   if (!bytes) {
-    artworkDataUrls.set(videoId, null);
+    rememberArtworkDataUrl(videoId, null);
     return null;
   }
   const url = `data:${mimeFor(record.artworkPath)};base64,${toBase64(bytes)}`;
-  artworkDataUrls.set(videoId, url);
+  rememberArtworkDataUrl(videoId, url);
   return url;
 }
 

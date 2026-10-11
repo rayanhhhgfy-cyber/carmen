@@ -59,6 +59,7 @@ export interface PlayerContextValue {
   buffering: boolean;
   error: string | null;
   dismissError: () => void;
+  retry: () => void;
   shuffle: boolean;
   repeat: RepeatMode;
   sheetOpen: boolean;
@@ -690,8 +691,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!videoId) return;
     const audio = audioRef.current;
     const source = sourceRef.current;
+    if (!audio || !source) return;
+    // Stale error from a source the player already left: rapid switching
+    // tears the old load down (the cleanup empties the `src` attribute) and
+    // an error event from that teardown arrives after the new track's
+    // source was set — it belongs to the past and must not touch this song.
+    if (audio.getAttribute('src') !== source.url) return;
 
-    if (source?.kind === 'asset') {
+    if (source.kind === 'asset') {
       try {
         const blob = await localBlobSource(videoId);
         if (blob && audio) {
@@ -708,7 +715,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (source?.kind !== 'stream') {
+    if (source.kind !== 'stream') {
       try {
         const url = streamUrl(videoId);
         if (audio) {
@@ -730,13 +737,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     let message = 'This track could not be played';
     try {
+      // The probe must never pull the audio itself: a one-byte range keeps
+      // the body tiny, and the stream is cancelled outright when the server
+      // answers with the whole file anyway (a plain GET here used to buffer
+      // entire songs during error storms — several MB each, one per failed
+      // track switch, which is what an iOS Safari tab dies of).
       const response = await fetch(streamUrl(videoId), {
         method: 'GET',
         cache: 'no-store',
+        headers: { Range: 'bytes=0-1' },
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         message = payload?.detail || message;
+      } else {
+        void response.body?.cancel().catch(() => {});
       }
     } catch {
       /* keep the generic message */
@@ -745,6 +760,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dismissError = useCallback(() => setError(null), []);
+
+  /**
+   * Re-point the element at the current song's best source and play — the
+   * sheet's Retry button. It runs through the same offline-first order the
+   * loader uses (downloaded file, then stream) and updates the fallback
+   * chain's record of what the element is playing, so a retry that itself
+   * fails still walks the full chain instead of erroring against a stale
+   * source.
+   */
+  const retry = useCallback(() => {
+    const videoId = current?.videoId;
+    const audio = audioRef.current;
+    if (!videoId || !audio) return;
+    setError(null);
+    const source =
+      localAssetSource(videoId) ?? { url: streamUrl(videoId), kind: 'stream' as const };
+    sourceRef.current = source;
+    setBuffering(true);
+    audio.src = source.url;
+    audio.load();
+    const attempt = audio.play();
+    if (attempt) attempt.catch(() => setBuffering(false));
+  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Wait until the server has finished caching *videoId* (see the download
@@ -811,6 +849,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       buffering,
       error,
       dismissError,
+      retry,
       shuffle,
       repeat,
       sheetOpen,
@@ -840,6 +879,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       buffering,
       error,
       dismissError,
+      retry,
       shuffle,
       repeat,
       sheetOpen,
