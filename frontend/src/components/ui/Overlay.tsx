@@ -29,6 +29,37 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import { cn } from '../../utils/cn';
 
+/* ── Layering ─────────────────────────────────────────────────────────── */
+
+/**
+ * Stack of open overlay layers (dialogs, menus), newest last.
+ *
+ * Two independent rules keep stacked overlays from closing each other:
+ *
+ *  - **Escape closes only the topmost layer** — a menu opened inside the
+ *    player sheet must close itself, not the sheet behind it;
+ *  - **a pointer-down inside another layer's portal belongs to that layer**
+ *    — the `data-overlay-root` attribute marks those portals, and the
+ *    dialog's backdrop-close skips a press that landed in one (the menu
+ *    items are portalled to `body`, *outside* the dialog panel, so without
+ *    this rule tapping "Download" would both run the action and dismiss the
+ *    sheet).
+ */
+const openLayers: symbol[] = [];
+
+function isTopLayer(layer: symbol): boolean {
+  return openLayers[openLayers.length - 1] === layer;
+}
+
+function pushLayer(layer: symbol): void {
+  openLayers.push(layer);
+}
+
+function dropLayer(layer: symbol): void {
+  const index = openLayers.lastIndexOf(layer);
+  if (index >= 0) openLayers.splice(index, 1);
+}
+
 /* ── Menu ─────────────────────────────────────────────────────────────── */
 
 const MenuContext = createContext<(() => void) | null>(null);
@@ -46,6 +77,7 @@ interface MenuProps {
 /** MUI `Menu` — anchored popover. */
 export function Menu({ open, anchorEl, onClose, children, className, ...rest }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const layer = useRef(Symbol('menu'));
   const [pos, setPos] = useState<CSSProperties>({ top: -9999, left: -9999 });
 
   // Position from the anchor's box after mount (so the panel's own size is
@@ -63,18 +95,22 @@ export function Menu({ open, anchorEl, onClose, children, className, ...rest }: 
     setPos({ top, left });
   }, [open, anchorEl]);
 
-  // Outside click + Escape close the menu (MUI Modal behaviour).
+  // Outside click + Escape close the menu (MUI Modal behaviour). Escape
+  // only fires for the topmost layer, so a menu over a dialog closes the
+  // menu alone.
   useEffect(() => {
     if (!open) return undefined;
+    pushLayer(layer.current);
     const onPointer = (event: PointerEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) onClose();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && isTopLayer(layer.current)) onClose();
     };
     document.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey);
     return () => {
+      dropLayer(layer.current);
       document.removeEventListener('pointerdown', onPointer);
       document.removeEventListener('keydown', onKey);
     };
@@ -89,6 +125,7 @@ export function Menu({ open, anchorEl, onClose, children, className, ...rest }: 
           <motion.div
             ref={ref}
             role="menu"
+            data-overlay-root=""
             {...rest}
             initial={{ opacity: 0, scale: 0.97, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -211,22 +248,34 @@ export function Dialog({
   ...rest
 }: DialogProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const layer = useRef(Symbol('dialog'));
 
   // MUI Modal parity: Escape closes, the backdrop closes, the page behind
   // stops scrolling.
   useEffect(() => {
     if (!open) return undefined;
+    pushLayer(layer.current);
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose?.();
+      // A menu layered on top owns Escape; the dialog stays put.
+      if (event.key === 'Escape' && isTopLayer(layer.current)) onClose?.();
     };
     const onPointer = (event: PointerEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose?.();
+      if (!ref.current) return;
+      const target = event.target as Node | null;
+      if (target && ref.current.contains(target)) return;
+      // A press inside *another* overlay's portal (a menu opened from this
+      // dialog, a dialog stacked above) belongs to that layer — closing
+      // from underneath it would swallow the action that was just tapped.
+      const outer = target instanceof Element ? target.closest('[data-overlay-root]') : null;
+      if (outer && outer !== ref.current.closest('[data-overlay-root]')) return;
+      onClose?.();
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointer);
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
+      dropLayer(layer.current);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('pointerdown', onPointer);
       document.body.style.overflow = previous;
@@ -239,6 +288,7 @@ export function Dialog({
     <AnimatePresence>
       {open ? (
         <motion.div
+          data-overlay-root=""
           className="fixed inset-0 z-[1300] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
