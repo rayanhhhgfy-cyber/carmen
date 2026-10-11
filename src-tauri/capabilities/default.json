@@ -41,6 +41,8 @@
     "sql:default",
     "sql:allow-execute",
 
+    "deep-link:default",
+
     "opener:default",
     {
       "identifier": "opener:allow-open-url",

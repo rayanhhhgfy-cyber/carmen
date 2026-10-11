@@ -24,6 +24,46 @@ export function songShareUrl(videoId: string): string {
 }
 
 /**
+ * The hash route a share URL points at, or `null`.
+ *
+ * Two shapes reach the app:
+ *
+ *  - the **web** form `https://host/?song=xyz` — the query string a crawler
+ *    renders (see `server/share.py`), which the SPA folds into the hash
+ *    router on load (see `main.tsx`);
+ *  - the **deep-linked** form the installed app receives on Android: the
+ *    same https URL through an App Link, or `carmen://song/xyz` through the
+ *    fallback custom scheme (registered in `tauri.conf.json`, no server
+ *    verification needed — see DEVELOPMENT.md).
+ */
+export function shareTarget(raw: string | URL): string | null {
+  let url: URL;
+  try {
+    url = typeof raw === 'string' ? new URL(raw, window.location.href) : raw;
+  } catch {
+    return null;
+  }
+
+  const song = url.searchParams.get('song');
+  if (song) return `/song/${encodeURIComponent(song)}`;
+  const searchQuery = url.searchParams.get('search');
+  if (searchQuery) return `/search?query=${encodeURIComponent(searchQuery)}`;
+  const playlist = url.searchParams.get('playlist');
+  if (playlist) return `/collection/playlist/${encodeURIComponent(playlist)}`;
+
+  // Path form — `carmen://song/xyz` parses as host "song" + path "/xyz",
+  // and the same segments work for an https path if the web ever links it.
+  const segments = `${url.host}${url.pathname}`.split('/').filter(Boolean);
+  if (segments[0] === 'song' && segments[1]) {
+    return `/song/${encodeURIComponent(segments[1])}`;
+  }
+  if (segments[0] === 'collection' && segments[1] === 'playlist' && segments[2]) {
+    return `/collection/playlist/${encodeURIComponent(segments[2])}`;
+  }
+  return null;
+}
+
+/**
  * Copy the share link of a song to the clipboard and report the outcome
  * through the app's snackbar, so the result is never silent.
  */

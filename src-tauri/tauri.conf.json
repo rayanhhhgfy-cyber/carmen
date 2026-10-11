@@ -61,5 +61,20 @@
     },
     "android": {}
   },
-  "plugins": {}
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": ["https"],
+          "host": "YOUR-WEB-HOST.example.com",
+          "pathPrefix": ["/"],
+          "appLink": true
+        },
+        {
+          "scheme": ["carmen"],
+          "appLink": false
+        }
+      ]
+    }
+  }
 }

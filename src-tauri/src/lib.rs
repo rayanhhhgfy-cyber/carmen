@@ -24,6 +24,10 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Shared https links (`?song=…`) open the installed app on Android
+        // through App Links (see DEVELOPMENT.md → "Opening the app from a
+        // shared link"); the config in tauri.conf.json declares the host.
+        .plugin(tauri_plugin_deep_link::init())
         // Motion artwork: the iTunes/amp-api hops are not CORS-reachable from
         // the WebView (amp-api even checks the Origin header), so they go
         // through Rust (see frontend/src/artwork/motion.ts).

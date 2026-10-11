@@ -7,10 +7,12 @@ import { favoriteIds } from './db/repos/favorites';
 import { hydrateFlags } from './db/flags';
 import { hydrateLocalLibrary, downloadedVideoIds } from './offline/source';
 import { bootstrapPlatform } from './platform/env';
+import { startDeepLinkListener } from './platform/deepLink';
 import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
 import { hydrateBrowserStorage } from './services/storage';
 import { hydrateLibrary } from './utils/library';
+import { shareTarget } from './utils/share';
 import './fonts';
 import './styles.css';
 
@@ -47,23 +49,16 @@ document.addEventListener('contextmenu', (event) => {
  * is the single source of truth (RoutePersistence saves it too).
  *
  * A real deep link already in the hash always wins and is left untouched.
+ * (Inside the installed Android app the same resolution happens through
+ * `platform/deepLink.ts` — the OS hands the URL to the plugin, not to the
+ * address bar.)
  */
 function foldShareRoute(): void {
   const { hash, pathname, search } = window.location;
   if (hash && hash !== '#' && hash !== '#/') return;
   if (!search || search === '?') return;
 
-  const params = new URLSearchParams(search);
-  const song = params.get('song');
-  const searchQuery = params.get('search');
-  const playlist = params.get('playlist');
-  const target = song
-    ? `/song/${encodeURIComponent(song)}`
-    : searchQuery
-      ? `/search?query=${encodeURIComponent(searchQuery)}`
-      : playlist
-        ? `/collection/playlist/${encodeURIComponent(playlist)}`
-        : null;
+  const target = shareTarget(window.location.href);
   if (!target) return;
 
   window.history.replaceState(null, '', `${pathname}#${target}`);
@@ -109,6 +104,9 @@ async function bootstrap(): Promise<void> {
     /* badges simply start empty */
   }
   await restoreRoute();
+  // Android: the app may have been launched by tapping a shared link —
+  // resolve it over the restored route (no-op in a browser).
+  startDeepLinkListener();
   // Repair older downloads that were saved without an album — fire and forget.
   void import('./utils/downloads').then((m) => m.backfillAlbumNames()).catch(() => {});
 

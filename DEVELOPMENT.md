@@ -434,6 +434,77 @@ adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app
 npx tauri android dev        # requires a device/emulator (adb devices)
 ```
 
+### Opening the app from a shared link (App Links)
+
+A copied share link (`https://<web-host>/?song=xyz`) opens the **installed
+app** on Android instead of the browser, once the platform verifies the
+association. Without the app — or before the placeholders below are filled
+in — the link behaves exactly as before: it opens the web client, which
+folds `?song=` into the player. The moving parts:
+
+| Piece | File | Role |
+|---|---|---|
+| Deep-link config | `src-tauri/tauri.conf.json` → `plugins.deep-link` | Declares `https://<web-host>/*` as an App Link + a `carmen://` fallback scheme |
+| Rust plugin | `src-tauri/src/lib.rs` (+ `Cargo.toml`, capability `deep-link:default`) | Delivers the opened URL to the webview |
+| Frontend routing | `frontend/src/platform/deepLink.ts`, `frontend/src/utils/share.ts` (`shareTarget`) | Maps the URL onto the hash route (`/song/…`) |
+| Association file | `frontend/public/.well-known/assetlinks.json` | What Google verifies — served from the web host (`try_files` in `deploy/nginx.conf` picks it up from `/var/www/carmen/.well-known/` after a normal web deploy) |
+
+**To go live, replace the placeholders:**
+
+1. `src-tauri/tauri.conf.json` → `plugins.deep-link.mobile[0].host`:
+   swap `YOUR-WEB-HOST.example.com` with the HTTPS host the web client is
+   served on (the origin share links carry).
+2. `frontend/public/.well-known/assetlinks.json` → swap
+   `REPLACE-WITH-RELEASE-CERT-SHA256-…` with the SHA-256 fingerprint of the
+   **release signing certificate**:
+
+   ```bash
+   keytool -list -v -keystore release.jks        # the SHA256: line
+   # or, for the debug keystore during development:
+   ./gradlew signingReport
+   # Play Store distribution: Console → Setup → App integrity →
+   # "App signing key certificate" fingerprint (Play re-signs uploads)
+   ```
+
+   Rebuild + redeploy the web client so nginx serves the real file
+   (`curl https://<web-host>/.well-known/assetlinks.json` must return it).
+3. Rebuild the Android app — the intent filters come from the
+   `plugins.deep-link` config at build time. If the checked-in manifest was
+   not regenerated, add the filter by hand to
+   `src-tauri/gen/android/app/src/main/AndroidManifest.xml`:
+
+   ```xml
+   <intent-filter android:autoVerify="true">
+       <action android:name="android.intent.action.VIEW" />
+       <category android:name="android.intent.category.DEFAULT" />
+       <category android:name="android.intent.category.BROWSABLE" />
+       <data android:scheme="https" android:host="YOUR-WEB-HOST.example.com" />
+   </intent-filter>
+   <intent-filter>
+       <action android:name="android.intent.action.VIEW" />
+       <category android:name="android.intent.category.DEFAULT" />
+       <category android:name="android.intent.category.BROWSABLE" />
+       <data android:scheme="carmen" />
+   </intent-filter>
+   ```
+
+Until the fingerprint is real, Android **fails safe**: verification fails
+and links keep opening in the browser.
+
+**Testing**
+
+```bash
+# no server setup needed — the fallback scheme always works:
+adb shell am start -a android.intent.action.VIEW -d 'carmen://song/ihm5-SEShb8'
+# once configured, the https link itself (device must have the app installed):
+adb shell am start -a android.intent.action.VIEW -d 'https://<web-host>/?song=ihm5-SEShb8'
+```
+
+Android opens verified links directly once the user has chosen "Open by
+default" for the app (Settings → Apps → Carmen → Open by default), and may
+ask once ("Open with Carmen") before that. The `?search=` / `?playlist=`
+link shapes resolve the same way.
+
 ---
 
 ## 10. CI/CD (GitHub Actions)
