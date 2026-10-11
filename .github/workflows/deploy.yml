@@ -88,7 +88,14 @@ jobs:
 
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
-          ssh-keyscan -H -p "${DEPLOY_PORT:-22}" "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" # ssh refuses group/world-readable keys
+          # ssh-keyscan does not understand "user@host" (unlike ssh/rsync) —
+          # scan the bare host; the rsync/ssh below still use the full user@host.
+          SCAN_HOST="${DEPLOY_HOST##*@}"
+          ssh-keyscan -H -p "${DEPLOY_PORT:-22}" "$SCAN_HOST" >> "$HOME/.ssh/known_hosts"
+          if [[ "$DEPLOY_HOST" != *@* ]]; then
+            echo "::warning::DEPLOY_HOST has no 'user@' prefix - ssh will log in as '$(id -un)', not root. Set the secret to root@${DEPLOY_HOST} unless that account is the intended one."
+          fi
 
           # --delete mirrors dist exactly (stale content-hashed assets must go);
           # DEPLOY_PATH has to be the site's document root and nothing else.
