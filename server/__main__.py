@@ -13,7 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pyrogram import Client
 
 from . import debuglog, state
-from .core import AUDIO_CACHE_DIR, AUDIO_CACHE_LIMIT, init_ytm
+from .core import (
+    AUDIO_CACHE_DIR,
+    AUDIO_CACHE_MAX_BYTES,
+    AUDIO_CACHE_PRUNE_INTERVAL,
+    _prune_audio_cache,
+    audio_cache_bytes,
+    init_ytm,
+)
 from .errors import EXPOSE_HEADERS, CatchAllErrors
 from .routes import router
 
@@ -34,6 +41,21 @@ debuglog.configure()
 
 for key in ["NODE_CHANNEL_FD", "NODE_OPTIONS"]:
     os.environ.pop(key, None)
+
+
+async def _audio_cache_janitor():
+    """Periodic size-cap enforcement for the on-disk audio cache.
+
+    Each finished download already prunes, but the Telegram-cache path and
+    tracks evicted mid-play would otherwise pile up unbounded between
+    requests — this loop re-checks the 5 GiB budget while the server runs.
+    """
+    while True:
+        await asyncio.sleep(AUDIO_CACHE_PRUNE_INTERVAL)
+        try:
+            await asyncio.to_thread(_prune_audio_cache)
+        except Exception as exc:  # noqa: BLE001
+            print(f"audio cache janitor failed: {exc}")
 
 
 @asynccontextmanager
@@ -99,13 +121,28 @@ async def lifespan(app: FastAPI):
                 ),
                 ("redis", redis_note),
                 ("telegram", tg_note),
-                ("audio cache", f"{AUDIO_CACHE_DIR} · newest {AUDIO_CACHE_LIMIT} files"),
+                (
+                    "audio cache",
+                    (
+                        f"{AUDIO_CACHE_DIR} · ≤{AUDIO_CACHE_MAX_BYTES / 1024**3:g} GiB"
+                        f" · {audio_cache_bytes() / 1024**3:.2f} GiB used"
+                    ),
+                ),
                 ("logging", "DEBUG · colored · one line per request"),
             ],
         )
 
+    # Enforce the 5 GiB audio-cache budget while the server runs (each
+    # download prunes too — this catches the rest).
+    janitor = asyncio.create_task(_audio_cache_janitor())
+
     yield
 
+    janitor.cancel()
+    try:
+        await janitor
+    except asyncio.CancelledError:
+        pass
     if state.tg_client:
         await state.tg_client.stop()
         print("Telegram client stopped.")

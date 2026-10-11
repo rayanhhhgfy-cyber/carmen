@@ -208,6 +208,15 @@ Installers land in `src-tauri/target/release/bundle/` — `.app`/`.dmg` (macOS),
 notarization are configured through Tauri's standard `APPLE_*` /
 signing-secret environment variables.
 
+> **macOS: "Carmen" couldn't be opened?**
+> Gatekeeper blocks apps downloaded from the internet that aren't
+> notarized. If macOS refuses to open the app, run this once in Terminal
+> and open Carmen normally afterwards:
+>
+> ```bash
+> sudo xattr -rd com.apple.quarantine /Applications/Carmen.app
+> ```
+
 ## 💾 Data & storage
 
 Downloads live in the app's own data directory (identifier

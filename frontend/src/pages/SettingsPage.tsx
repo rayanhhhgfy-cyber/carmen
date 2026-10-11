@@ -10,11 +10,13 @@ import {
   Tooltip,
 } from '../components/ui';
 import type { ReactElement, ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '../utils/cn';
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
 import { useBattery } from '../settings/battery';
 import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
+import { appInfo, isTauri, type AppInfo } from '../platform/env';
 import { LYRICS_PROVIDERS } from '../types/models';
 import type { FontId, ThemeMode } from '../types/models';
 import {
@@ -128,6 +130,22 @@ export default function SettingsPage() {
   // spots fall back to plain colours while it reads that way. The dark
   // theme reads white perfectly and keeps them.
   const whiteOnLight = resolved === 'light' && accentInUse.toLowerCase() === '#ffffff';
+
+  // App version + runtime facts (Settings → About). Tauri only — the web
+  // build is whatever CI deployed, so there is nothing to version-check.
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    if (!isTauri) return undefined;
+    let cancelled = false;
+    appInfo()
+      .then((facts) => {
+        if (!cancelled) setInfo(facts);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <Container maxWidth="sm" className="pb-8 pt-4 md:pt-6">
@@ -549,6 +567,25 @@ export default function SettingsPage() {
           </div>
         </Section>
 
+        {isTauri && info ? (
+          <Section title="About">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-row items-center justify-between">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">Version</p>
+                <Chip size="small" label={`v${info.version}`} variant="outlined" />
+              </div>
+              <div className="flex flex-row items-center justify-between">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">Platform</p>
+                <Chip
+                  size="small"
+                  label={`${info.platform} · ${info.arch}`}
+                  variant="outlined"
+                />
+              </div>
+            </div>
+          </Section>
+        ) : null}
+
         <Section title="Credits">
           <div className="flex flex-col gap-[10px]">
             <div>
@@ -563,7 +600,7 @@ export default function SettingsPage() {
               <Credit
                 href="https://github.com/z44d"
                 name="GitHub"
-                icon={<GitHubIcon />}
+                icon={<GitHubIcon fontSize="inherit" />}
                 iconColor="text.primary"
               >
                 @z44d
@@ -571,7 +608,7 @@ export default function SettingsPage() {
               <Credit
                 href="https://x.com/0z44d"
                 name="X"
-                icon={<XIcon />}
+                icon={<XIcon fontSize="inherit" />}
                 iconColor="text.primary"
               >
                 @0z44d
@@ -579,7 +616,7 @@ export default function SettingsPage() {
               <Credit
                 href="https://t.me/zaidballour"
                 name="Telegram"
-                icon={<TelegramIcon />}
+                icon={<TelegramIcon fontSize="inherit" />}
                 iconColor="#229ED9"
               >
                 @zaidballour

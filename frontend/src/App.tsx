@@ -10,6 +10,7 @@ import QueuePage from './pages/QueuePage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
 import SongPage from './pages/SongPage';
+import UpdateDialog from './components/UpdateDialog';
 import { loadAppState, saveAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/appState';
 import { PlayerProvider } from './player/PlayerContext';
 import { ThemeProvider } from './theme/ThemeContext';
@@ -77,6 +78,9 @@ export default function App() {
         <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <RoutePersistence />
           <RouteGuard />
+          {/* Tauri-only: asks to update when GitHub's latest tag is newer
+              than this build (no-op in the browser). */}
+          <UpdateDialog />
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />

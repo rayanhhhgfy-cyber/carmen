@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import NamedTuple
@@ -1006,7 +1007,12 @@ import time
 from yt_dlp import YoutubeDL
 
 AUDIO_CACHE_DIR = Path(__file__).parent / ".audio_cache"
-AUDIO_CACHE_LIMIT = 100  # number of downloaded files kept on disk
+# Disk budget for the cache, not a file count: a track is ~5-15 MB, so the
+# old "newest 100 files" cap could still fill the disk with long mixes.  The
+# janitor task in ``__main__.py`` enforces this while the server runs; each
+# completed download also prunes immediately.
+AUDIO_CACHE_MAX_BYTES = 5 * 1024**3  # 5 GiB
+AUDIO_CACHE_PRUNE_INTERVAL = 300  # seconds between janitor passes
 AUDIO_SUFFIXES = (".m4a", ".mp4", ".webm", ".ogg", ".opus")
 
 streaming_options = {
@@ -1043,6 +1049,12 @@ def find_cached_audio(video_id: str) -> Path | None:
         candidate = AUDIO_CACHE_DIR / f"{video_id}{suffix}"
         try:
             if candidate.is_file() and candidate.stat().st_size:
+                # Bump mtime so the size-based prune treats this as the most
+                # recently *used* file, not the most recently downloaded.
+                try:
+                    os.utime(candidate, None)
+                except OSError:
+                    pass  # a touch failure must never cost the cache hit
                 return candidate
         except OSError:
             # an id the filesystem refuses (too long, odd characters) or a
@@ -1052,16 +1064,48 @@ def find_cached_audio(video_id: str) -> Path | None:
     return None
 
 
+def audio_cache_bytes() -> int:
+    """Total bytes currently occupied by the audio cache."""
+    total = 0
+    try:
+        for p in AUDIO_CACHE_DIR.glob("*"):
+            try:
+                if p.is_file():
+                    total += p.stat().st_size
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return total
+
+
 def _prune_audio_cache():
-    """Keep only the most recently used :data:`AUDIO_CACHE_LIMIT` files."""
+    """Keep the on-disk audio cache within :data:`AUDIO_CACHE_MAX_BYTES`.
+
+    Evicts least-recently-used files first (mtime is bumped on every cache
+    hit, see :func:`find_cached_audio`).  Called after each completed
+    download and periodically by the janitor task in ``__main__.py``.
+    """
     try:
         files = sorted(
             (p for p in AUDIO_CACHE_DIR.glob("*") if p.is_file()),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
+            key=lambda p: p.stat().st_mtime,  # oldest (= least used) first
         )
-        for stale in files[AUDIO_CACHE_LIMIT:]:
-            stale.unlink(missing_ok=True)
+        sizes: list[tuple[Path, int]] = []
+        for p in files:
+            try:
+                sizes.append((p, p.stat().st_size))
+            except OSError:
+                continue
+        total = sum(size for _, size in sizes)
+        for p, size in sizes:
+            if total <= AUDIO_CACHE_MAX_BYTES:
+                break
+            try:
+                p.unlink(missing_ok=True)
+                total -= size
+            except OSError:
+                continue
     except OSError:
         pass
 
