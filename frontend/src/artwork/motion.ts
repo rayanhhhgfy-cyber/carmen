@@ -1,9 +1,7 @@
 /**
  * Animated ("motion") artwork — the album covers that move.
  *
- * A TypeScript port of the `coverpy` Python client exercised in `test.py`
- * (`CoverPy().get_cover()` + `get_motion_artwork()`), running entirely in the
- * client:
+ * Resolution is split between the client and the server:
  *
  *   1. the public **iTunes Search API** turns `"Album - Artist"` (the term
  *      style `test.py` drives coverpy with — an album title alone matches
@@ -12,31 +10,26 @@
  *      without an album — flat search/queue records — fall back to an
  *      iTunes **song** search, whose first result points straight at the
  *      collection to animate;
- *   2. Apple's own **music.apple.com web token** — scraped from the web
- *      bundle once and persisted in `app_state` (it lives ~60 days) — unlocks
- *      `amp-api.music.apple.com/v1/catalog/…?extend=editorialVideo`, which
- *      hands out the HLS master playlist of the motion artwork;
- *   3. the master playlist is walked for H.264 variants, preferring an exact
- *      **468×468** rendition and falling back to coverpy's "standard"
- *      480–720 px pick (Apple's real ladders are 360/408/456/486/768/960/
- *      1080, so 468 only wins where a ladder offers it). The variant
- *      playlist's `#EXT-X-MAP` resolves to one self-contained MP4 — the same
- *      file the segments byte-range into, so it plays and stores as-is.
+ *   2. `GET /browsing/animated-artwork/{collectionId}` resolves the direct
+ *      MP4 on the **server**, which runs coverpy's Apple Music walk (web
+ *      token → `amp-api …?extend=editorialVideo` → HLS ladder → one
+ *      self-contained MP4) and caches the resulting URL in Redis for a week
+ *      (Apple CDN links expire). It answers `null` for albums without motion
+ *      artwork and for Apple rate limits alike.
  *
- * Steps 2–3 go through `@tauri-apps/plugin-http` (Rust-backed): the WebView
- * cannot make them — `amp-api` requires a spoofed
- * `Origin: https://music.apple.com`, which browsers forbid as a header.
- * The flip side: the plugin auto-stamps every request with the WebView's
- * own origin, and Apple's edge answers *that* with a 403 on the bootstrap
- * page — so the plain GETs deliberately send an empty Origin (coverpy sends
- * none either), which the plugin strips before sending. That also means
- * *the Now Playing page* only exists inside the Tauri shell; a plain
- * `vite dev` session keeps static covers there.
+ * Step 2 lives server-side because `amp-api` demands a spoofed
+ * `Origin: https://music.apple.com`, which a WebView cannot send — moving it
+ * there also lets plain **web** sessions play animated covers, not just the
+ * Tauri shell.
  *
- * The bytes are cached so nothing is ever fetched twice:
+ * The bytes are cached so nothing is fetched twice:
  *
- *   <app data>/motion/<key>.mp4             streamed albums (disk cache)
- *   <app data>/songs/<videoId>/motion.mp4   saved along with a download
+ *   <app data>/motion/<collectionId>.mp4   streamed albums (disk cache, Tauri)
+ *   <app data>/songs/<videoId>/motion.mp4  saved along with a download
+ *
+ * A resolved `collectionId` is memoized for the session and persisted, so the
+ * disk cache is still found offline. In a browser (no filesystem) the video
+ * plays straight from the CORS-open CDN URL.
  *
  * UI contract: the static cover stays put the whole time — a video only
  * replaces it once its element reports `canplay`, and any failure (offline,
@@ -45,8 +38,8 @@
  */
 import { useEffect, useState } from 'react';
 import { readDir, remove, stat } from '@tauri-apps/plugin-fs';
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
+import { apiGet } from '../api';
 import { loadAppState, saveAppState } from '../db/repos/appState';
 import { isDownloaded } from '../offline/source';
 import { fileExists, motionDir, songsDir, writeBinary } from '../offline/storage';
@@ -72,7 +65,8 @@ export interface MotionArtworkRef {
 // ── Plumbing ─────────────────────────────────────────────────────────────────
 
 const RESOLVE_TIMEOUT_MS = 12_000;
-const BUNDLE_TIMEOUT_MS = 45_000;
+/** The server's cold resolve (coverpy token + HLS walk) can take a while. */
+const SERVER_TIMEOUT_MS = 20_000;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 /** How many albums may resolve at once — a shelf of tiles must not stampede. */
 const RESOLVE_CONCURRENCY = 3;
@@ -117,109 +111,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-interface PluginTextResult {
-  ok: boolean;
-  status: number;
-  body: string;
-}
-
-interface PluginJsonResult {
-  ok: boolean;
-  status: number;
-  payload: unknown;
-}
-
-/**
- * Text hop through the Rust-backed fetch: no CORS, any header allowed.
- *
- * The plugin auto-stamps every request with the WebView's own
- * `Origin: http://localhost:1420`, which Apple's edge answers with **403**
- * on `music.apple.com` (verified: curl with that Origin → `403`,20-byte
- * body; none → `200`). coverpy sends no Origin on these GETs, so default to
- * an empty one — with `unsafe-headers` the plugin *removes* `Origin: ''`
- * before sending. Callers may still pass their own Origin (amp-api needs
- * `https://music.apple.com`).
- *
- * In a plain browser the hop degrades to `fetch`: `Origin` is a *forbidden*
- * header there, so the browser drops any spoofed value and sends the page's
- * real origin — Apple answers web origins with `403` / no CORS headers and
- * the caller degrades to static artwork.
- */
-async function pluginText(
-  url: string,
-  headers: Record<string, string> = {},
-): Promise<PluginTextResult> {
-  if (!isTauri) {
-    try {
-      const response = await fetch(url, { headers });
-      return { ok: response.ok, status: response.status, body: await response.text() };
-    } catch {
-      return { ok: false, status: 0, body: '' };
-    }
-  }
-  const merged: Record<string, string> = { Origin: '', ...headers };
-  const response = (await tauriFetch(url, { headers: merged })) as unknown as {
-    ok: boolean;
-    status: number;
-    text(): Promise<string>;
-  };
-  const body = await response.text();
-  return { ok: response.ok, status: response.status, body };
-}
-
-/** JSON hop through the Rust-backed fetch (status included — 401 matters). */
-async function pluginJson(
-  url: string,
-  headers: Record<string, string> = {},
-): Promise<PluginJsonResult> {
-  if (!isTauri) {
-    try {
-      const response = await fetch(url, { headers });
-      let payload: unknown = null;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-      return { ok: response.ok, status: response.status, payload };
-    } catch {
-      return { ok: false, status: 0, payload: null };
-    }
-  }
-  const response = (await tauriFetch(url, { headers })) as unknown as {
-    ok: boolean;
-    status: number;
-    json(): Promise<unknown>;
-  };
-  let payload: unknown = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-  return { ok: response.ok, status: response.status, payload };
-}
-
-// ── Cache keys ───────────────────────────────────────────────────────────────
-
-/**
- * Stable, filename-safe key for an album title. Two FNV-1a passes (forward
- * and reversed) give ~64 bits — collisions between real album names are not
- * a practical concern at this scale.
- */
-function motionKey(album: string): string {
-  const normalized = album.trim().toLowerCase().replace(/\s+/g, ' ');
-  let forward = 0x811c9dc5;
-  let backward = 0x1b873593;
-  for (let index = 0; index < normalized.length; index += 1) {
-    forward = Math.imul(forward ^ normalized.charCodeAt(index), 0x01000193) >>> 0;
-  }
-  for (let index = normalized.length - 1; index >= 0; index -= 1) {
-    backward = Math.imul(backward ^ normalized.charCodeAt(index), 0x85ebca6b) >>> 0;
-  }
-  return `m${forward.toString(36)}${backward.toString(36)}`;
-}
-
 /**
  * What a reference resolves (and caches) under: the album title when one is
  * known, else `"Title - Artist"` for songs that arrive without an album.
@@ -234,86 +125,7 @@ function referenceIdentity(reference: MotionArtworkRef | null | undefined): stri
   return artist ? `${title} - ${artist}` : title;
 }
 
-// ── Apple web token (persisted — the bundle scrape happens rarely) ──────────
-
-const TOKEN_BOOTSTRAP_URL = 'https://music.apple.com/us/album/1693323844';
-const TOKEN_STATE_KEY = 'motionToken';
-const TOKEN_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
-const SCRIPT_PATTERN = /src=["'](\/assets\/index[^"']+\.js)["']/;
-
-interface StoredToken {
-  token: string;
-  exp: number;
-}
-
-let tokenMemory: StoredToken | null = null;
-let tokenBoot: Promise<string> | null = null;
-/** A token Apple rejected — never use it (or its persisted copy) again. */
-let poisonedToken: string | null = null;
-
-function decodeTokenPayload(token: string): Record<string, unknown> | null {
-  try {
-    const part = token.split('.')[1];
-    if (!part) return null;
-    const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-    const payload: unknown = JSON.parse(atob(padded));
-    return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Scrapes the AMP web bundle for the `AMPWebPlay` JWT (~3 MB, once). */
-async function bootstrapToken(): Promise<string> {
-  const page = await withTimeout(pluginText(TOKEN_BOOTSTRAP_URL), RESOLVE_TIMEOUT_MS);
-  if (!page.ok) throw new Error('motion: token bootstrap page failed');
-  const bundlePath = SCRIPT_PATTERN.exec(page.body)?.[1];
-  if (!bundlePath) throw new Error('motion: web bundle not found');
-  const bundle = await withTimeout(
-    pluginText(`https://music.apple.com${bundlePath}`),
-    BUNDLE_TIMEOUT_MS,
-  );
-  if (!bundle.ok) throw new Error('motion: web bundle fetch failed');
-  for (const token of bundle.body.match(TOKEN_PATTERN) ?? []) {
-    if (decodeTokenPayload(token)?.iss === 'AMPWebPlay') return token;
-  }
-  throw new Error('motion: web token not found');
-}
-
-/** The current web token — from memory, the persisted copy, or a fresh scrape. */
-async function webToken(): Promise<string> {
-  const now = Date.now() / 1000;
-  if (tokenMemory && tokenMemory.token !== poisonedToken && tokenMemory.exp > now + 60) {
-    return tokenMemory.token;
-  }
-  if (tokenBoot) return tokenBoot;
-  tokenBoot = (async () => {
-    if (!poisonedToken) {
-      try {
-        const stored = await loadAppState<StoredToken | null>(TOKEN_STATE_KEY, null);
-        if (stored?.token && stored.exp > now + 60) {
-          tokenMemory = stored;
-          return stored.token;
-        }
-      } catch {
-        /* fall through to a fresh bootstrap */
-      }
-    }
-    const token = await bootstrapToken();
-    const exp = Number(decodeTokenPayload(token)?.exp) || Math.floor(now + 60 * 24 * 3600);
-    tokenMemory = { token, exp };
-    void saveAppState(TOKEN_STATE_KEY, tokenMemory).catch(() => {});
-    return token;
-  })();
-  try {
-    return await tokenBoot;
-  } finally {
-    tokenBoot = null;
-  }
-}
-
-// ── iTunes search → Apple Music album → editorial video ─────────────────────
+// ── iTunes search → Apple Music collection id ────────────────────────────────
 
 /**
  * iTunes Search API — the first result's `collectionId`, or `null`.
@@ -343,218 +155,76 @@ async function searchCollectionId(
   return typeof id === 'number' ? id : null;
 }
 
-/** `amp-api` editorial metadata → the HLS master playlist of the square video. */
-async function editorialVideoUrl(collectionId: number): Promise<string | null> {
-  const url =
-    `https://amp-api.music.apple.com/v1/catalog/us/albums/${collectionId}` +
-    '?extend=editorialVideo';
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const token = await webToken();
-    const response = await withTimeout(
-      pluginJson(url, {
-        Authorization: `Bearer ${token}`,
-        // amp-api authenticates the *web player's* origin as well as the JWT.
-        Origin: 'https://music.apple.com',
-        Accept: 'application/json',
-      }),
-      RESOLVE_TIMEOUT_MS,
-    );
-    if (response.status === 401 || response.status === 403) {
-      poisonedToken = token;
-      continue; // scrape a fresh token and try exactly once more
-    }
-    if (!response.ok) {
-      return null;
-    }
-    const payload = response.payload as {
-      data?: Array<{
-        attributes?: {
-          editorialVideo?: Record<string, { video?: unknown } | undefined>;
-        };
-      }>;
-    };
-    const editorial = payload?.data?.[0]?.attributes?.editorialVideo;
-    if (!editorial) {
-      return null;
-    }
-    const square = editorial.motionSquareVideo1x1 ?? editorial.motionDetailSquare;
-    const video = square?.video;
-    return typeof video === 'string' && video ? video : null;
-  }
-  return null;
-}
+// ── Resolution cache (session) + id store (persisted) ────────────────────────
 
-// ── HLS → one direct MP4 (coverpy's algorithm + the 468 preference) ─────────
-
-interface HlsVariant {
-  playlistUrl: string;
-  bandwidth: number;
-  width: number | null;
-  codecs: string;
-}
-
-/** `KEY="value"` / `KEY=value` pairs — quoted values may contain commas. */
-const ATTRIBUTE_PATTERN = /([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))(?:,|$)/g;
-const MAP_URI_PATTERN = /URI="([^"]+)"/;
-
-function resolveUrl(base: string, relative: string): string {
-  try {
-    return new URL(relative, base).toString();
-  } catch {
-    return relative;
-  }
-}
-
-function parseMasterPlaylist(masterUrl: string, text: string): HlsVariant[] {
-  const lines = text.split(/\r?\n/).map((line) => line.trim());
-  const variants: HlsVariant[] = [];
-  lines.forEach((line, index) => {
-    if (!line.startsWith('#EXT-X-STREAM-INF:')) return;
-    const attributes = new Map<string, string>();
-    ATTRIBUTE_PATTERN.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    const attributeText = line.slice(line.indexOf(':') + 1);
-    while ((match = ATTRIBUTE_PATTERN.exec(attributeText)) !== null) {
-      attributes.set(match[1], match[2] ?? match[3] ?? '');
-    }
-    const playlistUrl = lines
-      .slice(index + 1)
-      .find((candidate) => candidate && !candidate.startsWith('#'));
-    if (!playlistUrl) return;
-    const resolution = attributes.get('RESOLUTION') ?? '';
-    const widthText = resolution.split('x')[0];
-    const width = /^\d+$/.test(widthText) ? Number(widthText) : null;
-    const bandwidthText = attributes.get('AVERAGE-BANDWIDTH') || attributes.get('BANDWIDTH');
-    const bandwidth = bandwidthText && /^\d+$/.test(bandwidthText) ? Number(bandwidthText) : 0;
-    variants.push({
-      playlistUrl: resolveUrl(masterUrl, playlistUrl),
-      bandwidth,
-      width,
-      codecs: attributes.get('CODECS') ?? '',
-    });
-  });
-  return variants;
-}
-
-/** The rendition to play: 468 if the ladder has it, else coverpy's pick. */
-function standardVariant(variants: HlsVariant[]): HlsVariant {
-  const exact = variants.find((variant) => variant.width === 468);
-  if (exact) return exact;
-  const preferred = variants.filter(
-    (variant) => variant.width !== null && variant.width >= 480 && variant.width <= 720,
-  );
-  if (preferred.length) {
-    return preferred.reduce((best, variant) => {
-      const bestDistance = Math.abs((best.width ?? 600) - 600);
-      const distance = Math.abs((variant.width ?? 600) - 600);
-      return distance < bestDistance || (distance === bestDistance && variant.bandwidth < best.bandwidth)
-        ? variant
-        : best;
-    });
-  }
-  const ordered = [...variants].sort((a, b) => a.bandwidth - b.bandwidth);
-  return ordered.length >= 3 ? ordered[Math.floor(ordered.length / 3)] : ordered[0];
-}
-
-/** The whole video file behind a playlist — the `#EXT-X-MAP` byte range. */
-function directVideoUrl(playlistUrl: string, text: string): string | null {
-  const lines = text.split(/\r?\n/);
-  for (const line of lines) {
-    const stripped = line.trim();
-    if (!stripped.startsWith('#EXT-X-MAP:')) continue;
-    const match = MAP_URI_PATTERN.exec(stripped);
-    if (match) return resolveUrl(playlistUrl, match[1]);
-  }
-  for (const line of lines) {
-    const stripped = line.trim();
-    if (stripped && !stripped.startsWith('#') && stripped.includes('.mp4')) {
-      return resolveUrl(playlistUrl, stripped);
-    }
-  }
-  return null;
-}
-
-/** Master playlist → chosen variant → direct, self-contained MP4 URL. */
-async function resolveVideoUrl(hlsUrl: string): Promise<string | null> {
-  const master = await withTimeout(pluginText(hlsUrl), RESOLVE_TIMEOUT_MS);
-  if (!master.ok) {
-    return null;
-  }
-  const variants = parseMasterPlaylist(hlsUrl, master.body);
-  if (!variants.length) {
-    const direct = directVideoUrl(hlsUrl, master.body);
-    return direct;
-  }
-  const compatible = variants.filter((variant) => variant.codecs.toLowerCase().includes('avc1'));
-  const candidates = compatible.length ? compatible : variants;
-  const chosen = standardVariant(candidates);
-  const variant = await withTimeout(pluginText(chosen.playlistUrl), RESOLVE_TIMEOUT_MS);
-  if (!variant.ok) {
-    return null;
-  }
-  const direct = directVideoUrl(chosen.playlistUrl, variant.body);
-  return direct;
-}
-
-// ── Resolution cache (session) + URL store (persisted) ──────────────────────
-
-const URLS_STATE_KEY = 'motionUrls';
-/** Settled results for this session — `null` means "this album has none". */
-const resolutionCache = new Map<string, string | null>();
-const pendingResolutions = new Map<string, Promise<string | null>>();
+const MOTION_IDS_STATE_KEY = 'motionIds';
+/** Session memo: identity → iTunes collection id (`null` = none). */
+const aidCache = new Map<string, number | null>();
+/** Session memo: collection id → server-resolved MP4 URL. */
+const urlCache = new Map<number, string | null>();
+const pendingAids = new Map<string, Promise<number | null>>();
+const pendingUrls = new Map<number, Promise<string | null>>();
 const pendingCaches = new Map<string, Promise<string | null>>();
 
-let urlStore: Record<string, string> | null = null;
-let urlSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let idStore: Record<string, number> | null = null;
+let idSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-async function storedUrls(): Promise<Record<string, string>> {
-  if (!urlStore) {
+async function storedIds(): Promise<Record<string, number>> {
+  if (!idStore) {
     try {
-      urlStore = await loadAppState<Record<string, string>>(URLS_STATE_KEY, {});
+      idStore = await loadAppState<Record<string, number>>(MOTION_IDS_STATE_KEY, {});
     } catch {
-      urlStore = {};
+      idStore = {};
     }
   }
-  return urlStore;
+  return idStore;
 }
 
-/** Batched persist — a shelf of tiles resolving together writes once. */
-function scheduleUrlSave(): void {
-  if (urlSaveTimer) return;
-  urlSaveTimer = setTimeout(() => {
-    urlSaveTimer = null;
-    const snapshot = { ...(urlStore ?? {}) };
-    void saveAppState(URLS_STATE_KEY, snapshot).catch(() => {});
+/** Batched persist — resolving several albums together writes once. */
+function scheduleIdSave(): void {
+  if (idSaveTimer) return;
+  idSaveTimer = setTimeout(() => {
+    idSaveTimer = null;
+    const snapshot = { ...(idStore ?? {}) };
+    void saveAppState(MOTION_IDS_STATE_KEY, snapshot).catch(() => {});
   }, 600);
 }
 
-/** Resolves the direct MP4 URL for a reference — pooled, memoized, persisted. */
-async function resolvedUrl(reference: MotionArtworkRef): Promise<string | null> {
+/**
+ * The iTunes collection id of the reference's album — the session memo, then
+ * the persisted map (offline), then an iTunes search. Album first ("Album -
+ * Artist", like test.py); a song with no album falls back to a *song* search.
+ */
+async function resolveCollectionId(reference: MotionArtworkRef): Promise<number | null> {
   const identity = referenceIdentity(reference);
   if (!identity) return null;
-  const key = motionKey(identity);
-  const cached = resolutionCache.get(key);
-  if (cached !== undefined) return cached;
-  const inFlight = pendingResolutions.get(key);
+
+  const memo = aidCache.get(identity);
+  if (memo !== undefined) return memo;
+
+  const inFlight = pendingAids.get(identity);
   if (inFlight) return inFlight;
 
   const task = resolvePool(async () => {
     try {
-      const store = await storedUrls();
-      const stored = store[key];
-      if (stored) {
-        resolutionCache.set(key, stored);
+      // Seen before — the persisted map answers with no network at all,
+      // which is what keeps the disk cache usable offline.
+      const store = await storedIds();
+      const stored = store[identity];
+      if (typeof stored === 'number') {
+        aidCache.set(identity, stored);
         return stored;
       }
+
       const album = reference.album?.trim();
       const title = reference.title?.trim();
       const artist = reference.artist?.trim();
-      // Album first ("Album - Artist", like test.py); a song with no album
-      // — or one iTunes has never heard of — falls back to a *song* search,
-      // whose first result points straight at the collection to animate.
       let collectionId: number | null = null;
       if (album) {
-        collectionId = await searchCollectionId(artist ? `${album} - ${artist}` : album, 'album');
+        collectionId = await searchCollectionId(
+          artist ? `${album} - ${artist}` : album,
+          'album',
+        );
       }
       if (!collectionId && title) {
         collectionId = await searchCollectionId(
@@ -562,44 +232,71 @@ async function resolvedUrl(reference: MotionArtworkRef): Promise<string | null> 
           'song',
         );
       }
-      if (!collectionId) {
-        resolutionCache.set(key, null);
-        return null;
+      aidCache.set(identity, collectionId);
+      if (collectionId) {
+        store[identity] = collectionId;
+        scheduleIdSave();
       }
-      const hlsUrl = await editorialVideoUrl(collectionId);
-      if (!hlsUrl) {
-        resolutionCache.set(key, null);
-        return null;
-      }
-      const videoUrl = await resolveVideoUrl(hlsUrl);
-      resolutionCache.set(key, videoUrl);
-      if (videoUrl) {
-        store[key] = videoUrl;
-        scheduleUrlSave();
-      }
-      return videoUrl;
+      return collectionId;
     } catch (error) {
-      console.warn('[motion] resolve failed', identity, error);
-      // Session-scoped negative: one blip costs this album until relaunch,
-      // never the whole shelf (each album fails independently).
-      resolutionCache.set(key, null);
+      console.warn('[motion] album lookup failed', identity, error);
+      // Session-scoped negative — one blip costs this album until relaunch.
+      aidCache.set(identity, null);
       return null;
     }
   });
 
-  pendingResolutions.set(key, task);
+  pendingAids.set(identity, task);
   try {
     return await task;
   } finally {
-    pendingResolutions.delete(key);
+    pendingAids.delete(identity);
+  }
+}
+
+/**
+ * The direct MP4 URL for a collection, resolved by the server (which runs
+ * coverpy and caches the answer for a week). `null` means "no motion
+ * artwork" — or a transient upstream failure, which the server deliberately
+ * leaves uncached, so those are not memoized here either.
+ */
+async function serverMotionUrl(collectionId: number): Promise<string | null> {
+  const memo = urlCache.get(collectionId);
+  if (memo !== undefined) return memo;
+
+  const inFlight = pendingUrls.get(collectionId);
+  if (inFlight) return inFlight;
+
+  const task = (async () => {
+    try {
+      const payload = await withTimeout(
+        apiGet(`/browsing/animated-artwork/${collectionId}`),
+        SERVER_TIMEOUT_MS,
+      );
+      const url = payload?.video_url;
+      const resolved = typeof url === 'string' && url ? url : null;
+      // Memo clean "no artwork" answers too; the server already decided.
+      urlCache.set(collectionId, resolved);
+      return resolved;
+    } catch (error) {
+      console.warn('[motion] server resolve failed', collectionId, error);
+      return null; // transient — retried on the next request
+    }
+  })();
+
+  pendingUrls.set(collectionId, task);
+  try {
+    return await task;
+  } finally {
+    pendingUrls.delete(collectionId);
   }
 }
 
 // ── Disk cache ───────────────────────────────────────────────────────────────
 
-async function cachedMotionPath(key: string): Promise<string | null> {
+async function cachedMotionPath(collectionId: number): Promise<string | null> {
   const dir = await motionDir();
-  return dir ? `${dir}/${key}.mp4` : null;
+  return dir ? `${dir}/${collectionId}.mp4` : null;
 }
 
 /** Drops the oldest files once the cache grows past its budget. */
@@ -641,8 +338,11 @@ async function downloadVideo(url: string): Promise<Uint8Array> {
 }
 
 /** Writes bytes into the shared cache and returns the path written. */
-async function storeMotionVideo(identity: string, bytes: Uint8Array): Promise<string | null> {
-  const path = await cachedMotionPath(motionKey(identity));
+async function storeMotionVideo(
+  collectionId: number,
+  bytes: Uint8Array,
+): Promise<string | null> {
+  const path = await cachedMotionPath(collectionId);
   if (!path) return null;
   try {
     if (await fileExists(path)) return path;
@@ -655,12 +355,13 @@ async function storeMotionVideo(identity: string, bytes: Uint8Array): Promise<st
   }
 }
 
-/** Makes sure the video is on disk, returns its local path — or the URL. */
-async function cachedVideo(key: string, url: string): Promise<string | null> {
+/** Makes sure the video is on disk, returns its local path — or null. */
+async function cachedVideo(collectionId: number, url: string): Promise<string | null> {
+  const key = String(collectionId);
   const inFlight = pendingCaches.get(key);
   if (inFlight) return inFlight;
   const task = (async () => {
-    const path = await cachedMotionPath(key);
+    const path = await cachedMotionPath(collectionId);
     if (!path) return null;
     if (await fileExists(path)) return path;
     try {
@@ -669,7 +370,7 @@ async function cachedVideo(key: string, url: string): Promise<string | null> {
       void pruneMotionCache();
       return path;
     } catch (error) {
-      // Caching failed — the remote file still plays (the CDN is CORS-open).
+      // Caching failed — the caller falls back to the remote URL.
       console.warn('[motion] cache download failed', error);
       return null;
     }
@@ -687,22 +388,22 @@ async function cachedVideo(key: string, url: string): Promise<string | null> {
 /**
  * Where an album's animated cover plays from:
  *   1. the copy saved with a downloaded track (works offline),
- *   2. the persistent disk cache of an earlier stream,
- *   3. freshly resolved + downloaded into that cache (remote URL as the
- *      last resort when even caching failed).
+ *   2. the persistent disk cache of an earlier stream (`<collectionId>.mp4`),
+ *   3. freshly resolved + downloaded into that cache.
  *
- * Resolves to `null` when the album simply has no motion artwork.
+ * In a browser (no filesystem) step 3 plays the server-resolved CDN URL
+ * directly. Resolves to `null` when the album has no motion artwork.
  */
 export async function motionSource(
   reference: MotionArtworkRef | null | undefined,
 ): Promise<string | null> {
+  if (!reference) return null;
   const identity = referenceIdentity(reference);
-  if (!reference || !identity || !isTauri) {
-    return null; // plain-web sessions stay static
-  }
+  if (!identity) return null;
 
-  const videoId = reference?.videoId ?? null;
-  if (videoId && isDownloaded(videoId)) {
+  const videoId = reference.videoId ?? null;
+  // 1. The copy saved with a download — offline-safe, Tauri only.
+  if (isTauri && videoId && isDownloaded(videoId)) {
     const base = await songsDir();
     if (base) {
       const path = `${base}/${videoId}/motion.mp4`;
@@ -710,13 +411,23 @@ export async function motionSource(
     }
   }
 
-  const key = motionKey(identity);
-  const cached = await cachedMotionPath(key);
-  if (cached && (await fileExists(cached))) return localFileUrl(cached);
+  // 2. The album's iTunes id (session → persisted → search).
+  const collectionId = await resolveCollectionId(reference);
+  if (!collectionId) return null;
 
-  const url = await resolvedUrl(reference);
+  // 3. The disk cache from an earlier stream — Tauri only.
+  if (isTauri) {
+    const cached = await cachedMotionPath(collectionId);
+    if (cached && (await fileExists(cached))) return localFileUrl(cached);
+  }
+
+  // 4. The server-resolved CDN URL (cached server-side for a week).
+  const url = await serverMotionUrl(collectionId);
   if (!url) return null;
-  const path = await cachedVideo(key, url);
+
+  // 5. Web plays straight from the CDN; Tauri downloads into the cache.
+  if (!isTauri) return url;
+  const path = await cachedVideo(collectionId, url);
   return path ? localFileUrl(path) : url;
 }
 
@@ -727,10 +438,11 @@ export async function motionSource(
 export async function fetchMotionArtwork(
   reference: MotionArtworkRef | null | undefined,
 ): Promise<Uint8Array | null> {
-  const identity = referenceIdentity(reference);
-  if (!reference || !identity || !isTauri) return null;
+  if (!reference || !isTauri) return null;
   try {
-    const url = await resolvedUrl(reference);
+    const collectionId = await resolveCollectionId(reference);
+    if (!collectionId) return null;
+    const url = await serverMotionUrl(collectionId);
     if (!url) return null;
     return await downloadVideo(url);
   } catch (error) {
@@ -741,16 +453,21 @@ export async function fetchMotionArtwork(
 
 /**
  * Saves motion-artwork bytes into the shared disk cache next to the
- * download — so tiles (and offline playback) find it without the network
- * even when the song folder copy is what plays.
+ * download — so later streams (and offline playback) find it without the
+ * network even when the song folder copy is what plays.
  */
 export async function saveMotionArtwork(
   reference: MotionArtworkRef | null | undefined,
   bytes: Uint8Array,
 ): Promise<void> {
-  const identity = referenceIdentity(reference);
-  if (!identity || !isTauri) return;
-  await storeMotionVideo(identity, bytes);
+  if (!reference || !isTauri) return;
+  try {
+    const collectionId = await resolveCollectionId(reference);
+    if (!collectionId) return;
+    await storeMotionVideo(collectionId, bytes);
+  } catch {
+    /* cache hygiene only */
+  }
 }
 
 /**
@@ -799,4 +516,3 @@ export function useMotionArtwork(
 
   return url;
 }
-

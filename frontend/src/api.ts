@@ -73,17 +73,37 @@ export function streamUrl(videoId: string): string {
   return `${apiBase()}/stream?vidId=${encodeURIComponent(videoId)}`;
 }
 
+/**
+ * Session memo of enriched track payloads (metadata **and** lyrics).
+ *
+ * `/browsing/track` already returns the lyrics alongside the rest of the track
+ * data, so one call per song is enough; this cache makes flipping back to a
+ * recently played song — or reopening the player — reuse that payload instead
+ * of asking the server again. Keyed by video id + lyrics provider (a provider
+ * change is a different answer), and failures are evicted so they retry.
+ */
+const trackMetaCache = new Map<string, Promise<any>>();
+
 /** Enriched track metadata with the configured lyrics provider applied. */
 export async function fetchTrackMeta(
   videoId: string,
   lyricsProvider: LyricsProvider,
   signal?: AbortSignal,
 ): Promise<any> {
+  const key = `${videoId}:${lyricsProvider || 'auto'}`;
+  const cached = trackMetaCache.get(key);
+  if (cached) return cached;
+
   // `auto` is the server default — omit the query so cached entries shared
   // between "Auto" and unset clients stay identical.
-  return apiGet(
+  const request = apiGet(
     `/browsing/track/${videoId}`,
     lyricsProvider && lyricsProvider !== 'auto' ? { provider: lyricsProvider } : {},
     signal,
-  );
+  ).catch((error) => {
+    trackMetaCache.delete(key); // never memo a failure — let it retry
+    throw error;
+  });
+  trackMetaCache.set(key, request);
+  return request;
 }

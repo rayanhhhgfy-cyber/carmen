@@ -1,13 +1,16 @@
 import asyncio
+from contextlib import suppress
 from functools import partial
 
 from fastapi import APIRouter, HTTPException
 
+from .. import state
 from ..cache import cached
 from ..core import (
     LYRICS_PROVIDERS,
     get_album,
     get_album_browse_id,
+    get_animated_artwork,
     get_artist,
     get_artist_albums,
     get_basejs_url,
@@ -321,7 +324,7 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
     response_description="Full track payload: metadata, artwork, genre and lyrics",
 )
 @sanitized
-@cached("track", ttl=86400, id_arg="videoId", extra_args=("provider",))
+@cached("track", ttl=604800, id_arg="videoId", extra_args=("provider",))
 async def track(videoId: str, provider: str | None = None):
     """
     Returns everything the player needs about a track in one call.
@@ -348,6 +351,67 @@ async def track(videoId: str, provider: str | None = None):
         return await loop.run_in_executor(executor, partial(get_track, videoId, provider))
     except DurationLimitExceeded as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# Resolved motion-artwork URLs live for a week (Apple CDN links expire);
+# "this album has no motion art" is cached for a day so a newly added one
+# shows up quickly.
+_MOTION_URL_TTL = 7 * 24 * 3600
+_MOTION_NONE_TTL = 24 * 3600
+_MOTION_NONE = "none"
+
+
+@router.get(
+    "/animated-artwork/{albumId}",
+    summary="Get Animated Artwork URL",
+    response_description="Direct MP4 URL of the album's motion artwork, or null",
+)
+@sanitized
+async def animated_artwork(albumId: int):
+    """
+    Resolve an album's animated ("motion") artwork via Apple Music.
+
+    Returns ``{"video_url": <direct mp4 url>}``, or ``{"video_url": null}``
+    when the album has no motion artwork **or** Apple rate-limits the lookup
+    (the failure is not cached, so it is retried on the next request).
+
+    The resolved URL is cached in Redis for one week under the album id,
+    because the underlying CDN link can expire.
+
+    - **albumId**: iTunes collection id of the album
+    """
+    key = f"yt:motion:{albumId}"
+    rds = state.rds
+
+    if rds is not None:
+        # Serve from the week-long cache; any Redis hiccup falls through to a
+        # fresh resolve (and a failed write just means the next call repeats).
+        with suppress(Exception):
+            cached_url = await rds.get(key)
+            if cached_url is not None:
+                value = (
+                    cached_url.decode()
+                    if isinstance(cached_url, (bytes, bytearray))
+                    else str(cached_url)
+                )
+                return {"video_url": None if value == _MOTION_NONE else value}
+
+    loop = asyncio.get_running_loop()
+    try:
+        url = await loop.run_in_executor(
+            executor, partial(get_animated_artwork, albumId)
+        )
+    except Exception:  # noqa: BLE001 — rate limit / token / network: null, uncached
+        return {"video_url": None}
+
+    if rds is not None:
+        with suppress(Exception):
+            if url:
+                await rds.set(key, url, ex=_MOTION_URL_TTL)
+            else:
+                await rds.set(key, _MOTION_NONE, ex=_MOTION_NONE_TTL)
+
+    return {"video_url": url}
 
 
 @router.get(
@@ -418,7 +482,7 @@ async def song_related(browseId: str):
     response_description="Song lyrics or timed lyrics",
 )
 @sanitized
-@cached("lyrics", ttl=86400, id_arg="browseId")
+@cached("lyrics", ttl=604800, id_arg="browseId")
 async def lyrics(browseId: str, timestamps: bool = False):
     """
     Returns lyrics of a song/video.

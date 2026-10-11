@@ -225,6 +225,34 @@ def get_lyrics(browseId: str, timestamps: bool | None = False):
     return ytm.get_lyrics(browseId, timestamps)
 
 
+# ── Animated artwork ───────────────────────────────────────────────────────
+
+
+def get_animated_artwork(album_id: int) -> str | None:
+    """
+    Direct MP4 URL of an album's Apple Music "motion artwork" (animated cover).
+
+    Uses CoverPy — the same client ``test.py`` exercises — which bootstraps an
+    Apple web token, reads the album's ``editorialVideo`` metadata off the
+    amp-api and walks the HLS ladder down to one self-contained MP4. Returns
+    the resolved ``video_url`` (falling back to the HQ variant), or ``None``
+    when the album simply ships no motion artwork.
+
+    Transient upstream problems (Apple rate limits, token/network failures)
+    are **not** swallowed here: they raise so the caller can skip caching and
+    simply answer ``null`` for this request.
+
+    :param album_id: iTunes collection id of the album
+    """
+    from coverpy import CoverPy  # local import: keep startup cost off the hot path
+
+    with CoverPy(country="US") as client:
+        motion = client.get_motion_artwork(album_id)
+    if motion is None:
+        return None
+    return motion.video_url or motion.hq_video_url
+
+
 # ── Track enrichment ───────────────────────────────────────────────────────
 
 _GENRE_HINT = re.compile(r"\bgenres?\b\s*[:\-]\s*([^\n|;]{2,40})", re.IGNORECASE)
