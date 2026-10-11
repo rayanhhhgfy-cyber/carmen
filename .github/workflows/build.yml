@@ -1,0 +1,379 @@
+name: Build and Release
+
+# Single consolidated workflow — replaces ci.yml + build-desktop.yml +
+# build-android.yml. Layout (mirrors the proven z44d/serbase build.yml):
+#   * checks (frontend / rust / server) run on pushes + PRs;
+#   * the desktop matrix and the Android job run for version tags (and for
+#     manual workflow_dispatch, so Windows/Android steps can be smoke-tested
+#     without tagging) and need all checks to be green first;
+#   * every build job attaches its OWN bundles straight to the GitHub
+#     Release via softprops/action-gh-release — there is intentionally NO
+#     actions/upload-artifact → download-artifact round-trip (GitHub's
+#     artifact size ceiling has bitten us). Several jobs creating/updating
+#     the same tag's release is fine: the action falls back to the
+#     already-created release when creation races.
+#   * `defaults.run.shell: bash` everywhere — the old desktop workflow's
+#     `if [ -f package-lock.json ]; …` step died on windows-latest because
+#     PowerShell (not bash) is the default shell there.
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Read-only by default; only the two build jobs (which attach release
+# assets) ask for `contents: write`.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ────────────────────────────── checks ──────────────────────────────
+  frontend:
+    name: Frontend typecheck + vite build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install JS deps (root = Tauri CLI, frontend = vite build)
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - run: npm run typecheck
+
+      - name: Vite production build
+        # NOT `npm run build` — that would also run a full Rust bundle.
+        run: npm run build:frontend
+
+  rust:
+    name: cargo check (src-tauri)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system deps (Tauri webkit/appindicator)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check
+
+  server:
+    name: Server sanity check (never runs the server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: server/requirements.txt
+
+      - name: Create venv and install requirements
+        # Always a fresh 3.11 venv — mirrors ./venv locally (system python may
+        # be a different major version and is never used).
+        run: |
+          python -m venv venv
+          ./venv/bin/pip install -r server/requirements.txt
+
+      - name: Byte-compile the server package
+        run: ./venv/bin/python -m compileall -q server
+
+      - name: Import the FastAPI app (safe at import time)
+        # `server/__main__.py` only builds the FastAPI app at import time.
+        # The YTMusic client (browser.json), the Redis client and the Telegram
+        # client are all created inside the `lifespan` hook, which never runs
+        # for a plain import — so no secrets, cookies or Redis are needed.
+        # This job must NOT start the server (`./venv/bin/python -m server`).
+        run: ./venv/bin/python -c "import server.__main__"
+
+  # ─────────────────────────── desktop bundles ───────────────────────────
+  desktop:
+    name: ${{ matrix.name }}
+    # Tags → build + attach to the release; workflow_dispatch → build only
+    # (smoke test without a release).
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: [frontend, rust, server]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: write # attach bundles to the GitHub release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal (dmg)
+            os: macos-latest
+            xwin: false
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            build-args: --target universal-apple-darwin --bundles dmg
+            release-files: |
+              src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          - name: Linux (deb + rpm + AppImage)
+            os: ubuntu-latest
+            xwin: false
+            rust-targets: x86_64-unknown-linux-gnu # host = no-op rustup add
+            build-args: --bundles deb,rpm,appimage
+            release-files: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/rpm/*.rpm
+              src-tauri/target/release/bundle/appimage/*.AppImage
+          - name: Windows x86_64 (NSIS)
+            os: windows-latest
+            xwin: true
+            rust-targets: x86_64-pc-windows-msvc
+            build-args: --target x86_64-pc-windows-msvc --bundles nsis
+            release-files: |
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - name: Windows aarch64 (NSIS)
+            os: windows-latest
+            xwin: true
+            rust-targets: aarch64-pc-windows-msvc
+            build-args: --target aarch64-pc-windows-msvc --bundles nsis
+            release-files: |
+              src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system deps (Tauri webkit/appindicator + rpm for rpmbuild)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            rpm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS deps (root = Tauri CLI, frontend = vite build)
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Generate icons from src-tauri/app-icon.png
+        run: npm run icons
+
+      - name: Install cargo-xwin (MSVC cross toolchain, used on windows)
+        if: matrix.xwin
+        run: cargo install --locked cargo-xwin
+
+      - name: Build bundles (tauri build)
+        # `bundle.targets: "all"` is narrowed per matrix entry via --bundles;
+        # beforeBuildCommand (npm run build:frontend) runs inside tauri build.
+        # No code signing is configured — all bundles are unsigned (macOS gets
+        # ad-hoc signing only).
+        run: >-
+          npx tauri build --ci
+          ${{ matrix.xwin && '--runner cargo-xwin' || '' }}
+          ${{ matrix.build-args }}
+
+      - name: Attach bundles to the GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.release-files }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+  # ──────────────────────────── Android APK/AAB ────────────────────────────
+  android:
+    name: Android release (APK + AAB)
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: [frontend, rust, server]
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write # attach APK/AAB to the GitHub release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system deps (Tauri webkit/appindicator)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: android
+
+      - name: Locate preinstalled sdkmanager + install a pinned NDK
+        # android-actions/setup-android@v3 is intentionally NOT used: its
+        # bootstrap runs `sdkmanager tools`, and the `tools` package no longer
+        # exists under cmdline-tools 16.x (that is exactly how the v1.0.0 tag
+        # run died: "Failed to find package 'tools'"). Ubuntu runners already
+        # ship the Android SDK, so we just drive the preinstalled sdkmanager
+        # directly. cargo-ndk is NOT required: the Gradle `rust` plugin invokes
+        # the Tauri CLI, which drives cargo + the NDK linkers itself and picks
+        # the newest directory under $ANDROID_HOME/ndk (we still export
+        # NDK_HOME explicitly for determinism).
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -mindepth 2 -maxdepth 3 -type f -name sdkmanager | sort -V | tail -1)"
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platform-tools" "ndk;29.0.13846066" \
+            || "$SDKMANAGER" --install "platform-tools" "ndk;27.0.12077973"
+          NDK_DIR="$(ls -1d "$SDK_ROOT"/ndk/* | sort -V | tail -1)"
+          echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "Using NDK: $NDK_DIR"
+
+      - name: Install JS deps (root = Tauri CLI, frontend = vite build)
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Generate src-tauri/gen/android when missing
+        # gen/android IS committed now — this only fires if it ever disappears.
+        # Locally the same thing is `npm run android:init`.
+        run: |
+          if [ ! -f src-tauri/gen/android/build.gradle.kts ]; then
+            npx tauri android init --ci
+          fi
+
+      - name: Ensure the Gradle wrapper is executable
+        # git usually preserves the exec bit, but a checkout that lost it
+        # would fail with "Permission denied" on ./gradlew.
+        run: chmod +x src-tauri/gen/android/gradlew
+
+      - name: Configure release signing from keystore secrets
+        # Signing follows https://v2.tauri.app/distribute/sign/android/ and the
+        # committed gen/android/app/build.gradle.kts, which reads
+        # gen/android/keystore.properties (keyAlias / password / storeFile):
+        #   * the keystore is decoded OUT of the repo into $RUNNER_TEMP
+        #   * keystore.properties is written next to build.gradle.kts
+        #     (the shipped .gitignore keeps it out of the repo)
+        # Required secrets (see DEVELOPMENT.md §10):
+        #   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+        #   ANDROID_KEYSTORE_ALIAS (+ optional ANDROID_KEY_PASSWORD).
+        # Without secrets the step exits early and the build stays unsigned.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 not set - building an UNSIGNED release."
+            exit 0
+          fi
+
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/upload-keystore.jks"
+
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          keyAlias=${ANDROID_KEYSTORE_ALIAS}
+          password=${ANDROID_KEYSTORE_PASSWORD}
+          keyPassword=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}
+          storeFile=${RUNNER_TEMP}/upload-keystore.jks
+          EOF
+          echo "Wrote src-tauri/gen/android/keystore.properties (values not logged)."
+
+      - name: Build release APK + AAB
+        # `tauri android build` builds BOTH formats when neither --apk nor
+        # --aab is given; both flags are passed explicitly for clarity.
+        # Outputs land under src-tauri/gen/android/app/build/outputs/
+        # (apk/<flavor>/release/*.apk, bundle/<flavor>Release/*.aab).
+        run: npx tauri android build --release --ci --apk --aab
+
+      - name: Attach APK/AAB to the GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          fail_on_unmatched_files: true
+          generate_release_notes: true

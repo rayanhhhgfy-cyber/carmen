@@ -56,7 +56,7 @@ Carmen is three cooperating pieces:
 | `server/` | FastAPI app: `__main__.py` (app + lifespan), `core.py`, `routes/`, `cache.py`, `sanitizers.py`, `state.py` |
 | `venv/` | Python **3.11** virtualenv (gitignored) |
 | `browser.json` | Live YouTube Music auth cookies — **gitignored, never commit** |
-| `.github/workflows/` | `ci.yml`, `build-desktop.yml`, `build-android.yml` (see §10) |
+| `.github/workflows/` | `build.yml` — checks + all release builds (see §10) |
 | `AGENTS.md` | Agent-facing project notes (mirrors parts of this guide) |
 
 ---
@@ -347,11 +347,11 @@ export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 "$ANDROID_HOME/ndk" | sort -V | tail 
 npm run android:init        # = tauri android init → creates src-tauri/gen/android/
 ```
 
-- `src-tauri/gen/android/` is generated, **not committed yet**. CI generates it
-  when missing (`.github/workflows/build-android.yml`). Recommended: generate
-  it once locally, apply the signing config below, and commit it (the template
-  ships a `.gitignore` that already excludes `keystore.properties` and
-  `local.properties`).
+- `src-tauri/gen/android/` **is committed** (with the release signing config
+  wired to `keystore.properties`); its `.gitignore` excludes
+  `keystore.properties` and `local.properties`. CI builds from the committed
+  project and only runs `npx tauri android init --ci` as a fallback if it is
+  ever missing (`.github/workflows/build.yml` → `android` job).
 - Init reads the app name/identifier from `src-tauri/tauri.conf.json`
   (`Carmen` / `com.z44d.carmen`).
 
@@ -509,32 +509,45 @@ link shapes resolve the same way.
 
 ## 10. CI/CD (GitHub Actions)
 
-Three workflows live in `.github/workflows/`:
+One workflow — `.github/workflows/build.yml` ("Build and Release") —
+consolidates what used to be three files (`ci.yml`, `build-desktop.yml`,
+`build-android.yml`):
 
-| Workflow | Triggers | What it does |
+| Job | Runs | What it does |
 |---|---|---|
-| `ci.yml` | push to `main`/`master`, PRs | 3 jobs: **frontend** (`npm ci` both lockfiles → `npm run typecheck` → `npm run build:frontend`), **rust** (Linux webkit deps → `cargo check` in `src-tauri`), **server** (fresh Py3.11 venv → `pip install -r server/requirements.txt` → `python -m compileall server` → `import server.__main__`). Read-only permissions; **never starts the server** — the import is safe because `YTMusic`/Redis/browser.json are all created inside the FastAPI `lifespan`, which a plain import never runs. |
-| `build-desktop.yml` | tags `v*`, `workflow_dispatch` | Matrix `windows-latest` / `macos-latest` / `ubuntu-latest`: Node 20 + Rust stable + rust-cache, frontend+root `npm ci`, then `tauri-apps/tauri-action@v0` builds the bundles (`bundle.targets: "all"`), uploads each as a workflow artifact. A single `release` job (tags only) downloads all artifacts and attaches them to a GitHub Release via `softprops/action-gh-release@v2` — one job, so three matrix runners never race to create the release. |
-| `build-android.yml` | tags `v*`, `workflow_dispatch` | Ubuntu + Temurin JDK 17 + Android SDK/NDK + Rust Android targets: generates `src-tauri/gen/android` **only if missing** (`npx tauri android init --ci`), decodes the keystore + writes `keystore.properties` + patches the release signing config **when secrets exist** (otherwise builds unsigned), runs `npx tauri android build --release --ci --apk --aab`, uploads `.apk`/`.aab` as artifacts, and attaches them to the GitHub Release on tags. |
+| `frontend` | push to `master`, PRs, tags `v*`, `workflow_dispatch` | `npm ci` (both lockfiles) → `npm run typecheck` → `npm run build:frontend` |
+| `rust` | ″ | Linux webkit deps → `cargo check` in `src-tauri` |
+| `server` | ″ | Fresh Py3.11 venv → `pip install -r server/requirements.txt` → `python -m compileall server` → `import server.__main__`. **Never starts the server** — the import is safe because `YTMusic`/Redis/browser.json are all created inside the FastAPI `lifespan`, which a plain import never runs |
+| `desktop` (matrix) | tags `v*` + `workflow_dispatch`, needs all 3 checks | 4 entries: **macOS universal dmg** (`macos-latest`), **Linux deb + rpm + AppImage** (`ubuntu-latest`; the `rpm` apt package provides `rpmbuild`), **Windows x86_64 NSIS** + **Windows aarch64 NSIS** (`windows-latest`, cross-built with `cargo-xwin`). Each entry: Node 20 + Rust stable + rust-cache → `npm ci` (both lockfiles) → `npm run icons` → `npx tauri build --ci --bundles …` |
+| `android` | tags `v*` + `workflow_dispatch`, needs all 3 checks | Ubuntu + Temurin JDK 17 + the **preinstalled** Android SDK (a pinned NDK is installed via the runner's own `sdkmanager` — `android-actions/setup-android@v3` was dropped after it broke on cmdline-tools 16 by trying to install the removed `tools` package) + Rust Android targets: builds the committed `src-tauri/gen/android`, decodes the keystore + writes `keystore.properties` **when secrets exist** (otherwise builds unsigned), runs `npx tauri android build --release --ci --apk --aab` |
 
-Common properties: pinned major action versions (`checkout@v4`,
-`setup-node@v4`, `setup-java@v4`, `setup-python@v5`, `upload/download-artifact@v4`,
+Release uploads happen **inside each build job** via
+`softprops/action-gh-release@v2` — deliberately **no
+`actions/upload-artifact`/`download-artifact` round-trip** (GitHub's artifact
+size ceiling). Jobs may all touch the same tag's release without a
+coordinating `release` job: when creation races, the action reuses the
+release that already exists. `fail_on_unmatched_files: true` guards against
+silently shipping a release with missing bundles.
+
+Common properties: `workflow_dispatch` runs the builds **without** tagging
+(handy for smoke-testing the Windows/Android steps), `defaults.run.shell:
+bash` everywhere (PowerShell is the default shell on `windows-latest` and
+breaks bash snippets), pinned major action versions (`checkout@v4`,
+`setup-node@v4`, `setup-java@v4`, `setup-python@v5`,
 `dtolnay/rust-toolchain@stable`, `Swatinem/rust-cache@v2`,
-`android-actions/setup-android@v3`, `tauri-action@v0`,
 `softprops/action-gh-release@v2`), a `concurrency` group per workflow/ref
 that cancels superseded runs, and `permissions: contents: write` **only** on
-the two release jobs — everything else is `contents: read`.
+the two build jobs — everything else is `contents: read`.
 
-**Repo note**: the root `package-lock.json` currently exists only in the
-working tree (untracked). The workflows run `npm ci` when it is present and
-fall back to `npm install` when it is not; **commit it** to make every CI
-install fully lockfile-pinned (`frontend/package-lock.json` is tracked, so
-the frontend always uses `npm ci`).
+Both lockfiles (`package-lock.json` + `frontend/package-lock.json`) are
+tracked, so every CI install is strict `npm ci`.
 
 **Release flow**: bump versions (`package.json` + `src-tauri/tauri.conf.json`
 + `Cargo.toml`) → commit → `git tag v1.2.0 && git push origin v1.2.0` →
-both release workflows run → GitHub Release is created/updated with the
-desktop bundles (dmg/msi/exe/deb/rpm/AppImage) and the Android APK/AAB.
+checks run, then the builds → the GitHub Release is created/updated with the
+desktop bundles (dmg, NSIS exe ×2, deb, rpm, AppImage) and the Android
+APK/AAB. If a tag build already ran, delete the tag (and its release) before
+re-pushing it: `git push origin :refs/tags/v1.2.0 && git tag -d v1.2.0`.
 
 **Required GitHub secrets**
 
@@ -546,8 +559,8 @@ desktop bundles (dmg/msi/exe/deb/rpm/AppImage) and the Android APK/AAB.
 | `ANDROID_KEY_PASSWORD` | optional | `-keypass`; falls back to the store password when omitted |
 | `GITHUB_TOKEN` | releases | Provided automatically by Actions; the release jobs declare `permissions: contents: write` for it |
 
-No secrets are needed for `ci.yml` or for the desktop bundles (unsigned).
-There is no test suite in CI — see §11.
+No secrets are needed for the check jobs or for the desktop bundles
+(unsigned). There is no test suite in CI — see §11.
 
 ---
 
@@ -609,7 +622,7 @@ There is no test suite in CI — see §11.
 | `asset protocol ... not allowed` / `fs ... not authorized`, artwork/audio fails to load | The file is outside the **`$APPDATA/**` scope** (`tauri.conf.json` → `assetProtocol.scope`, `capabilities/default.json` → `fs:scope`). Move data under the app-data dir or extend the scope deliberately (it is a security boundary) |
 | `npm run build` unexpectedly takes forever / runs `tauri build` | Root `build` = `typecheck && build:frontend && tauri build`. Use `npm run build:frontend` for the web bundle alone |
 | Android: `Failed to find package "ndk;…"` or `NDK not found` | Install the NDK via SDK Manager and export `NDK_HOME` (§9); CI pins one in the workflow |
-| Android: CI signing step fails with "anchor … not found" | The Tauri template changed — update the patch anchors in `build-android.yml` (the error names the missing anchor) |
+| Android: CI signing step fails / build stays unsigned | `keystore.properties` is written from the `ANDROID_KEYSTORE_*` secrets; without `ANDROID_KEYSTORE_BASE64` the job **builds unsigned on purpose** (a job notice says so). The `signingConfigs` block itself lives in the committed `gen/android/app/build.gradle.kts` — nothing is patched at CI time anymore |
 | `permission denied` writing `server/cookies.txt` | Server startup regenerates it from `browser.json`; run from the repo root with write access |
 | Ruff/PyYAML noise | `.ruff_cache` exists from ad-hoc runs; there is no pinned linter config to satisfy |
 
@@ -648,4 +661,4 @@ tooling changes.
    in parallel (frontend migration work must not touch `server/`,
    `src-tauri/`, or the root configs unless that is the task).
 6. `git add <files> && git commit -m "type(scope): summary"` — do not push
-   unless you intend to trigger `ci.yml`.
+   unless you intend to trigger `build.yml`.
