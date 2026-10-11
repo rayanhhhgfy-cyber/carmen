@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { ComponentType } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -150,6 +150,19 @@ export default function Layout() {
     ? `calc(${showMini ? 92 : 24}px + env(safe-area-inset-bottom))`
     : `calc(${navHeight}px + env(safe-area-inset-bottom) + ${showMini ? 84 : 20}px)`;
 
+  // Every navigation starts at the top. `<main>` is the app's only scroller,
+  // so it keeps its position across routes — without this, opening Queue,
+  // Search or Settings landed wherever Home was left scrolled. Query-only
+  // changes (a new search term on the same page) deliberately keep the
+  // position: the view itself never changed.
+  const scrollerRef = useRef<HTMLElement | null>(null);
+  const lastPathname = useRef(location.pathname);
+  useEffect(() => {
+    if (lastPathname.current === location.pathname) return;
+    lastPathname.current = location.pathname;
+    scrollerRef.current?.scrollTo(0, 0);
+  }, [location.pathname]);
+
   return (
     // Fixed-height app window: the root never scrolls (styles.css locks
     // html/body/#root), only `<main>` below does — no rubber-banding, no
@@ -199,6 +212,7 @@ export default function Layout() {
             `id="app-main"` lets HomePage's pull-to-refresh read its position */}
         <main
           id="app-main"
+          ref={scrollerRef}
           className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
           style={{ paddingBottom: contentPaddingBottom }}
         >

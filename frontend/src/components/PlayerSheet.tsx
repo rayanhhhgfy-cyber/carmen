@@ -124,6 +124,18 @@ export default function PlayerSheet() {
     setTab(LYRICS_TAB);
   }, [videoId]);
 
+  // A fresh open always starts at zero. Usually the node is brand new, but
+  // if the sheet is reopened while its slide-down exit is still running the
+  // old node survives — and with it the last drag's offset.
+  useEffect(() => {
+    if (!player.sheetOpen) return;
+    const node = sheetRef.current;
+    if (!node) return;
+    node.style.transition = 'none';
+    node.style.transform = '';
+    node.style.opacity = '';
+  }, [player.sheetOpen]);
+
   const lyrics = useMemo(() => lyricsOf(meta), [meta]);
 
   // Animated cover identity for this track — the sheet resolves it once
@@ -241,14 +253,21 @@ export default function PlayerSheet() {
   const onStripTouchEnd = () => {
     const node = sheetRef.current;
     const distance = dragDistance.current;
+    dragStartY.current = null;
+    dragDistance.current = 0;
+    if (distance > DISMISS_DISTANCE) {
+      // Keep the dragged offset in place: the Dialog's slide-down exit now
+      // takes the sheet out from wherever the finger let go instead of
+      // springing back up first. The node unmounts with the exit, so the
+      // next open starts clean.
+      handleClose();
+      return;
+    }
     if (node) {
       node.style.transition = 'transform 240ms cubic-bezier(.2,.8,.2,1), opacity 240ms ease';
       node.style.transform = '';
       node.style.opacity = '';
     }
-    dragStartY.current = null;
-    dragDistance.current = 0;
-    if (distance > DISMISS_DISTANCE) handleClose();
   };
 
   const onStripClick = () => {
@@ -671,6 +690,9 @@ export default function PlayerSheet() {
       open={player.sheetOpen}
       onClose={handleClose}
       aria-label="Now playing"
+      // Phone: the sheet now *leaves downward* on close (matching the drag
+      // that usually dismisses it); the desktop card keeps the shared fade.
+      slideFromBottom={!isDesktop}
       className={cn(
         '!h-screen !w-screen !max-h-none !max-w-none !rounded-none !bg-bg',
         'md:!h-[min(760px,calc(100vh_-_64px))] md:!w-[min(1120px,calc(100vw_-_64px))] md:!rounded-card',

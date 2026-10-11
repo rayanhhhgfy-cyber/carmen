@@ -185,13 +185,31 @@ interface DialogProps {
   /** MUI steps: `xs` = 448px (the only width call sites use). */
   maxWidth?: 'xs' | 'sm' | 'md';
   fullWidth?: boolean;
+  /**
+   * Enter from / leave **through the bottom edge** instead of the shared
+   * fade — a bottom sheet has to close downward, the way it was dragged
+   * out (the phone player sheet passes this; desktop keeps the fade).
+   */
+  slideFromBottom?: boolean;
   children: ReactNode;
   className?: string;
   'aria-label'?: string;
 }
 
+/** Shared sheet curve — a slightly over-damped ease-out, no bounce. */
+const SHEET_EASE: [number, number, number, number] = [0.32, 0.72, 0, 1];
+
 /** MUI `Dialog` — backdrop + centred panel; locks body scroll while open. */
-export function Dialog({ open, onClose, maxWidth = 'sm', fullWidth, children, className, ...rest }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  maxWidth = 'sm',
+  fullWidth,
+  slideFromBottom,
+  children,
+  className,
+  ...rest
+}: DialogProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   // MUI Modal parity: Escape closes, the backdrop closes, the page behind
@@ -224,23 +242,41 @@ export function Dialog({ open, onClose, maxWidth = 'sm', fullWidth, children, cl
           className="fixed inset-0 z-[1300] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.12 } }}
+          // Sliding mode keeps the container opaque: the backdrop fades on
+          // its own below, and a fading parent would drag the descending
+          // panel down with it. AnimatePresence still waits for both.
+          exit={
+            slideFromBottom
+              ? { opacity: 1, transition: { duration: 0 } }
+              : { opacity: 0, transition: { duration: 0.12 } }
+          }
           transition={{ duration: 0.16 }}
         >
           <motion.div
             aria-hidden
             className="absolute inset-0 bg-black/50"
             onClick={() => onClose?.()}
+            exit={
+              slideFromBottom ? { opacity: 0, transition: { duration: 0.28 } } : undefined
+            }
           />
           <motion.div
             ref={ref}
             role="dialog"
             aria-modal="true"
             {...rest}
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            initial={slideFromBottom ? { opacity: 0, y: '100%' } : { opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.12 } }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
+            exit={
+              slideFromBottom
+                ? { y: '100%', transition: { duration: 0.28, ease: SHEET_EASE } }
+                : { opacity: 0, scale: 0.97, y: 6, transition: { duration: 0.12 } }
+            }
+            transition={
+              slideFromBottom
+                ? { duration: 0.3, ease: SHEET_EASE }
+                : { duration: 0.18, ease: 'easeOut' }
+            }
             className={cn(
               'relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-card bg-surface shadow-glass',
               maxWidth === 'xs' && 'max-w-[448px]',
