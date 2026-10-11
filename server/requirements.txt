@@ -7,7 +7,11 @@ python-dotenv
 uvloop
 redis
 yt-dlp[default]
-kurigram
+# kurigram
+# No animated image errors on get_me() when bot start here. 
+# using this for now until new version of kurigram release.
+https://github.com/kurigram-org/kurigram/archive/2047fca6d157b5caf815658183ee8406221dcd14.zip
 pytgcrypto
 syncedlyrics
 httpx
+https://github.com/matteing/coverpy/archive/2dbc87707b27ec3eebd347237964b658b166a91c.zip
