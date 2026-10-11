@@ -39,6 +39,8 @@ import {
   CloseIcon,
   ExpandMoreIcon,
   ExplicitIcon,
+  FullScreenIcon,
+  ExitFullScreenIcon,
   LyricsIcon,
   QueueMusicIcon,
   RelatedIcon,
@@ -47,6 +49,7 @@ import {
 
 import { useMotionArtwork } from '../artwork/motion';
 import { useVideoPowerGuard } from '../artwork/useVideoPowerGuard';
+import { isTauri } from '../platform/env';
 import { useAnimatedArtwork } from '../settings/store';
 
 /** Tab order inside the player: 0 lyrics · 1 queue · 2 related. */
@@ -161,7 +164,56 @@ export default function PlayerSheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.sheetOpen]);
 
+  // ── Full screen (desktop card) ──────────────────────────────────────────
+  // The now-playing card can be blown up to fill the whole display. On
+  // desktop this expands the card *and* puts the window (Tauri) or the
+  // document (browser) into real full screen; on a phone the sheet already
+  // covers everything, so the control never appears there.
+  const [fullScreen, setFullScreen] = useState(false);
+
+  // Browser Esc / system exit keeps the toggle honest.
+  useEffect(() => {
+    const onFullScreenChange = () => setFullScreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFullScreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullScreenChange);
+  }, []);
+
+  // Closing the sheet drops any full-screen mode with it.
+  useEffect(() => {
+    if (player.sheetOpen || !fullScreen) return;
+    setFullScreen(false);
+    if (isTauri) {
+      void import('@tauri-apps/api/window')
+        .then((win) => win.getCurrentWindow().setFullscreen(false))
+        .catch(() => {});
+    } else if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+  }, [player.sheetOpen, fullScreen]);
+
+  const toggleFullScreen = async () => {
+    const next = !fullScreen;
+    setFullScreen(next);
+    try {
+      if (isTauri) {
+        const win = await import('@tauri-apps/api/window');
+        await win.getCurrentWindow().setFullscreen(next);
+      } else if (next) {
+        await document.documentElement.requestFullscreen?.();
+      } else {
+        await document.exitFullscreen?.();
+      }
+    } catch {
+      /* full screen is best-effort — the card still expands via the CSS below */
+    }
+  };
+
   const lyrics = useMemo(() => lyricsOf(meta), [meta]);
+
+  // The album's YouTube Music browse id — the key the server fallback uses to
+  // resolve an iTunes collection id when the client's own search is blocked.
+  const metaAlbumId =
+    meta && typeof meta.album === 'object' && meta.album ? meta.album.id ?? null : null;
 
   // Animated cover identity for this track — the sheet resolves it once
   // (memoised in `artwork/motion`) and renders it as the video layers
@@ -171,6 +223,7 @@ export default function PlayerSheet() {
   const motionRef = track
     ? {
         album: track.albumName,
+        albumId: track.album?.id || metaAlbumId,
         videoId: track.videoId,
         title: track.title,
         artist: track.artist,
@@ -334,6 +387,16 @@ export default function PlayerSheet() {
         Now playing
       </span>
       <div className="flex-1" />
+      {isDesktop && (
+        <IconButton
+          aria-label={fullScreen ? 'Exit full screen' : 'Full screen'}
+          onClick={() => {
+            void toggleFullScreen();
+          }}
+        >
+          {fullScreen ? <ExitFullScreenIcon /> : <FullScreenIcon />}
+        </IconButton>
+      )}
       <PlayerMenu track={track} meta={meta} />
     </div>
   );
@@ -714,7 +777,10 @@ export default function PlayerSheet() {
         // otherwise shrink into its padding, leaving a dim strip of the page
         // showing through on both sides.
         '!h-screen !w-screen !max-h-none !max-w-none !rounded-none !bg-bg shrink-0',
-        'md:!h-[min(760px,calc(100vh_-_64px))] md:!w-[min(1120px,calc(100vw_-_64px))] md:!rounded-card',
+        // Desktop sizes the card down to a panel — unless full screen is on,
+        // where it takes the whole viewport (same as the phone sheet).
+        !fullScreen &&
+          'md:!h-[min(760px,calc(100vh_-_64px))] md:!w-[min(1120px,calc(100vw_-_64px))] md:!rounded-card',
       )}
     >
       <div

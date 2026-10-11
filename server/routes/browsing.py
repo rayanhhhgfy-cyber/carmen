@@ -17,6 +17,7 @@ from ..core import (
     get_charts,
     get_explore,
     get_home,
+    get_itunes_id,
     get_lyrics,
     get_mood_categories,
     get_mood_playlists,
@@ -412,6 +413,72 @@ async def animated_artwork(albumId: int):
                 await rds.set(key, _MOTION_NONE, ex=_MOTION_NONE_TTL)
 
     return {"video_url": url}
+
+
+# Resolved iTunes ids (YT Music album -> iTunes collection) live for a week;
+# "no iTunes match" is cached for a day so a newly listed album shows up.
+_ITID_TTL = 7 * 24 * 3600
+_ITID_NONE_TTL = 24 * 3600
+_ITID_NONE = "none"
+
+
+@router.get(
+    "/itunes-id/{albumId}",
+    summary="Get iTunes Collection ID",
+    response_description="iTunes collection id of the album, or null",
+)
+@sanitized
+async def itunes_id(albumId: str):
+    """
+    Map a YouTube Music album to its iTunes collection id.
+
+    The client resolves albums itself through the public iTunes Search API,
+    but some clients (notably iOS Safari) block that call. They fall back to
+    this endpoint, which does the same "Album - Artist" lookup server-side via
+    CoverPy and caches the answer in Redis for one week under the album's
+    browse id — so each album is looked up at most once.
+
+    Returns ``{"collection_id": <int>}``, or ``{"collection_id": null}`` when
+    the album has no iTunes match **or** the lookup fails transiently (those
+    failures are not cached, so the next request retries).
+
+    - **albumId**: the album's YouTube Music browse id (starts with ``MPRE``)
+    """
+    key = f"yt:itid:{albumId}"
+    rds = state.rds
+
+    if rds is not None:
+        with suppress(Exception):
+            cached_id = await rds.get(key)
+            if cached_id is not None:
+                value = (
+                    cached_id.decode()
+                    if isinstance(cached_id, (bytes, bytearray))
+                    else str(cached_id)
+                )
+                if value == _ITID_NONE:
+                    return {"collection_id": None}
+                try:
+                    return {"collection_id": int(value)}
+                except ValueError:
+                    pass  # corrupt entry — fall through and re-resolve
+
+    loop = asyncio.get_running_loop()
+    try:
+        collection_id = await loop.run_in_executor(
+            executor, partial(get_itunes_id, albumId)
+        )
+    except Exception:  # noqa: BLE001 — auth / network: null, uncached
+        return {"collection_id": None}
+
+    if rds is not None:
+        with suppress(Exception):
+            if collection_id:
+                await rds.set(key, str(collection_id))
+            else:
+                await rds.set(key, _ITID_NONE, ex=_ITID_NONE_TTL)
+
+    return {"collection_id": collection_id}
 
 
 @router.get(

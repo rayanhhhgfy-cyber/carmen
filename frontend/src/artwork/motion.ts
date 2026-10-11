@@ -49,6 +49,13 @@ import { isTauri, localFileUrl } from '../platform/env';
 export interface MotionArtworkRef {
   /** Album title — the preferred identity and iTunes *album* search term. */
   album?: string | null;
+  /**
+   * The album's **YouTube Music** browse id (`MPRE…`). The client's own iTunes
+   * search is blocked on some clients (iOS Safari) — when it fails, this id
+   * lets the server resolve the collection id instead
+   * (`/browsing/itunes-id/{albumId}`), which is then used as before.
+   */
+  albumId?: string | null;
   /** Downloaded track — prefers `<songs>/<id>/motion.mp4`, offline-safe. */
   videoId?: string | null;
   /**
@@ -165,6 +172,11 @@ const urlCache = new Map<number, string | null>();
 const pendingAids = new Map<string, Promise<number | null>>();
 const pendingUrls = new Map<number, Promise<string | null>>();
 const pendingCaches = new Map<string, Promise<string | null>>();
+/** Session memo: YT Music album id → iTunes collection id (server fallback). */
+const itunesIdCache = new Map<string, number | null>();
+const pendingItunesIds = new Map<string, Promise<number | null>>();
+/** In-flight `motionSource` results keyed by identity — one search per album. */
+const pendingSources = new Map<string, Promise<string | null>>();
 
 let idStore: Record<string, number> | null = null;
 let idSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -232,6 +244,12 @@ async function resolveCollectionId(reference: MotionArtworkRef): Promise<number 
           'song',
         );
       }
+      // iOS Safari (and friends) block the client-side iTunes call — fall
+      // back to the server, which resolves the same album from its YouTube
+      // Music browse id and caches the answer for a week.
+      if (!collectionId && reference.albumId) {
+        collectionId = await serverItunesId(reference.albumId);
+      }
       aidCache.set(identity, collectionId);
       if (collectionId) {
         store[identity] = collectionId;
@@ -289,6 +307,46 @@ async function serverMotionUrl(collectionId: number): Promise<string | null> {
     return await task;
   } finally {
     pendingUrls.delete(collectionId);
+  }
+}
+
+/**
+ * The iTunes collection id of a **YouTube Music** album, resolved by the
+ * server (CoverPy's catalog search, cached there for a week under the album
+ * browse id). This is the fallback for clients whose own iTunes Search API
+ * call is blocked — iOS Safari most notably, where the fetch never reaches
+ * Apple at all. The client's search is tried first; only a failure lands
+ * here, and then the resulting id feeds `/browsing/animated-artwork/…`
+ * exactly the same way.
+ */
+async function serverItunesId(ytmAlbumId: string): Promise<number | null> {
+  const memo = itunesIdCache.get(ytmAlbumId);
+  if (memo !== undefined) return memo;
+
+  const inFlight = pendingItunesIds.get(ytmAlbumId);
+  if (inFlight) return inFlight;
+
+  const task = (async () => {
+    try {
+      const payload = await withTimeout(
+        apiGet(`/browsing/itunes-id/${encodeURIComponent(ytmAlbumId)}`),
+        SERVER_TIMEOUT_MS,
+      );
+      const id = payload?.collection_id;
+      const resolved = typeof id === 'number' ? id : null;
+      itunesIdCache.set(ytmAlbumId, resolved); // memo clean "no match" too
+      return resolved;
+    } catch (error) {
+      console.warn('[motion] server itunes-id failed', ytmAlbumId, error);
+      return null; // transient — retried on the next request
+    }
+  })();
+
+  pendingItunesIds.set(ytmAlbumId, task);
+  try {
+    return await task;
+  } finally {
+    pendingItunesIds.delete(ytmAlbumId);
   }
 }
 
@@ -401,6 +459,24 @@ export async function motionSource(
   const identity = referenceIdentity(reference);
   if (!identity) return null;
 
+  // Concurrent callers (StrictMode's second mount, a re-render mid-resolve)
+  // share one resolution instead of firing duplicate iTunes lookups.
+  const inFlight = pendingSources.get(identity);
+  if (inFlight) return inFlight;
+
+  const task = resolveMotionSource(reference, identity);
+  pendingSources.set(identity, task);
+  try {
+    return await task;
+  } finally {
+    pendingSources.delete(identity);
+  }
+}
+
+async function resolveMotionSource(
+  reference: MotionArtworkRef,
+  identity: string,
+): Promise<string | null> {
   const videoId = reference.videoId ?? null;
   // 1. The copy saved with a download — offline-safe, Tauri only.
   if (isTauri && videoId && isDownloaded(videoId)) {
@@ -411,7 +487,7 @@ export async function motionSource(
     }
   }
 
-  // 2. The album's iTunes id (session → persisted → search).
+  // 2. The album's iTunes id (session → persisted → client search → server).
   const collectionId = await resolveCollectionId(reference);
   if (!collectionId) return null;
 

@@ -371,6 +371,24 @@ export const PlusIcon = (props: SvgIconProps) => (
   </Solid>
 );
 
+/** Four outward corner brackets — enter full screen. */
+export const FullScreenIcon = (props: SvgIconProps) => (
+  <Solid {...props}>
+    <path
+      fillRule="evenodd"
+      d="M3.75 3.75H9V5.25H5.25V9H3.75V3.75ZM15 3.75H20.25V9H18.75V5.25H15V3.75ZM3.75 15H5.25V18.75H9V20.25H3.75V15ZM20.25 15V20.25H15V18.75H18.75V15H20.25Z"
+      clipRule="evenodd"
+    />
+  </Solid>
+);
+
+/** Four inward arrows — leave full screen. */
+export const ExitFullScreenIcon = (props: SvgIconProps) => (
+  <Solid {...props}>
+    <path d="M9.5 8.25H14.5L12 10.75L9.5 8.25ZM9.5 15.75H14.5L12 13.25L9.5 15.75ZM8.25 9.5V14.5L10.75 12L8.25 9.5ZM15.75 9.5V14.5L13.25 12L15.75 9.5Z" />
+  </Solid>
+);
+
 export const InfoIcon = (props: SvgIconProps) => (
   <Solid {...props}>
     <path

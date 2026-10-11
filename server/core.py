@@ -253,6 +253,36 @@ def get_animated_artwork(album_id: int) -> str | None:
     return motion.video_url or motion.hq_video_url
 
 
+def get_itunes_id(album_id: str) -> int | None:
+    """
+    iTunes collection id of a YouTube Music album, via CoverPy's catalog search.
+
+    The client resolves most albums itself through the public iTunes Search
+    API, but some clients (notably iOS Safari) block that call — they fall
+    back here, which does the same "Album - Artist" lookup server-side against
+    the catalog CoverPy already talks to.
+
+    :param album_id: the album's YouTube Music browse id (starts with "MPRE")
+    :return: the iTunes collection id, or ``None`` when there is no match
+    """
+    from coverpy import CoverPy  # local import: keep startup cost off the hot path
+    from coverpy.exceptions import NoResultsError
+
+    album = ytm.get_album(album_id)
+    title = album.get("title") or ""
+    if not title:
+        return None
+    artists = album.get("artists") or []
+    artist = artists[0].get("name", "") if artists and isinstance(artists[0], dict) else ""
+    term = f"{title} - {artist}" if artist else title
+    with CoverPy(country="US") as client:
+        try:
+            result = client.get_cover(term)
+        except NoResultsError:
+            return None
+    return result.collection_id
+
+
 # ── Track enrichment ───────────────────────────────────────────────────────
 
 _GENRE_HINT = re.compile(r"\bgenres?\b\s*[:\-]\s*([^\n|;]{2,40})", re.IGNORECASE)
