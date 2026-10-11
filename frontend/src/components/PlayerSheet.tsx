@@ -134,6 +134,33 @@ export default function PlayerSheet() {
     node.style.opacity = '';
   }, [player.sheetOpen]);
 
+  // The system/browser Back closes the sheet instead of navigating the page
+  // away underneath it. Opening pushes a history entry (same URL, so the
+  // router never notices); Back pops it and we close. Dismissing any other
+  // way consumes that entry so the next Back still navigates normally.
+  const dismissedByBack = useRef(false);
+  useEffect(() => {
+    if (!player.sheetOpen) return undefined;
+    window.history.pushState({ ...window.history.state, carmenSheet: true }, '');
+    const onPopState = () => {
+      dismissedByBack.current = true;
+      setPanelOpen(false);
+      setTab(LYRICS_TAB);
+      player.setSheetOpen(false);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      // A Back-triggered close already popped our entry (so `history.state`
+      // no longer carries `carmenSheet`); a UI close has not — drop it here.
+      if (!dismissedByBack.current && window.history.state?.carmenSheet) {
+        window.history.back();
+      }
+      dismissedByBack.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player.sheetOpen]);
+
   const lyrics = useMemo(() => lyricsOf(meta), [meta]);
 
   // Animated cover identity for this track — the sheet resolves it once
@@ -682,7 +709,11 @@ export default function PlayerSheet() {
       // that usually dismisses it); the desktop card keeps the shared fade.
       slideFromBottom={!isDesktop}
       className={cn(
-        '!h-screen !w-screen !max-h-none !max-w-none !rounded-none !bg-bg',
+        // `shrink-0` is what makes the phone sheet truly edge-to-edge: the
+        // dialog wrapper is a padded flexbox, and a `w-screen` item would
+        // otherwise shrink into its padding, leaving a dim strip of the page
+        // showing through on both sides.
+        '!h-screen !w-screen !max-h-none !max-w-none !rounded-none !bg-bg shrink-0',
         'md:!h-[min(760px,calc(100vh_-_64px))] md:!w-[min(1120px,calc(100vw_-_64px))] md:!rounded-card',
       )}
     >
