@@ -56,7 +56,7 @@ Carmen is three cooperating pieces:
 | `server/` | FastAPI app: `__main__.py` (app + lifespan), `core.py`, `routes/`, `cache.py`, `sanitizers.py`, `state.py` |
 | `venv/` | Python **3.11** virtualenv (gitignored) |
 | `browser.json` | Live YouTube Music auth cookies — **gitignored, never commit** |
-| `.github/workflows/` | `build.yml` — checks + all release builds (see §10) |
+| `.github/workflows/` | `build.yml` — checks + all release builds; `deploy.yml` — web-client deploys (see §10) |
 | `AGENTS.md` | Agent-facing project notes (mirrors parts of this guide) |
 
 ---
@@ -546,8 +546,10 @@ tracked, so every CI install is strict `npm ci`.
 + `Cargo.toml`) → commit → `git tag v1.2.0 && git push origin v1.2.0` →
 checks run, then the builds → the GitHub Release is created/updated with the
 desktop bundles (dmg, NSIS exe ×2, deb, rpm, AppImage) and the Android
-APK/AAB. If a tag build already ran, delete the tag (and its release) before
-re-pushing it: `git push origin :refs/tags/v1.2.0 && git tag -d v1.2.0`.
+APK/AAB, and `deploy.yml` republishes the web client to the `pages` branch
+(GitHub Pages production). If a tag build already ran, delete the tag (and
+its release) before re-pushing it:
+`git push origin :refs/tags/v1.2.0 && git tag -d v1.2.0`.
 
 **Required GitHub secrets**
 
@@ -561,6 +563,31 @@ re-pushing it: `git push origin :refs/tags/v1.2.0 && git tag -d v1.2.0`.
 
 No secrets are needed for the check jobs or for the desktop bundles
 (unsigned). There is no test suite in CI — see §11.
+
+### Web deployments (`deploy.yml`)
+
+A second workflow — `.github/workflows/deploy.yml` — publishes the static web
+client (`frontend/` only; the API is deployed separately):
+
+| Job | Runs | What it does |
+|---|---|---|
+| `dev` | every push to `master` (any commit) + `workflow_dispatch` | `npm run build:frontend` (root base; `VITE_API_BASE` falls back to the production API) → `rsync -az --delete frontend/dist/ $DEPLOY_HOST:$DEPLOY_PATH/` over SSH. nginx serves the result per `deploy/nginx.conf` |
+| `production` | tags `v*` | Same build with `VITE_BASE=./` → relative asset URLs, so the bundle works both under Pages' `/<repo>/` sub-path and at a custom-domain root. `dist` (plus a `.nojekyll`) is force-pushed as a single orphan commit to the **`pages` branch**. One-time setup: repo Settings → Pages → "Deploy from a branch" → `pages` / root — every tag then updates the site |
+
+Deployment secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Required for | Notes |
+|---|---|---|
+| `DEPLOY_HOST` | dev deploys | Server IP; use `user@ip` when the key's SSH user differs from the default |
+| `DEPLOY_SSH_KEY` | ″ | Full unencrypted private key (PEM); `BatchMode` never hangs on a passphrase prompt |
+| `DEPLOY_PATH` | ″ | Absolute site dir on the server, e.g. `/var/www/carmen` — must be the document root, rsync `--delete` mirrors it |
+| `DEPLOY_PORT` | optional | SSH port, defaults to 22 |
+
+Gotchas: attaching a **custom domain** to Pages? Add a `CNAME` file to
+`frontend/public/` — it ships in every build, and the force-push would
+otherwise drop it. Share links (`/?song=…`) work on any host (the SPA folds
+the query into a hash route), but the crawler-facing Open Graph preview only
+renders on the nginx copy — Pages answers `/?song=…` with the plain shell.
 
 ---
 

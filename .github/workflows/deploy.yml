@@ -1,0 +1,145 @@
+name: Deploy
+
+# Web-client deployments (frontend/ only — the API server is deployed
+# separately; this workflow just publishes the static bundle):
+#
+#   * push to master (any commit) → build `frontend/dist` and rsync it to the
+#     deploy server over SSH ("dev" job); nginx serves it per deploy/nginx.conf
+#     (root /var/www/carmen, share links `/?song=…` render OG tags through the
+#     API on port 5432).
+#   * version tag v* → build with a path-relative base and publish `dist` as
+#     an orphan commit on the `pages` branch, which GitHub Pages serves as the
+#     production site (repo Settings → Pages → Deploy from a branch:
+#     `pages` / root — do that once and every tag updates the site).
+#
+# Required secrets for the dev job:
+#   DEPLOY_HOST     server IP, optionally "user@ip" if the key's user differs
+#                   e.g. "203.0.113.7" or "root@203.0.113.7"
+#   DEPLOY_SSH_KEY  the full private key (PEM). Unencrypted deploy key —
+#                   BatchMode refuses to hang on a passphrase prompt
+#   DEPLOY_PATH     absolute site directory on the server, e.g. "/var/www/carmen"
+#   DEPLOY_PORT     optional, defaults to 22
+#
+# Notes:
+#   * `VITE_BASE=./` (production job only) makes asset URLs relative so the
+#     bundle works when Pages serves it under /<repo>/ as well as at a
+#     custom-domain root. If you attach a custom domain to Pages, add a
+#     `CNAME` file to frontend/public/ so the force-push to the pages branch
+#     never drops it (public/ is copied into dist/ on every build).
+#   * The API base falls back to the production server (frontend/src/api.ts:
+#     VITE_API_BASE or https://api-carmen-v1.syr.qzz.io) and the backend sends
+#     `Access-Control-Allow-Origin: *`, so the static site works on any origin.
+#   * Share links (`/?song=…`) fold into hash routes in the SPA, so they work
+#     anywhere; only the crawler-facing Open Graph preview needs the server
+#     copy (nginx proxies `/` to the API — Pages serves plain index.html).
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dev:
+    name: Deploy the web client to the server
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install JS deps (root = scripts, frontend = vite build)
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Build (typecheck + vite; served from the domain root)
+        run: npm run build:frontend
+
+      - name: rsync dist to the server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          for var in DEPLOY_HOST DEPLOY_PATH DEPLOY_SSH_KEY; do
+            if [ -z "${!var}" ]; then
+              echo "::error::Missing GitHub secret: $var (see the header of .github/workflows/deploy.yml)"
+              exit 1
+            fi
+          done
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          ssh-keyscan -H -p "${DEPLOY_PORT:-22}" "$DEPLOY_HOST" >> "$HOME/.ssh/known_hosts"
+
+          # --delete mirrors dist exactly (stale content-hashed assets must go);
+          # DEPLOY_PATH has to be the site's document root and nothing else.
+          rsync -az --delete \
+            -e "ssh -i $HOME/.ssh/deploy_key -p ${DEPLOY_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+            frontend/dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"
+
+          echo "Deployed $(git rev-parse --short HEAD) → $DEPLOY_HOST:$DEPLOY_PATH"
+
+  production:
+    name: Publish to the pages branch (GitHub Pages)
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the built site to the `pages` branch
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install JS deps (root = scripts, frontend = vite build)
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Build (typecheck + vite; path-relative so /<repo>/ works)
+        env:
+          VITE_BASE: './'
+        run: npm run build:frontend
+
+      - name: Publish dist as an orphan commit on the pages branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SRC="$(git rev-parse --short HEAD)"
+          cd frontend/dist
+          touch .nojekyll # never run the published tree through Jekyll
+          git init -q -b pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "deploy ${GITHUB_REF_NAME} @ ${SRC}"
+          # Force-push a single fresh commit each time — the branch never grows.
+          git push --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            pages
