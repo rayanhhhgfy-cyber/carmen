@@ -43,6 +43,6 @@ server/cookies.txt
 
 # Tauri
 src-tauri/target/
-src-tauri/gen/
+# src-tauri/gen/
 # .ruff_cache
 .ruff_cache/
