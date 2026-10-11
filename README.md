@@ -176,6 +176,14 @@ sudo systemctl enable --now nginx    # first start (already running? reload)
 
 Then open `http://<host>:5432`.
 
+> **Link previews (Open Graph):** the shipped nginx vhost routes the exact
+> path `/` through the API (`location = /` → `proxy_pass` to the API) so a
+> shared song or search link (`/?song=…`, `/?search=…`) comes back with real
+> title/artwork/description tags for Telegram and Discord. That block expects
+> the API to listen on `http://127.0.0.1:8000` on the same host — edit the
+> `proxy_pass` URL if yours differs, or drop the block to serve the static
+> shell (the app works either way, just without rich previews).
+
 The same two rules apply wherever else you host it:
 
 - `index.html` → no cache; `/assets/*` (content-hashed) → cache forever.
