@@ -47,63 +47,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  dev:
-    name: Deploy the web client to the server
-    if: github.ref_type == 'branch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
+  # dev:
+  #   name: Deploy the web client to the server
+  #   if: github.ref_type == 'branch'
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 15
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #         cache-dependency-path: |
+  #           package-lock.json
+  #           frontend/package-lock.json
 
-      - name: Install JS deps (root = scripts, frontend = vite build)
-        run: |
-          npm ci
-          npm --prefix frontend ci
+  #     - name: Install JS deps (root = scripts, frontend = vite build)
+  #       run: |
+  #         npm ci
+  #         npm --prefix frontend ci
 
-      - name: Build (typecheck + vite; served from the domain root)
-        run: npm run build:frontend
+  #     - name: Build (typecheck + vite; served from the domain root)
+  #       run: npm run build:frontend
 
-      - name: rsync dist to the server
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-        run: |
-          set -euo pipefail
-          for var in DEPLOY_HOST DEPLOY_PATH DEPLOY_SSH_KEY; do
-            if [ -z "${!var}" ]; then
-              echo "::error::Missing GitHub secret: $var (see the header of .github/workflows/deploy.yml)"
-              exit 1
-            fi
-          done
+  #     - name: rsync dist to the server
+  #       env:
+  #         DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+  #         DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+  #         DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+  #         DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+  #       run: |
+  #         set -euo pipefail
+  #         for var in DEPLOY_HOST DEPLOY_PATH DEPLOY_SSH_KEY; do
+  #           if [ -z "${!var}" ]; then
+  #             echo "::error::Missing GitHub secret: $var (see the header of .github/workflows/deploy.yml)"
+  #             exit 1
+  #           fi
+  #         done
 
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
-          chmod 600 "$HOME/.ssh/deploy_key" # ssh refuses group/world-readable keys
-          # ssh-keyscan does not understand "user@host" (unlike ssh/rsync) —
-          # scan the bare host; the rsync/ssh below still use the full user@host.
-          SCAN_HOST="${DEPLOY_HOST##*@}"
-          ssh-keyscan -H -p "${DEPLOY_PORT:-22}" "$SCAN_HOST" >> "$HOME/.ssh/known_hosts"
-          if [[ "$DEPLOY_HOST" != *@* ]]; then
-            echo "::warning::DEPLOY_HOST has no 'user@' prefix - ssh will log in as '$(id -un)', not root. Set the secret to root@${DEPLOY_HOST} unless that account is the intended one."
-          fi
+  #         install -m 700 -d "$HOME/.ssh"
+  #         printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+  #         chmod 600 "$HOME/.ssh/deploy_key" # ssh refuses group/world-readable keys
+  #         # ssh-keyscan does not understand "user@host" (unlike ssh/rsync) —
+  #         # scan the bare host; the rsync/ssh below still use the full user@host.
+  #         SCAN_HOST="${DEPLOY_HOST##*@}"
+  #         ssh-keyscan -H -p "${DEPLOY_PORT:-22}" "$SCAN_HOST" >> "$HOME/.ssh/known_hosts"
+  #         if [[ "$DEPLOY_HOST" != *@* ]]; then
+  #           echo "::warning::DEPLOY_HOST has no 'user@' prefix - ssh will log in as '$(id -un)', not root. Set the secret to root@${DEPLOY_HOST} unless that account is the intended one."
+  #         fi
 
-          # --delete mirrors dist exactly (stale content-hashed assets must go);
-          # DEPLOY_PATH has to be the site's document root and nothing else.
-          rsync -az --delete \
-            -e "ssh -i $HOME/.ssh/deploy_key -p ${DEPLOY_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=yes" \
-            frontend/dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"
+  #         # --delete mirrors dist exactly (stale content-hashed assets must go);
+  #         # DEPLOY_PATH has to be the site's document root and nothing else.
+  #         rsync -az --delete \
+  #           -e "ssh -i $HOME/.ssh/deploy_key -p ${DEPLOY_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=yes" \
+  #           frontend/dist/ "$DEPLOY_HOST:$DEPLOY_PATH/"
 
-          echo "Deployed $(git rev-parse --short HEAD) → $DEPLOY_HOST:$DEPLOY_PATH"
+  #         echo "Deployed $(git rev-parse --short HEAD) → $DEPLOY_HOST:$DEPLOY_PATH"
 
   production:
     name: Publish to the pages branch (GitHub Pages)
@@ -141,6 +141,7 @@ jobs:
           SRC="$(git rev-parse --short HEAD)"
           cd frontend/dist
           touch .nojekyll # never run the published tree through Jekyll
+          echo "carmen.z44d.com" > CNAME
           git init -q -b pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
