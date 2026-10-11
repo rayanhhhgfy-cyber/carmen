@@ -17,7 +17,7 @@ router = APIRouter(prefix="/search", tags=["Search"])
     response_description="Search results",
 )
 @sanitized
-@cached("search", ttl=120)
+@cached("search", ttl=3600)
 async def search_music(
     query: str = Query(..., description="Search query"),
     filter: str | None = Query(

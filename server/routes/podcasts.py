@@ -17,7 +17,7 @@ router = APIRouter(prefix="/podcasts", tags=["Podcasts"])
     response_description="Channel info with episodes and podcasts",
 )
 @sanitized
-@cached("podcast_channel", ttl=600)
+@cached("podcast_channel", ttl=86400, id_arg="channelId")
 async def channel(channelId: str):
     """
     Get info about a podcast channel.
@@ -36,7 +36,7 @@ async def channel(channelId: str):
     response_description="List of all channel episodes",
 )
 @sanitized
-@cached("podcast_episodes", ttl=600)
+@cached("podcast_episodes", ttl=86400, id_arg="channelId", extra_args=("params",))
 async def channel_episodes(channelId: str, params: str):
     """
     Get all channel episodes.
@@ -56,7 +56,7 @@ async def channel_episodes(channelId: str, params: str):
     response_description="Podcast metadata and episodes",
 )
 @sanitized
-@cached("podcast", ttl=600)
+@cached("podcast", ttl=86400, id_arg="playlistId", extra_args=("limit",))
 async def podcast(
     playlistId: str, limit: int = Query(100, description="Number of episodes to return")
 ):
@@ -76,7 +76,7 @@ async def podcast(
     response_description="Episode data",
 )
 @sanitized
-@cached("podcast_episode", ttl=600)
+@cached("podcast_episode", ttl=86400, id_arg="videoId")
 async def episode(videoId: str):
     """
     Retrieve episode data for a single episode.

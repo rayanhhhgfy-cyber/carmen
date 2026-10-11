@@ -162,7 +162,7 @@ async def charts(country: str = "ZZ"):
     response_description="Artist info with top releases",
 )
 @sanitized
-@cached("artist", ttl=3600)
+@cached("artist", ttl=86400, id_arg="channelId")
 async def artist(channelId: str):
     """
     Get info about an artist and their top releases.
@@ -181,7 +181,7 @@ async def artist(channelId: str):
     response_description="List of artist albums",
 )
 @sanitized
-@cached("artist_albums", ttl=3600)
+@cached("artist_albums", ttl=86400, id_arg="channelId", extra_args=("params",))
 async def artist_albums(
     channelId: str, params: str, limit: int = 100, order: str | None = None
 ):
@@ -205,7 +205,7 @@ async def artist_albums(
     response_description="User page info",
 )
 @sanitized
-@cached("user", ttl=3600)
+@cached("user", ttl=86400, id_arg="channelId")
 async def user(channelId: str):
     """
     Retrieve a user's page (videos or playlists).
@@ -222,7 +222,7 @@ async def user(channelId: str):
     response_description="List of user playlists",
 )
 @sanitized
-@cached("user_playlists", ttl=3600)
+@cached("user_playlists", ttl=86400, id_arg="channelId", extra_args=("params",))
 async def user_playlists(channelId: str, params: str):
     """
     Retrieve a list of playlists for a given user.
@@ -242,7 +242,7 @@ async def user_playlists(channelId: str, params: str):
     response_description="List of user videos",
 )
 @sanitized
-@cached("user_videos", ttl=3600)
+@cached("user_videos", ttl=86400, id_arg="channelId", extra_args=("params",))
 async def user_videos(channelId: str, params: str):
     """
     Retrieve a list of videos for a given user.
@@ -262,7 +262,7 @@ async def user_videos(channelId: str, params: str):
     response_description="Album browse ID or null",
 )
 @sanitized
-@cached("album_browse_id", ttl=3600)
+@cached("album_browse_id", ttl=86400, id_arg="audioPlaylistId")
 async def album_browse_id(audioPlaylistId: str):
     """
     Get an album's browseId from its audioPlaylistId.
@@ -283,7 +283,7 @@ async def album_browse_id(audioPlaylistId: str):
     response_description="Album info and tracks",
 )
 @sanitized
-@cached("album", ttl=3600)
+@cached("album", ttl=86400, id_arg="browseId")
 async def album(browseId: str):
     """
     Get information and tracks of an album.
@@ -300,7 +300,7 @@ async def album(browseId: str):
     response_description="Song metadata and streaming info",
 )
 @sanitized
-@cached("song", ttl=3600)
+@cached("song", ttl=86400, id_arg="videoId", extra_args=("signatureTimestamp",))
 async def song(videoId: str, signatureTimestamp: int | None = None):
     """
     Returns metadata and streaming information about a song or video.
@@ -321,7 +321,7 @@ async def song(videoId: str, signatureTimestamp: int | None = None):
     response_description="Full track payload: metadata, artwork, genre and lyrics",
 )
 @sanitized
-@cached("track", ttl=3600)
+@cached("track", ttl=86400, id_arg="videoId", extra_args=("provider",))
 async def track(videoId: str, provider: str | None = None):
     """
     Returns everything the player needs about a track in one call.
@@ -356,7 +356,7 @@ async def track(videoId: str, provider: str | None = None):
     response_description="Contextually related tracks for the given song",
 )
 @sanitized
-@cached("related", ttl=3600)
+@cached("related", ttl=86400, id_arg="videoId", extra_args=("limit",))
 async def related(videoId: str, limit: int = 25):
     """
     Returns the songs that belong next to the given one: the watch queue
@@ -380,7 +380,7 @@ async def related(videoId: str, limit: int = 25):
     response_description="Song credits info",
 )
 @sanitized
-@cached("song_credits", ttl=3600)
+@cached("song_credits", ttl=86400, id_arg="browseId")
 async def song_credits(browseId: str):
     """
     Get credits for a song.
@@ -399,7 +399,7 @@ async def song_credits(browseId: str):
     response_description="Related content for the song",
 )
 @sanitized
-@cached("song_related", ttl=3600)
+@cached("song_related", ttl=86400, id_arg="browseId")
 async def song_related(browseId: str):
     """
     Gets related content for a song.
@@ -418,7 +418,7 @@ async def song_related(browseId: str):
     response_description="Song lyrics or timed lyrics",
 )
 @sanitized
-@cached("lyrics", ttl=3600)
+@cached("lyrics", ttl=86400, id_arg="browseId")
 async def lyrics(browseId: str, timestamps: bool = False):
     """
     Returns lyrics of a song/video.

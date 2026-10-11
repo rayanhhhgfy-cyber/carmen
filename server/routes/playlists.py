@@ -17,7 +17,7 @@ router = APIRouter(prefix="/playlists", tags=["Playlists"])
     response_description="Playlist metadata and tracks",
 )
 @sanitized
-@cached("playlist", ttl=300)
+@cached("playlist", ttl=86400, id_arg="playlistId", extra_args=("limit", "related", "suggestions_limit"))
 async def playlist(
     playlistId: str,
     limit: int = Query(100, description="Number of items to return"),
