@@ -132,6 +132,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const positionRef = useRef(0);
   const resumeRef = useRef<number | null>(null);
   const sourceRef = useRef<AudioSource | null>(null);
+  // Guards the end-of-song logic: the `timeupdate` watchdog and the element's
+  // own `ended` can both arrive for one song (the watchdog fires slightly
+  // early), so the first one to run flips this and the second is a no-op.
+  // Reset when a new source loads or the playhead is rewound.
+  const trackEndedRef = useRef(false);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [meta, setMeta] = useState<TrackMeta | null>(null);
@@ -161,6 +166,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // While "Adaptive accent color" is on, the cover of the playing song sets
   // the theme's accent (see theme/adaptiveAccent).
   useAdaptiveAccent(current);
+
+  // A new song re-arms the end-of-song watchdog (see the `<audio>` handlers).
+  useEffect(() => {
+    trackEndedRef.current = false;
+  }, [current?.videoId]);
 
   // ── Startup restore ─────────────────────────────────────────────────────
   // Runs once: queue + current track + shuffle/repeat come back, and the
@@ -251,6 +261,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     positionRef.current = audio.currentTime;
     setCurrentTime(audio.currentTime);
     syncBuffered();
+    // A manual rewind re-arms the end-of-song watchdog so reaching the end
+    // again still advances the queue.
+    trackEndedRef.current = false;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
@@ -401,13 +414,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
       const { track, rest } = buildNext();
       if (!track) {
+        // Nothing left in the playlist: stop the element outright. A corrupted
+        // container would otherwise keep "running" past the song's true end,
+        // so pause and park the playhead on the metadata duration.
+        const audio = audioRef.current;
+        if (audio) {
+          audio.pause();
+          const end = current?.durationSeconds || meta?.duration_seconds || 0;
+          if (end > 0) {
+            audio.currentTime = end;
+            positionRef.current = end;
+            setCurrentTime(end);
+          }
+        }
         setIsPlaying(false);
         return;
       }
       if (rest) setQueue(rest);
       playTrack(track);
     },
-    [buildNext, playTrack, repeat, seek],
+    [buildNext, current, meta, playTrack, repeat, seek],
   );
 
   const previous = useCallback(() => {
@@ -669,9 +695,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // ── Audio element events ────────────────────────────────────────────────
 
-  const handleEnded = useCallback(() => {
+  /**
+   * The single end-of-song entry point, shared by the element's `ended` event
+   * and the `timeupdate` watchdog below. Guarded so one song never advances
+   * twice (the watchdog can fire a beat before the element's own `ended`).
+   */
+  const handleTrackEnded = useCallback(() => {
+    if (trackEndedRef.current) return;
+    trackEndedRef.current = true;
     if (repeat === 'one') {
-      seek(0);
+      seek(0); // rewinds and re-arms the watchdog for the replayed song
       const attempt = audioRef.current?.play();
       if (attempt) attempt.catch(() => {});
       return;
@@ -932,13 +965,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         onCanPlay={clearStall}
         onProgress={syncBuffered}
         onTimeUpdate={(event) => {
-          positionRef.current = event.currentTarget.currentTime;
-          setCurrentTime(event.currentTarget.currentTime);
+          const element = event.currentTarget;
+          positionRef.current = element.currentTime;
+          setCurrentTime(element.currentTime);
           syncBuffered();
+          // ── End-of-song watchdog ─────────────────────────────────────
+          // The m4a served by `/stream` can carry a corrupted / doubled
+          // container that claims more duration than the true song, so the
+          // element's own `ended` never fires at the metadata length — the
+          // song just "keeps running" into silence. `duration_seconds` is
+          // authoritative, so once the playhead reaches it, run the same
+          // end-of-song logic. Well short of the end the guard re-arms, so a
+          // rewind (repeat-one, manual seek) can end again.
+          const real =
+            current?.durationSeconds || meta?.duration_seconds || 0;
+          if (real > 0 && !element.paused) {
+            if (element.currentTime >= real - 0.25) {
+              handleTrackEnded();
+            } else if (element.currentTime < real - 1) {
+              trackEndedRef.current = false;
+            }
+          }
         }}
         onLoadedMetadata={(event) => {
           const element = event.currentTarget;
           setElementDuration(element.duration || 0);
+          trackEndedRef.current = false; // fresh source → re-arm the watchdog
           // Restore the saved playhead exactly once per restored session.
           if (resumeRef.current !== null && Number.isFinite(element.duration)) {
             const target = Math.min(
@@ -955,7 +1007,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         onDurationChange={(event) =>
           setElementDuration(event.currentTarget.duration || 0)
         }
-        onEnded={handleEnded}
+        onEnded={() => handleTrackEnded()}
         onError={() => void handleError()}
       />
     </PlayerContext.Provider>
