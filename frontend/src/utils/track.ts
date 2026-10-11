@@ -138,7 +138,13 @@ export function normalizeTrack(raw: unknown): Track | null {
     videoId,
     title: typeof record.title === 'string' && record.title ? record.title : 'Unknown title',
     artists,
-    artist: artistNames(record.artists) || 'Unknown artist',
+    // The API is inconsistent about where the artist lives: `artists[]` on
+    // songs, a plain `artist` string on artist results, nothing at all on a
+    // few bare "Song • 3:32" search rows.
+    artist:
+      artistNames(record.artists) ||
+      (typeof record.artist === 'string' ? record.artist : '') ||
+      'Unknown artist',
     album:
       typeof record.album === 'string'
         ? { name: record.album, id: null }

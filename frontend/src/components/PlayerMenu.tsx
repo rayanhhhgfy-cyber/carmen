@@ -6,11 +6,13 @@ import { useDownloads } from '../hooks';
 import { usePlayer } from '../player/PlayerContext';
 import type { Track, TrackMeta } from '../types/models';
 import { downloadLyrics, startDownload } from '../utils/downloads';
+import { shareTrack } from '../utils/share';
 import {
   AlbumIcon,
   DownloadIcon,
   LyricsIcon,
   MoreVertIcon,
+  ShareIcon,
   UserIcon,
 } from './icons';
 
@@ -117,6 +119,17 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
             <DownloadIcon fontSize="small" />
           </ListItemIcon>
           {label}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            close();
+            void shareTrack(track);
+          }}
+        >
+          <ListItemIcon>
+            <ShareIcon fontSize="small" />
+          </ListItemIcon>
+          Share
         </MenuItem>
         <MenuItem
           disabled={!artist}

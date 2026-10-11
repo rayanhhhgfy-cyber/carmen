@@ -36,7 +36,41 @@ document.addEventListener('contextmenu', (event) => {
  *   3. home feed + offline download catalogue,
  *   4. route restore — the exact page saved before the last close.
  */
+/**
+ * Fold a shared link's query string into the hash route.
+ *
+ * A shared song/search/playlist link is `https://host/?song=xyz` — the query
+ * string is the part a crawler fetches (it renders the Open Graph preview,
+ * see `server/share.py`). Once the SPA takes over, the same target has to
+ * live in the hash router, so rewrite the address to `#/song/xyz` *before*
+ * React mounts. The leftover query is dropped: from here on the hash route
+ * is the single source of truth (RoutePersistence saves it too).
+ *
+ * A real deep link already in the hash always wins and is left untouched.
+ */
+function foldShareRoute(): void {
+  const { hash, pathname, search } = window.location;
+  if (hash && hash !== '#' && hash !== '#/') return;
+  if (!search || search === '?') return;
+
+  const params = new URLSearchParams(search);
+  const song = params.get('song');
+  const searchQuery = params.get('search');
+  const playlist = params.get('playlist');
+  const target = song
+    ? `/song/${encodeURIComponent(song)}`
+    : searchQuery
+      ? `/search?query=${encodeURIComponent(searchQuery)}`
+      : playlist
+        ? `/collection/playlist/${encodeURIComponent(playlist)}`
+        : null;
+  if (!target) return;
+
+  window.history.replaceState(null, '', `${pathname}#${target}`);
+}
+
 async function restoreRoute(): Promise<void> {
+  foldShareRoute();
   const current = window.location.hash;
   if (current && current !== '#' && current !== '#/') return; // deep link wins
   try {

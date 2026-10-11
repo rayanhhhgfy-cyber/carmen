@@ -16,6 +16,7 @@ import { useTheme } from '../theme/ThemeContext';
 import type { Track, TrackMeta } from '../types/models';
 import { cn } from '../utils/cn';
 import { formatTime } from '../utils/format';
+import { shareTrack } from '../utils/share';
 import Artwork from './Artwork';
 import DownloadButton from './DownloadButton';
 import MarqueeText from './MarqueeText';
@@ -29,6 +30,7 @@ import {
   PlayArrowIcon,
   PlusIcon,
   QueueMusicIcon,
+  ShareIcon,
 } from './icons';
 
 /** Props for one row of the track list. */
@@ -259,6 +261,16 @@ export default function TrackRow({
         >
           <ListItemIcon><QueueMusicIcon fontSize="small" /></ListItemIcon>
           Add to queue
+        </MenuItem>
+        <MenuItem
+          className="font-ui"
+          onClick={() => {
+            setAnchor(null);
+            void shareTrack(track);
+          }}
+        >
+          <ListItemIcon><ShareIcon fontSize="small" /></ListItemIcon>
+          Share
         </MenuItem>
         <MenuItem
           className="font-ui"

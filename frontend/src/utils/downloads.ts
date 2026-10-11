@@ -82,6 +82,15 @@ function setNotice(severity: DownloadNotice['severity'], message: string): void 
   commit({ notice: { id: noticeSeq, severity, message } });
 }
 
+/**
+ * Publish a transient app-wide notice — the snackbar Layout renders on top
+ * of the downloads store. Exposed for callers outside the download flow
+ * (e.g. "link copied" after a share).
+ */
+export function notify(severity: DownloadNotice['severity'], message: string): void {
+  setNotice(severity, message);
+}
+
 export function subscribeDownloads(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

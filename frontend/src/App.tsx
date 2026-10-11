@@ -2,12 +2,14 @@ import { useEffect, useRef } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import Layout from './components/Layout';
+import ArtistPage from './pages/ArtistPage';
 import CollectionPage from './pages/CollectionPage';
 import HomePage from './pages/HomePage';
 import LibraryPage from './pages/LibraryPage';
 import QueuePage from './pages/QueuePage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
+import SongPage from './pages/SongPage';
 import { loadAppState, saveAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/appState';
 import { PlayerProvider } from './player/PlayerContext';
 import { ThemeProvider } from './theme/ThemeContext';
@@ -83,6 +85,10 @@ export default function App() {
               <Route path="library" element={<LibraryPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="collection/:kind/:id" element={<CollectionPage />} />
+              {/* artist cards open here; `#/song/:videoId` is the target a
+                  shared link folds into (see main.tsx) */}
+              <Route path="artist/:channelId" element={<ArtistPage />} />
+              <Route path="song/:videoId" element={<SongPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

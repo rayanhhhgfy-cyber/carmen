@@ -14,6 +14,41 @@ export interface CardAction {
 }
 
 /**
+ * Channel id of an artist result.
+ *
+ * Most artist payloads carry it as `browseId`, but the all-tab's "Top
+ * result" artist arrives with `browseId: null` and the channel only inside
+ * `artists[0].id` — both are consulted so the card can open the artist page.
+ */
+function artistChannelId(record: Record<string, unknown>): string | null {
+  const browseId = record.browseId;
+  if (typeof browseId === 'string' && browseId.startsWith('UC')) return browseId;
+  if (!Array.isArray(record.artists)) return null;
+  for (const entry of record.artists) {
+    if (entry && typeof entry === 'object') {
+      const id = (entry as Record<string, unknown>).id;
+      if (typeof id === 'string' && id.startsWith('UC')) return id;
+    }
+  }
+  return null;
+}
+
+/** Name of an artist result — ytmusicapi leaves its `title` null. */
+function artistNameOf(record: Record<string, unknown>): string {
+  if (typeof record.artist === 'string' && record.artist) return record.artist;
+  if (Array.isArray(record.artists)) {
+    for (const entry of record.artists) {
+      if (typeof entry === 'string' && entry) return entry;
+      if (entry && typeof entry === 'object') {
+        const name = (entry as Record<string, unknown>).name;
+        if (typeof name === 'string' && name) return name;
+      }
+    }
+  }
+  return '';
+}
+
+/**
  * Classify an arbitrary browse item (home rows, search results, related).
  * Returns the route / action to run when the card is tapped.
  */
@@ -33,9 +68,8 @@ export function resolveCard(item: unknown): CardAction | null {
   if (typeof record.browseId === 'string' && record.browseId.startsWith('MPRE')) {
     return { kind: 'album', key: `album-${record.browseId}` };
   }
-  if (typeof record.browseId === 'string' && record.browseId.startsWith('UC')) {
-    return { kind: 'artist', key: `artist-${record.browseId}` };
-  }
+  const channel = artistChannelId(record);
+  if (channel) return { kind: 'artist', key: `artist-${channel}` };
   if (record.videoId) return { kind: 'song', key: `song-${String(record.videoId)}` };
   if (record.browseId) return { kind: 'album', key: `album-${record.browseId}` };
   return null;
@@ -83,12 +117,21 @@ export default function MediaCard({
   const boxWidth = isFluid ? width : `${width}px`;
 
   const artwork = primaryArtwork(item);
+  // Artist results carry no `title` — ytmusicapi puts the name into `artist`
+  // (or `artists[0].name` on the all-tab top result) — so they used to show
+  // "Untitled" with the name underneath. Show the name *as* the title.
   const title =
-    (typeof record.title === 'string' && record.title) || 'Untitled';
+    (typeof record.title === 'string' && record.title) ||
+    (card.kind === 'artist' ? artistNameOf(record) : '') ||
+    'Untitled';
 
   // Subtitle: explicit artist, joined artist list, or a fallback chain.
+  // Artist cards skip the chain — their name is already the title; only the
+  // subscriber count adds anything.
   let subtitle = '';
-  if (typeof record.artist === 'string' && record.artist) {
+  if (card.kind === 'artist') {
+    subtitle = typeof record.subscribers === 'string' ? record.subscribers : '';
+  } else if (typeof record.artist === 'string' && record.artist) {
     subtitle = record.artist;
   } else if (Array.isArray(record.artists)) {
     subtitle = record.artists
@@ -115,11 +158,8 @@ export default function MediaCard({
     } else if (card.kind === 'playlist') {
       navigate(`/collection/playlist/${String(record.playlistId)}`);
     } else if (card.kind === 'artist') {
-      navigate(
-        `/search?query=${encodeURIComponent(
-          (typeof record.title === 'string' && record.title) || '',
-        )}`,
-      );
+      const channel = artistChannelId(record);
+      if (channel) navigate(`/artist/${encodeURIComponent(channel)}`);
     }
   };
 
@@ -171,7 +211,12 @@ export default function MediaCard({
       <div className="w-full min-w-0">
         <MarqueeText text={title} variant="body2" sx={{ fontWeight: 600 }} />
         <span className="block truncate text-xs leading-[1.4] text-muted">
-          {subtitle || (card.kind === 'song' ? 'Song' : card.kind)}
+          {subtitle ||
+            (card.kind === 'song'
+              ? 'Song'
+              : card.kind === 'artist'
+                ? '' // the name is the title — nothing left to add
+                : card.kind)}
         </span>
       </div>
       {record.isExplicit === true && (

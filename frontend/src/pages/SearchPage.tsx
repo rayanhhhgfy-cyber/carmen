@@ -29,6 +29,22 @@ const FILTERS: { id: string; label: string }[] = [
   { id: 'playlists', label: 'Playlists' },
 ];
 
+/**
+ * Search opens on **Songs** — the filter a music player's search is about.
+ * `All` is one chip tap away and survives in the URL as `?filter=all`;
+ * every other chip deep-links as `?filter=<id>`.
+ */
+const DEFAULT_FILTER = 'songs';
+const FILTER_IDS = new Set(FILTERS.map((option) => option.id));
+
+/** Active filter from the URL; unknown or missing values land on Songs. */
+function filterFromParams(params: URLSearchParams): string {
+  const raw = params.get('filter');
+  if (raw === 'all') return '';
+  if (raw && FILTER_IDS.has(raw)) return raw;
+  return DEFAULT_FILTER;
+}
+
 /** A raw search result that carries enough fields to play as a song. */
 function isTrackLike(item: unknown): boolean {
   if (!item || typeof item !== 'object') return false;
@@ -62,7 +78,7 @@ export default function SearchPage() {
 
   const [input, setInput] = useState(initialQuery);
   const [query, setQuery] = useState(initialQuery);
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState(() => filterFromParams(searchParams));
   const [results, setResults] = useState<Record<string, unknown>[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -70,11 +86,15 @@ export default function SearchPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<number | undefined>(undefined);
 
-  // Keep the URL in sync so results can be shared / deep linked
+  // Keep the URL in sync so results can be shared / deep linked — the
+  // active filter rides along as `?filter=` (omitted while it is the
+  // default Songs tab, spelled `all` for the All tab).
   useEffect(() => {
-    if (query) setSearchParams({ query }, { replace: true });
-    else setSearchParams({}, { replace: true });
-  }, [query, setSearchParams]);
+    const next = new URLSearchParams();
+    if (query) next.set('query', query);
+    if (filter !== DEFAULT_FILTER) next.set('filter', filter || 'all');
+    setSearchParams(next, { replace: true });
+  }, [query, filter, setSearchParams]);
 
   // …and the other way round: arriving here with a *different* query (the
   // "Go to artist" / "Go to album" jumps in the player's ⋯ menu) has to run
@@ -88,7 +108,9 @@ export default function SearchPage() {
     if (target === queryRef.current) return;
     setQuery(target);
     setInput(target);
-    setFilter('');
+    // an externally arrived search starts from the URL's filter — which
+    // defaults back to Songs when the link carries none
+    setFilter(filterFromParams(searchParams));
   }, [searchParams]);
 
   // Debounced typing -> suggestions
@@ -123,7 +145,7 @@ export default function SearchPage() {
     }
     let cancelled = false;
     setLoading(true);
-    apiGet('/search', { query: term, filter: filter || undefined, limit: 25 })
+    apiGet('/search', { query: term, filter: filter || undefined, limit: 100 })
       .then((payload) => {
         if (cancelled) return;
         setResults(Array.isArray(payload) ? (payload as Record<string, unknown>[]) : []);
