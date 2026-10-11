@@ -37,6 +37,25 @@ defaults:
   run:
     shell: bash
 
+env:
+  # Release body written by every upload step — identical text everywhere, so
+  # whichever job finishes last cannot clobber it with something different.
+  # A custom body instead of `generate_release_notes`, whose auto-generated
+  # text always appends a "Full Changelog:" compare link.
+  RELEASE_BODY: |
+    ### Downloads
+
+    | Platform | File |
+    |---|---|
+    | Windows (x64 / ARM64) | `*-x64-setup.exe` / `*-aarch64-setup.exe` (NSIS) |
+    | macOS (Apple Silicon + Intel) | `*_universal.dmg` |
+    | Linux — Debian / Ubuntu | `*.deb` |
+    | Linux — Fedora / RHEL | `*.rpm` |
+    | Linux — any distro | `*.AppImage` |
+    | Android | `*.apk` (install directly) / `*.aab` (Play Store) |
+
+    Desktop bundles are unsigned (no code-signing certificate yet; macOS gets ad-hoc signing only).
+
 jobs:
   # ────────────────────────────── checks ──────────────────────────────
   frontend:
@@ -144,14 +163,12 @@ jobs:
         include:
           - name: macOS universal (dmg)
             os: macos-latest
-            xwin: false
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             build-args: --target universal-apple-darwin --bundles dmg
             release-files: |
               src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           - name: Linux (deb + rpm + AppImage)
             os: ubuntu-latest
-            xwin: false
             rust-targets: x86_64-unknown-linux-gnu # host = no-op rustup add
             build-args: --bundles deb,rpm,appimage
             release-files: |
@@ -160,14 +177,12 @@ jobs:
               src-tauri/target/release/bundle/appimage/*.AppImage
           - name: Windows x86_64 (NSIS)
             os: windows-latest
-            xwin: true
             rust-targets: x86_64-pc-windows-msvc
             build-args: --target x86_64-pc-windows-msvc --bundles nsis
             release-files: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           - name: Windows aarch64 (NSIS)
             os: windows-latest
-            xwin: true
             rust-targets: aarch64-pc-windows-msvc
             build-args: --target aarch64-pc-windows-msvc --bundles nsis
             release-files: |
@@ -215,18 +230,17 @@ jobs:
       - name: Generate icons from src-tauri/app-icon.png
         run: npm run icons
 
-      - name: Install cargo-xwin (MSVC cross toolchain, used on windows)
-        if: matrix.xwin
-        run: cargo install --locked cargo-xwin
-
       - name: Build bundles (tauri build)
         # `bundle.targets: "all"` is narrowed per matrix entry via --bundles;
         # beforeBuildCommand (npm run build:frontend) runs inside tauri build.
+        # Windows builds natively with the runner's MSVC toolchain — VS2022
+        # ships the ARM64 cross tools, so aarch64-pc-windows-msvc needs no
+        # cargo-xwin (its clang-cl `/imsvc` flags broke ring's C build with
+        # "clang: error: no such file or directory: '/imsvc'").
         # No code signing is configured — all bundles are unsigned (macOS gets
         # ad-hoc signing only).
         run: >-
           npx tauri build --ci
-          ${{ matrix.xwin && '--runner cargo-xwin' || '' }}
           ${{ matrix.build-args }}
 
       - name: Attach bundles to the GitHub release
@@ -235,7 +249,7 @@ jobs:
         with:
           files: ${{ matrix.release-files }}
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          body: ${{ env.RELEASE_BODY }}
 
   # ──────────────────────────── Android APK/AAB ────────────────────────────
   android:
@@ -362,11 +376,13 @@ jobs:
           echo "Wrote src-tauri/gen/android/keystore.properties (values not logged)."
 
       - name: Build release APK + AAB
-        # `tauri android build` builds BOTH formats when neither --apk nor
-        # --aab is given; both flags are passed explicitly for clarity.
+        # Release mode is the DEFAULT — there is NO `--release` flag (clap
+        # aborts with "unexpected argument '--release'"; `--debug` opts into a
+        # debug build). `--apk`/`--aab` are Tauri CLI flags, not Gradle
+        # passthrough (anything after a bare `--` would go to Gradle instead).
         # Outputs land under src-tauri/gen/android/app/build/outputs/
         # (apk/<flavor>/release/*.apk, bundle/<flavor>Release/*.aab).
-        run: npx tauri android build --release --ci --apk --aab
+        run: npx tauri android build --ci --apk --aab
 
       - name: Attach APK/AAB to the GitHub release
         if: github.ref_type == 'tag'
@@ -376,4 +392,4 @@ jobs:
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
             src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          body: ${{ env.RELEASE_BODY }}

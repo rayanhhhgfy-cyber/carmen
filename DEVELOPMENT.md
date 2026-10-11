@@ -411,13 +411,16 @@ Keep the `.jks` private and out of git.
 **Build**
 
 ```bash
-npx tauri android build --release
+npx tauri android build
 # builds BOTH an APK and an AAB by default; be explicit if you want one:
-npx tauri android build --release --apk        # APK only
-npx tauri android build --release --aab        # AAB only
-npx tauri android build --release --split-per-abi   # per-ABI APKs/AABs
+npx tauri android build --apk               # APK only
+npx tauri android build --aab               # AAB only
+npx tauri android build --split-per-abi     # per-ABI APKs/AABs
 ```
 
+- Release mode is the **default** — there is **no** `--release` flag
+  (`--debug` opts into a debug build); passing `--release` makes the CLI
+  abort with `unexpected argument '--release'`.
 - `--apk` / `--aab` are **Tauri CLI flags**, not Gradle passthrough.
   Anything after a bare `--` goes to the runner/Gradle instead.
 - Outputs (flavor directories from the `rust` Gradle plugin):
@@ -518,8 +521,8 @@ consolidates what used to be three files (`ci.yml`, `build-desktop.yml`,
 | `frontend` | push to `master`, PRs, tags `v*`, `workflow_dispatch` | `npm ci` (both lockfiles) → `npm run typecheck` → `npm run build:frontend` |
 | `rust` | ″ | Linux webkit deps → `cargo check` in `src-tauri` |
 | `server` | ″ | Fresh Py3.11 venv → `pip install -r server/requirements.txt` → `python -m compileall server` → `import server.__main__`. **Never starts the server** — the import is safe because `YTMusic`/Redis/browser.json are all created inside the FastAPI `lifespan`, which a plain import never runs |
-| `desktop` (matrix) | tags `v*` + `workflow_dispatch`, needs all 3 checks | 4 entries: **macOS universal dmg** (`macos-latest`), **Linux deb + rpm + AppImage** (`ubuntu-latest`; the `rpm` apt package provides `rpmbuild`), **Windows x86_64 NSIS** + **Windows aarch64 NSIS** (`windows-latest`, cross-built with `cargo-xwin`). Each entry: Node 20 + Rust stable + rust-cache → `npm ci` (both lockfiles) → `npm run icons` → `npx tauri build --ci --bundles …` |
-| `android` | tags `v*` + `workflow_dispatch`, needs all 3 checks | Ubuntu + Temurin JDK 17 + the **preinstalled** Android SDK (a pinned NDK is installed via the runner's own `sdkmanager` — `android-actions/setup-android@v3` was dropped after it broke on cmdline-tools 16 by trying to install the removed `tools` package) + Rust Android targets: builds the committed `src-tauri/gen/android`, decodes the keystore + writes `keystore.properties` **when secrets exist** (otherwise builds unsigned), runs `npx tauri android build --release --ci --apk --aab` |
+| `desktop` (matrix) | tags `v*` + `workflow_dispatch`, needs all 3 checks | 4 entries: **macOS universal dmg** (`macos-latest`), **Linux deb + rpm + AppImage** (`ubuntu-latest`; the `rpm` apt package provides `rpmbuild`), **Windows x86_64 NSIS** + **Windows aarch64 NSIS** (`windows-latest`, native MSVC — VS2022 ships the ARM64 cross tools; `cargo-xwin` was dropped because its clang-cl `/imsvc` flags break ring's C build). Each entry: Node 20 + Rust stable + rust-cache → `npm ci` (both lockfiles) → `npm run icons` → `npx tauri build --ci --bundles …` |
+| `android` | tags `v*` + `workflow_dispatch`, needs all 3 checks | Ubuntu + Temurin JDK 17 + the **preinstalled** Android SDK (a pinned NDK is installed via the runner's own `sdkmanager` — `android-actions/setup-android@v3` was dropped after it broke on cmdline-tools 16 by trying to install the removed `tools` package) + Rust Android targets: builds the committed `src-tauri/gen/android`, decodes the keystore + writes `keystore.properties` **when secrets exist** (otherwise builds unsigned), runs `npx tauri android build --ci --apk --aab` |
 
 Release uploads happen **inside each build job** via
 `softprops/action-gh-release@v2` — deliberately **no
@@ -527,7 +530,10 @@ Release uploads happen **inside each build job** via
 size ceiling). Jobs may all touch the same tag's release without a
 coordinating `release` job: when creation races, the action reuses the
 release that already exists. `fail_on_unmatched_files: true` guards against
-silently shipping a release with missing bundles.
+silently shipping a release with missing bundles. Every upload also writes
+the same custom release body (`env.RELEASE_BODY` in the workflow);
+`generate_release_notes` is deliberately unused because GitHub's generated
+text always appends a "Full Changelog:" compare link.
 
 Common properties: `workflow_dispatch` runs the builds **without** tagging
 (handy for smoke-testing the Windows/Android steps), `defaults.run.shell:
