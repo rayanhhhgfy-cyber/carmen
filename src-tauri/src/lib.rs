@@ -5,6 +5,10 @@
 //! few app-level operations plugins do not cover.
 
 mod commands;
+// The tray (menus, tray icons, minimize-to-tray) only exists on desktop —
+// `tauri::menu` / `tauri::tray` are compiled out on mobile targets, so the
+// whole module is gated or the Android/iOS builds fail to resolve them.
+#[cfg(desktop)]
 mod tray;
 
 #[cfg(target_os = "macos")]
@@ -19,11 +23,10 @@ use tauri::Manager;
 ///   same window back on the previously saved route;
 /// * quitting only happens through the tray "Quit" item (or the OS request).
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
         // Shared https links (`?song=…`) open the installed app on Android
         // through App Links (see DEVELOPMENT.md → "Opening the app from a
         // shared link"); the config in tauri.conf.json declares the host.
@@ -31,9 +34,20 @@ pub fn run() {
         // Motion artwork: the iTunes/amp-api hops are not CORS-reachable from
         // the WebView (amp-api even checks the Origin header), so they go
         // through Rust (see frontend/src/artwork/motion.ts).
-        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_http::init());
+
+    // Window placement restore is a desktop concern — the plugin's `Builder`
+    // is compiled out on mobile targets, so registering it must be too.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
+
+    builder
         .setup(|app| {
+            // Tray icon + menu: desktop only (see `mod tray` above).
+            #[cfg(desktop)]
             tray::init(app.handle())?;
+            #[cfg(not(desktop))]
+            let _ = app;
             Ok(())
         })
         .on_window_event(|window, event| {
