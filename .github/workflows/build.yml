@@ -3,9 +3,9 @@ name: Build and Release
 # Single consolidated workflow — replaces ci.yml + build-desktop.yml +
 # build-android.yml. Layout (mirrors the proven z44d/serbase build.yml):
 #   * checks (frontend / rust / server) run on pushes + PRs;
-#   * the desktop matrix and the Android job run for version tags (and for
-#     manual workflow_dispatch, so Windows/Android steps can be smoke-tested
-#     without tagging) and need all checks to be green first;
+#   * the desktop matrix, the Android job and the iOS job run for version tags
+#     (and for manual workflow_dispatch, so Windows/Android/iOS steps can be
+#     smoke-tested without tagging) and need all checks to be green first;
 #   * every build job attaches its OWN bundles straight to the GitHub
 #     Release via softprops/action-gh-release — there is intentionally NO
 #     actions/upload-artifact → download-artifact round-trip (GitHub's
@@ -24,8 +24,8 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# Read-only by default; only the two build jobs (which attach release
-# assets) ask for `contents: write`.
+# Read-only by default; only the build jobs that attach release assets
+# (desktop, Android, iOS) ask for `contents: write`.
 permissions:
   contents: read
 
@@ -53,8 +53,11 @@ env:
     | Linux — Fedora / RHEL | `*.rpm` |
     | Linux — any distro | `*.AppImage` |
     | Android | `*.apk` (install directly) / `*.aab` (Play Store) |
+    | iOS | `*.ipa` (unsigned — sideload with AltStore / SideStore, etc.) |
 
     Desktop bundles are unsigned (no code-signing certificate yet; macOS gets ad-hoc signing only).
+    The iOS IPA is unsigned too: with no certificate or provisioning profile it cannot be installed
+    on a stock device without a sideloading tool that re-signs it, nor submitted to the App Store.
 
 jobs:
   # ────────────────────────────── checks ──────────────────────────────
@@ -390,5 +393,82 @@ jobs:
           files: |
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
             src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          fail_on_unmatched_files: true
+          body: ${{ env.RELEASE_BODY }}
+
+  # ─────────────────────────── iOS IPA (unsigned) ───────────────────────────
+  ios:
+    name: iOS release (unsigned IPA)
+    # Same gating as the other bundle jobs: tags → build + attach; manual
+    # workflow_dispatch → build only. macOS runner because the iOS toolchain
+    # (Xcode + xcodebuild) only exists there.
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    needs: [frontend, rust, server]
+    runs-on: macos-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write # attach the IPA to the GitHub release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios # iphoneos device slice — the only one an IPA needs
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: ios
+
+      - name: Install JS deps (root = Tauri CLI, frontend = vite build)
+        run: |
+          npm ci
+          npm --prefix frontend ci
+
+      - name: Install XcodeGen
+        # `tauri ios init` shells out to `xcodegen generate`; the macOS runners
+        # do not ship it. (init would `brew install` it itself, but doing it up
+        # front keeps the init step fast and its logs clean.)
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Generate src-tauri/gen/apple (tauri ios init)
+        # gen/apple is intentionally NOT committed (unlike gen/android) — it is
+        # regenerated here and then reused by `tauri ios build`. --ci skips
+        # every prompt; the project is generated even without a development
+        # team because we never sign.
+        run: |
+          if [ ! -d src-tauri/gen/apple ]; then
+            npx tauri ios init --ci
+          fi
+
+      - name: Generate icons (fills gen/apple/Assets.xcassets)
+        # MUST run after init: `tauri icon` only writes the iOS AppIcon set
+        # when gen/apple/Assets.xcassets/AppIcon.appiconset already exists.
+        run: npm run icons
+
+      - name: Build unsigned IPA (tauri ios build --no-sign)
+        # --no-sign skips code signing entirely: xcodebuild archives with
+        # CODE_SIGNING_ALLOWED=NO and Tauri then zips the .app into a Payload/
+        # IPA itself (no certificate or provisioning profile required).
+        # Release is the default profile and the default `--target aarch64`
+        # builds the device slice; output: src-tauri/gen/apple/build/arm64/*.ipa
+        run: npx tauri ios build --ci --no-sign
+
+      - name: Attach IPA to the GitHub release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/gen/apple/build/arm64/*.ipa
           fail_on_unmatched_files: true
           body: ${{ env.RELEASE_BODY }}
