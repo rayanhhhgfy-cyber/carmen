@@ -357,7 +357,7 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
@@ -365,13 +365,12 @@ jobs:
             exit 0
           fi
 
-          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/upload-keystore.jks"
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/keystore.jks"
 
           cat > src-tauri/gen/android/keystore.properties <<EOF
           keyAlias=${ANDROID_KEYSTORE_ALIAS}
           password=${ANDROID_KEYSTORE_PASSWORD}
-          keyPassword=${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}
-          storeFile=${RUNNER_TEMP}/upload-keystore.jks
+          storeFile=${RUNNER_TEMP}/keystore.jks
           EOF
           echo "Wrote src-tauri/gen/android/keystore.properties (values not logged)."
 
