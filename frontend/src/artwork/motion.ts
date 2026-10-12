@@ -3,13 +3,21 @@
  *
  * Resolution is split between the client and the server:
  *
- *   1. the public **iTunes Search API** turns `"Album - Artist"` (the term
+ *   1. the client maps the album to its iTunes collection id via the public
+ *      iTunes Search API (session-cached) — `"Album - Artist"` (the term
  *      style `test.py` drives coverpy with — an album title alone matches
  *      the wrong record all too often) into its `collectionId`
  *      (`access-control-allow-origin: *` — plain fetch). Songs that arrive
  *      without an album — flat search/queue records — fall back to an
  *      iTunes **song** search, whose first result points straight at the
- *      collection to animate;
+ *      collection to animate. Safari (iOS *and* macOS) is the exception:
+ *      it cross-origin-redirects the call to a non-CORS `musics://` scheme,
+ *      so the fetch can never succeed and is skipped outright there;
+ *   1b. anything the client cannot resolve (Safari, or a failed lookup)
+ *      falls back to `GET /browsing/itunes-id/{albumId}` — the same
+ *      CoverPy lookup server-side, cached a week under the album's YouTube
+ *      Music browse id — and, when the record carries no browse id at all,
+ *      to `GET /browsing/itunes-id?term=…&entity=album|song`;
  *   2. `GET /browsing/animated-artwork/{collectionId}` resolves the direct
  *      MP4 on the **server**, which runs coverpy's Apple Music walk (web
  *      token → `amp-api …?extend=editorialVideo` → HLS ladder → one
@@ -51,8 +59,8 @@ export interface MotionArtworkRef {
   album?: string | null;
   /**
    * The album's **YouTube Music** browse id (`MPRE…`). The client's own iTunes
-   * search is blocked on some clients (iOS Safari) — when it fails, this id
-   * lets the server resolve the collection id instead
+   * search is blocked on Safari (iOS + macOS) and can fail anywhere — when
+   * it does, this id lets the server resolve the collection id instead
    * (`/browsing/itunes-id/{albumId}`), which is then used as before.
    */
   albumId?: string | null;
@@ -81,6 +89,23 @@ const RESOLVE_CONCURRENCY = 3;
 const DOWNLOAD_CONCURRENCY = 2;
 /** Disk budget for streamed covers; the oldest files are dropped first. */
 const CACHE_FILE_LIMIT = 150;
+
+/**
+ * Safari (iOS + macOS), and nothing else.
+ *
+ * Safari cross-origin-redirects `itunes.apple.com/search` to the
+ * `musics://` scheme, which the Fetch spec treats as a non-CORS redirect —
+ * the fetch rejects with "not allowed to follow a cross-origin CORS
+ * redirection with non CORS scheme" and *nothing* can be read from it. The
+ * lookup is therefore skipped outright there (the server route answers
+ * instead); every other engine gets the direct call, and the UA check
+ * excludes the Chromium/Firefox/Opera browsers that merely pretend to be
+ * Safari.
+ */
+const IS_SAFARI =
+  typeof navigator !== 'undefined' &&
+  /apple safari|iphone|ipad|ipod/i.test(navigator.userAgent) &&
+  !/chrome|chromium|android|crios|fxios|edg|edge|opr|opera/i.test(navigator.userAgent);
 
 function createPool(limit: number) {
   let active = 0;
@@ -149,17 +174,24 @@ async function searchCollectionId(
   const url =
     `https://itunes.apple.com/search?term=${encodeURIComponent(term)}` +
     `&country=US&media=music&entity=${entity}&limit=1`;
-  const response = await withTimeout(
-    fetch(url, { headers: { Accept: 'application/json' } }),
-    RESOLVE_TIMEOUT_MS,
-  );
-  if (!response.ok) return null;
-  const payload = (await response.json()) as {
-    results?: Array<{ collectionId?: unknown }>;
-    resultCount?: number;
-  };
-  const id = payload?.results?.[0]?.collectionId;
-  return typeof id === 'number' ? id : null;
+  // A rejection here must never abort the whole resolve — the caller has
+  // the server lookup to fall back on (see `resolveCollectionId`).
+  try {
+    const response = await withTimeout(
+      fetch(url, { headers: { Accept: 'application/json' } }),
+      RESOLVE_TIMEOUT_MS,
+    );
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      results?: Array<{ collectionId?: unknown }>;
+      resultCount?: number;
+    };
+    const id = payload?.results?.[0]?.collectionId;
+    return typeof id === 'number' ? id : null;
+  } catch (error) {
+    console.warn('[motion] itunes search failed', term, error);
+    return null;
+  }
 }
 
 // ── Resolution cache (session) + id store (persisted) ────────────────────────
@@ -175,6 +207,9 @@ const pendingCaches = new Map<string, Promise<string | null>>();
 /** Session memo: YT Music album id → iTunes collection id (server fallback). */
 const itunesIdCache = new Map<string, number | null>();
 const pendingItunesIds = new Map<string, Promise<number | null>>();
+/** Session memo: `"term\0entity"` → iTunes collection id (server fallback). */
+const itunesLookupCache = new Map<string, number | null>();
+const pendingItunesLookups = new Map<string, Promise<number | null>>();
 /** In-flight `motionSource` results keyed by identity — one search per album. */
 const pendingSources = new Map<string, Promise<string | null>>();
 
@@ -232,23 +267,46 @@ async function resolveCollectionId(reference: MotionArtworkRef): Promise<number 
       const title = reference.title?.trim();
       const artist = reference.artist?.trim();
       let collectionId: number | null = null;
-      if (album) {
-        collectionId = await searchCollectionId(
-          artist ? `${album} - ${artist}` : album,
-          'album',
-        );
+      // Safari can never complete the iTunes fetch (it cross-origin
+      // redirects to the non-CORS `musics://` scheme), so the doomed call
+      // is skipped outright there — every other engine gets the direct
+      // lookup, which is cheaper than the server round trip.
+      if (!IS_SAFARI) {
+        if (album) {
+          collectionId = await searchCollectionId(
+            artist ? `${album} - ${artist}` : album,
+            'album',
+          );
+        }
+        if (!collectionId && title) {
+          collectionId = await searchCollectionId(
+            artist ? `${title} - ${artist}` : title,
+            'song',
+          );
+        }
       }
-      if (!collectionId && title) {
-        collectionId = await searchCollectionId(
-          artist ? `${title} - ${artist}` : title,
-          'song',
-        );
-      }
-      // iOS Safari (and friends) block the client-side iTunes call — fall
-      // back to the server, which resolves the same album from its YouTube
-      // Music browse id and caches the answer for a week.
+      // Server fallback (Safari, or a failed client lookup): the album's
+      // browse id resolves through CoverPy exactly like the client search
+      // would have. Tracks often carry no browse id at all — the server
+      // only ever sees the album *name* in their meta — so the same lookup
+      // is repeated by term, album entity first, then a song search whose
+      // first result points at the collection the track belongs to.
       if (!collectionId && reference.albumId) {
         collectionId = await serverItunesId(reference.albumId);
+      }
+      if (!collectionId) {
+        if (album) {
+          collectionId = await serverItunesLookup(
+            artist ? `${album} - ${artist}` : album,
+            'album',
+          );
+        }
+        if (!collectionId && title) {
+          collectionId = await serverItunesLookup(
+            artist ? `${title} - ${artist}` : title,
+            'song',
+          );
+        }
       }
       aidCache.set(identity, collectionId);
       if (collectionId) {
@@ -314,10 +372,10 @@ async function serverMotionUrl(collectionId: number): Promise<string | null> {
  * The iTunes collection id of a **YouTube Music** album, resolved by the
  * server (CoverPy's catalog search, cached there for a week under the album
  * browse id). This is the fallback for clients whose own iTunes Search API
- * call is blocked — iOS Safari most notably, where the fetch never reaches
- * Apple at all. The client's search is tried first; only a failure lands
- * here, and then the resulting id feeds `/browsing/animated-artwork/…`
- * exactly the same way.
+ * call is blocked — Safari (iOS *and* macOS) most notably, where the fetch
+ * is redirected to a non-CORS scheme and can never succeed. The client's
+ * search is tried first everywhere else; a failure lands here, and the
+ * resulting id feeds `/browsing/animated-artwork/…` exactly the same way.
  */
 async function serverItunesId(ytmAlbumId: string): Promise<number | null> {
   const memo = itunesIdCache.get(ytmAlbumId);
@@ -347,6 +405,49 @@ async function serverItunesId(ytmAlbumId: string): Promise<number | null> {
     return await task;
   } finally {
     pendingItunesIds.delete(ytmAlbumId);
+  }
+}
+
+/**
+ * Server-side iTunes lookup by plain term — the shape flat search / queue
+ * records have, where no album browse id exists and the server only ever
+ * sees the album *name*. Same CoverPy walk as `serverItunesId`, cached
+ * there under `sha256(term\0entity)`; the session memo here just skips the
+ * round trip. `entity=song` points straight at the collection a track
+ * belongs to.
+ */
+async function serverItunesLookup(
+  term: string,
+  entity: 'album' | 'song',
+): Promise<number | null> {
+  const cacheKey = `${term}\0${entity}`;
+  const memo = itunesLookupCache.get(cacheKey);
+  if (memo !== undefined) return memo;
+
+  const inFlight = pendingItunesLookups.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  const task = (async () => {
+    try {
+      const payload = await withTimeout(
+        apiGet('/browsing/itunes-id', { term, entity }),
+        SERVER_TIMEOUT_MS,
+      );
+      const id = payload?.collection_id;
+      const resolved = typeof id === 'number' ? id : null;
+      itunesLookupCache.set(cacheKey, resolved); // memo clean "no match" too
+      return resolved;
+    } catch (error) {
+      console.warn('[motion] server itunes lookup failed', term, entity, error);
+      return null; // transient — retried on the next request
+    }
+  })();
+
+  pendingItunesLookups.set(cacheKey, task);
+  try {
+    return await task;
+  } finally {
+    pendingItunesLookups.delete(cacheKey);
   }
 }
 

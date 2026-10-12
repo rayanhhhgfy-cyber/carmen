@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from contextlib import suppress
 from functools import partial
 
@@ -18,6 +19,7 @@ from ..core import (
     get_explore,
     get_home,
     get_itunes_id,
+    get_itunes_id_by_term,
     get_lyrics,
     get_mood_categories,
     get_mood_playlists,
@@ -422,29 +424,15 @@ _ITID_NONE_TTL = 24 * 3600
 _ITID_NONE = "none"
 
 
-@router.get(
-    "/itunes-id/{albumId}",
-    summary="Get iTunes Collection ID",
-    response_description="iTunes collection id of the album, or null",
-)
-@sanitized
-async def itunes_id(albumId: str):
+async def _resolve_cached_itunes_id(key: str, resolver) -> int | None:
     """
-    Map a YouTube Music album to its iTunes collection id.
+    The caching layer shared by the two iTunes-id routes: a week-long Redis
+    hit under *key*, a one-day "no match" marker, and deliberately no cache
+    for transient failures (auth / network) so the next request retries.
 
-    The client resolves albums itself through the public iTunes Search API,
-    but some clients (notably iOS Safari) block that call. They fall back to
-    this endpoint, which does the same "Album - Artist" lookup server-side via
-    CoverPy and caches the answer in Redis for one week under the album's
-    browse id — so each album is looked up at most once.
-
-    Returns ``{"collection_id": <int>}``, or ``{"collection_id": null}`` when
-    the album has no iTunes match **or** the lookup fails transiently (those
-    failures are not cached, so the next request retries).
-
-    - **albumId**: the album's YouTube Music browse id (starts with ``MPRE``)
+    ``resolver`` is a zero-arg callable run in the thread pool — the CoverPy
+    walk is blocking.
     """
-    key = f"yt:itid:{albumId}"
     rds = state.rds
 
     if rds is not None:
@@ -457,19 +445,17 @@ async def itunes_id(albumId: str):
                     else str(cached_id)
                 )
                 if value == _ITID_NONE:
-                    return {"collection_id": None}
+                    return None
                 try:
-                    return {"collection_id": int(value)}
+                    return int(value)
                 except ValueError:
                     pass  # corrupt entry — fall through and re-resolve
 
     loop = asyncio.get_running_loop()
     try:
-        collection_id = await loop.run_in_executor(
-            executor, partial(get_itunes_id, albumId)
-        )
+        collection_id = await loop.run_in_executor(executor, resolver)
     except Exception:  # noqa: BLE001 — auth / network: null, uncached
-        return {"collection_id": None}
+        return None
 
     if rds is not None:
         with suppress(Exception):
@@ -478,6 +464,72 @@ async def itunes_id(albumId: str):
             else:
                 await rds.set(key, _ITID_NONE, ex=_ITID_NONE_TTL)
 
+    return collection_id
+
+
+@router.get(
+    "/itunes-id/{albumId}",
+    summary="Get iTunes Collection ID",
+    response_description="iTunes collection id of the album, or null",
+)
+@sanitized
+async def itunes_id(albumId: str):
+    """
+    Map a YouTube Music album to its iTunes collection id.
+
+    The client resolves albums itself through the public iTunes Search API,
+    but some clients (Safari — iOS *and* macOS — redirects that call to a
+    non-CORS ``musics://`` scheme, so the fetch can never succeed). They
+    fall back to this endpoint, which does the same "Album - Artist" lookup
+    server-side via CoverPy and caches the answer in Redis for one week
+    under the album's browse id — so each album is looked up at most once.
+
+    Returns ``{"collection_id": <int>}``, or ``{"collection_id": null}`` when
+    the album has no iTunes match **or** the lookup fails transiently (those
+    failures are not cached, so the next request retries).
+
+    - **albumId**: the album's YouTube Music browse id (starts with ``MPRE``)
+    """
+    collection_id = await _resolve_cached_itunes_id(
+        f"yt:itid:{albumId}", partial(get_itunes_id, albumId)
+    )
+    return {"collection_id": collection_id}
+
+
+@router.get(
+    "/itunes-id",
+    summary="Get iTunes Collection ID by term",
+    response_description="iTunes collection id matching the term, or null",
+)
+@sanitized
+async def itunes_id_by_term(term: str, entity: str = "album"):
+    """
+    Map a plain search term to its iTunes collection id.
+
+    Same CoverPy lookup as `/itunes-id/{albumId}`, without the browse id —
+    the shape flat search / queue records have, where the server only ever
+    sees the album *name*. Tracks resolve through ``entity=song``: a song
+    search's first result points straight at the collection to animate.
+
+    Cached in Redis for one week under the ``sha256(term\\0entity)`` hash
+    ("no match" for a day; transient failures uncached).
+
+    Returns ``{"collection_id": <int>}``, or ``{"collection_id": null}``.
+
+    - **term**: the lookup term, "Title - Artist" style
+    - **entity**: ``album`` (default) or ``song``
+    """
+    if entity not in ("album", "song"):
+        raise HTTPException(status_code=422, detail="entity must be 'album' or 'song'")
+    term = term.strip()
+    if not term:
+        raise HTTPException(status_code=422, detail="term must not be empty")
+
+    digest = hashlib.sha256(f"{term}\0{entity}".encode()).hexdigest()
+    collection_id = await _resolve_cached_itunes_id(
+        f"yt:itlook:{digest}",
+        partial(get_itunes_id_by_term, term, entity),
+    )
     return {"collection_id": collection_id}
 
 

@@ -249,10 +249,14 @@ songs/<videoId>/
   storage backend (sandbox files vs. IndexedDB).
 - **Animated covers resolve in two calls** — the client maps the album to its
   iTunes collection id via the public iTunes Search API (session-cached);
-  clients that block that call (iOS Safari) fall back to
-  `GET /browsing/itunes-id/{albumBrowseId}`, which does the same "Album -
-  Artist" lookup server-side through CoverPy (cached a week under the album's
-  YouTube Music browse id). The resulting id feeds
+  Safari (iOS *and* macOS) skips that call entirely — the browser redirects
+  `itunes.apple.com` to a non-CORS `musics://` scheme, so the fetch can never
+  succeed — and every other client falls back server-side when it fails:
+  `GET /browsing/itunes-id/{albumBrowseId}` (or
+  `GET /browsing/itunes-id?term=…&entity=album|song` when the track carries
+  no browse id) does the same "Album - Artist" lookup through CoverPy, cached
+  a week under the album's YouTube Music browse id ("no match" cached a day).
+  The resulting id feeds
   `GET /browsing/animated-artwork/{collectionId}`, which returns a direct MP4
   URL (cached a week; a rate-limited lookup answers `null`, deliberately
   uncached so it retries).

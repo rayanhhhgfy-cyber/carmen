@@ -253,21 +253,44 @@ def get_animated_artwork(album_id: int) -> str | None:
     return motion.video_url or motion.hq_video_url
 
 
-def get_itunes_id(album_id: str) -> int | None:
+def get_itunes_id_by_term(term: str, entity: str = "album") -> int | None:
     """
-    iTunes collection id of a YouTube Music album, via CoverPy's catalog search.
+    iTunes collection id of a plain "Album - Artist" (or "Title - Artist")
+    term, via CoverPy's catalog search.
 
-    The client resolves most albums itself through the public iTunes Search
-    API, but some clients (notably iOS Safari) block that call — they fall
-    back here, which does the same "Album - Artist" lookup server-side against
-    the catalog CoverPy already talks to.
+    Shared by the browse-id route (which resolves the term from
+    ``ytm.get_album``) and the term route (used by clients that carry no
+    browse id at all — flat search / queue records, where the server only
+    knows the album *name*).
 
-    :param album_id: the album's YouTube Music browse id (starts with "MPRE")
+    :param term: the lookup term, "Title - Artist" style like ``test.py``
+    :param entity: ``"album"`` (default) or ``"song"`` — a song search
+        points at the collection the track belongs to
     :return: the iTunes collection id, or ``None`` when there is no match
     """
     from coverpy import CoverPy  # local import: keep startup cost off the hot path
     from coverpy.exceptions import NoResultsError
 
+    with CoverPy(country="US") as client:
+        try:
+            result = client.get_cover(term, entity=entity)
+        except NoResultsError:
+            return None
+    return result.collection_id
+
+
+def get_itunes_id(album_id: str) -> int | None:
+    """
+    iTunes collection id of a YouTube Music album, via CoverPy's catalog search.
+
+    The client resolves most albums itself through the public iTunes Search
+    API, but some clients (notably Safari — iOS *and* macOS) block that call
+    — they fall back here, which does the same "Album - Artist" lookup
+    server-side against the catalog CoverPy already talks to.
+
+    :param album_id: the album's YouTube Music browse id (starts with "MPRE")
+    :return: the iTunes collection id, or ``None`` when there is no match
+    """
     album = ytm.get_album(album_id)
     title = album.get("title") or ""
     if not title:
@@ -275,12 +298,7 @@ def get_itunes_id(album_id: str) -> int | None:
     artists = album.get("artists") or []
     artist = artists[0].get("name", "") if artists and isinstance(artists[0], dict) else ""
     term = f"{title} - {artist}" if artist else title
-    with CoverPy(country="US") as client:
-        try:
-            result = client.get_cover(term)
-        except NoResultsError:
-            return None
-    return result.collection_id
+    return get_itunes_id_by_term(term)
 
 
 # ── Track enrichment ───────────────────────────────────────────────────────
