@@ -26,6 +26,11 @@
        * webview can never rubber-band or scroll at the root: the page
        * scrolls inside <main> only (see Layout).  Mirrored in styles.css
        * (@layer base) — keep both in sync.
+       *
+       * The trailing padding-top restores the status-bar clearance that the
+       * `padding: 0` shorthand zeroes — env(safe-area-inset-top) is non-zero
+       * on Android WebView ≥M136 (viewport-fit=cover) and iOS; elsewhere it
+       * is simply 0px.  Mirrored in styles.css — keep both in sync.
        */
       html,
       body,
@@ -33,6 +38,7 @@
         height: 100%;
         margin: 0;
         padding: 0;
+        padding-top: env(safe-area-inset-top, 0px);
         overflow: hidden;
         overscroll-behavior: none;
         user-select: none;

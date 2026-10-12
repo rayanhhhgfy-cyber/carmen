@@ -67,11 +67,33 @@
 
 @layer base {
   /*
+   * Safe-area insets. The layout is edge-to-edge (MainActivity calls
+   * `enableEdgeToEdge()` and the webview meta carries `viewport-fit=cover`),
+   * so the OS hands the real device insets to the page through these
+   * environment variables (Android WebView reports them since M136 — on
+   * older webviews they are 0px and the layout simply stays as before).
+   *
+   * The root only pads the **top**: the shell header (Layout) and the
+   * full-screen player sheet (PlayerSheet) are wash-backed surfaces painted
+   * under the status bar, and each owns its own `--sat` padding so the
+   * artwork washes reach the very top edge cleanly (no double padding, no
+   * padded band behind the wash). The **bottom** inset is consumed
+   * piecemeal — the fixed bottom nav / mini player (Layout/MiniPlayer) and
+   * the player sheet (PlayerSheet `pb-[max(env(safe-area-inset-bottom),1rem)]`)
+   * already include it — so a bottom pad here would stack double.
+   */
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+  }
+
+  /*
    * Native-app window lock — mirrored from index.html's inline style (which
    * covers the pre-paint gap) so the rule lives with the rest of the CSS.
    * The root can never scroll or rubber-band; `<main id="app-main">` in
    * Layout is the only vertical scroller, and horizontal overflow is dead at
-   * the root by construction.
+   * the root by construction. The `padding-top` override after it restores
+   * the status-bar clearance the `padding: 0` shorthand zeroes.
    */
   html,
   body,
@@ -84,6 +106,12 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+  }
+
+  html,
+  body,
+  #root {
+    padding-top: var(--sat);
   }
 
   /* Re-enable selection strictly for text inputs. */

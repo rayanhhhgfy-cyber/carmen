@@ -634,6 +634,26 @@ renders on the nginx copy — Pages answers `/?song=…` with the plain shell.
         *Artwork background* off → plain theme background (both persist);
         *Accent color* → **White** → light mode stays readable (labels and
         line art fall back to the text colour)
+  - [ ] Android: the "Carmen" header clears the status bar (safe-area top
+        inset; needs WebView ≥ M136 on the device), the bottom nav sits
+        above the gesture bar, and the full-screen player's close button
+        is not under the status bar
+  - [ ] Android: audio keeps playing after screen lock (switch the screen
+        off a few seconds into a song, wait, unlock — the playhead moved)
+
+### Known Android WebView gaps (as of 2026-10)
+
+- **Media Session in the notification shade does not work.** The Android
+  System WebView (Blink, the engine behind Tauri Android) has never shipped
+  `navigator.mediaSession`; Chromium's trackers (`issues.chromium.org`
+  40765779 / 40540400) are still open and w3c/mediasession#337 was closed
+  as "venue mismatch". The frontend hook
+  (`frontend/src/services/mediaSession`) already registers it defensively —
+  it just no-ops on Android. The manifest declares
+  `FOREGROUND_SERVICE`/`FOREGROUND_SERVICE_MEDIA_PLAYBACK`/`WAKE_LOCK` so
+  background playback groundwork is in place; actual shade/lock-screen
+  controls need a Kotlin `MediaSessionService` bridged to the webview, same
+  as every wrapped-webview music player.
 - `AGENTS.md` still holds: verify changes by **running the server**, not via
   JS/TS tooling, when the change is server-side.
 

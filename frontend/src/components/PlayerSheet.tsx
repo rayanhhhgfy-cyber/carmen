@@ -377,7 +377,9 @@ export default function PlayerSheet() {
   );
 
   const header = (
-    <div className="relative z-[2] flex shrink-0 flex-row items-center gap-2 px-[10px] py-[6px]">
+    // `padding-top` clears the status bar (the sheet covers the whole
+    // window edge-to-edge; styles.css only insets the app root beneath it).
+    <div className="relative z-[2] flex shrink-0 flex-row items-center gap-2 px-[10px] py-[6px] pt-[max(6px,var(--sat))]">
       <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
         {isDesktop ? <CloseIcon /> : <ExpandMoreIcon />}
       </IconButton>
