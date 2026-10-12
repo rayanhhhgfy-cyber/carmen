@@ -22,6 +22,7 @@ use tauri::Manager;
 /// * reopening (tray click, Dock icon click on macOS, launcher) brings the
 ///   same window back on the previously saved route;
 /// * quitting only happens through the tray "Quit" item (or the OS request).
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
