@@ -178,6 +178,13 @@ export interface AppSettings {
    * playhead tick (see `services/mediaSession/lockScreenLyrics`).
    */
   lockScreenLyrics: boolean;
+  /**
+   * Smart downloads — once the listener is halfway through a song, it is
+   * saved to the device automatically (unless it already lives there), so a
+   * favorite keeps playing through a dead connection. The trigger lives in
+   * `offline/smartDownload.ts`.
+   */
+  smartDownload: boolean;
 }
 
 export type SettingsKey = keyof AppSettings;

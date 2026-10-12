@@ -114,6 +114,7 @@ export default function SettingsPage() {
     blurEffects,
     artworkBackground,
     lockScreenLyrics,
+    smartDownload,
   } = useSettings();
   // The *effective* mode (manual toggle or the automatic low-battery
   // kick-in) and the reading behind its status line.
@@ -537,8 +538,27 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Downloads">
-          <div className="flex flex-col gap-[6px]">
-            <p className="m-0 text-sm leading-[1.43]">
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Smart downloads
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Once you have listened to half of a song, it is saved to this
+                  device automatically, so it keeps playing offline. Songs
+                  already on the device are skipped.
+                </span>
+              </div>
+              <Switch
+                checked={smartDownload}
+                onChange={(_, checked) => updateSettings({ smartDownload: checked })}
+                inputProps={{ 'aria-label': 'Smart downloads' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <p className="m-0 pt-2 text-sm leading-[1.43]">
               Every <b>Download</b> runs entirely in your browser: the audio is fetched from the
               server buffer, converted to MP3 with ffmpeg.wasm and tagged with the title, artists,
               album, year, genre, cover art and the lyrics — synced lyrics are written as LRC

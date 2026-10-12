@@ -4,6 +4,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useIsDesktop } from '../hooks';
 import { usePlayer } from '../player/PlayerContext';
+import SmartDownloadWatcher from '../offline/smartDownload';
 import { useArtworkBackground, useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloads';
@@ -264,6 +265,9 @@ export default function Layout() {
 
       <PlayerSheet />
       <NoticeSnackbars />
+      {/* paint-less playhead watcher for the smart-downloads rule — kept as
+          its own leaf so the shell never re-renders on playback ticks */}
+      <SmartDownloadWatcher />
     </div>
   );
 }

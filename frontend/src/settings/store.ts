@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   blurEffects: true,
   artworkBackground: true,
   lockScreenLyrics: true,
+  smartDownload: false,
 };
 
 const KEYS: SettingsKey[] = [
@@ -39,6 +40,7 @@ const KEYS: SettingsKey[] = [
   'blurEffects',
   'artworkBackground',
   'lockScreenLyrics',
+  'smartDownload',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -95,6 +97,9 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
       return raw === '1' || raw === 'true';
     case 'lowBatteryMode':
       return raw === '1' || raw === 'true';
+    case 'smartDownload':
+      // Absent = off: auto-saving songs costs storage, so it is opt-in.
+      return raw === '1' || raw === 'true';
     case 'animatedArtwork':
     case 'blurEffects':
     case 'artworkBackground':
@@ -117,7 +122,8 @@ function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
     key === 'animatedArtwork' ||
     key === 'blurEffects' ||
     key === 'artworkBackground' ||
-    key === 'lockScreenLyrics'
+    key === 'lockScreenLyrics' ||
+    key === 'smartDownload'
   ) {
     return value ? '1' : '0';
   }
