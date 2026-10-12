@@ -26,20 +26,26 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+
     signingConfigs {
-        create("release") {
-            val keystorePropertiesFile = rootProject.file("keystore.properties")
-            val keystoreProperties = Properties()
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+        val keystorePropertiesFile = rootProject.file("keystore.properties")
+        if (keystorePropertiesFile.exists()) {
+            val keystoreProperties = Properties().apply {
+                FileInputStream(keystorePropertiesFile).use { load(it) }
             }
 
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["password"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["password"] as String
+            val storeFilePath = keystoreProperties["storeFile"] as? String
+            if (storeFilePath != null && rootProject.file(storeFilePath).exists()) {
+                create("release") {
+                    keyAlias = keystoreProperties["keyAlias"] as? String
+                    keyPassword = keystoreProperties["password"] as? String
+                    storeFile = rootProject.file(storeFilePath)
+                    storePassword = keystoreProperties["password"] as? String
+                }
+            }
         }
     }
+
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -63,7 +69,11 @@ android {
                   exclude("build/**")
                 }.files.toTypedArray()
             )
-            signingConfig = signingConfigs.getByName("release")
+            
+            // Only assign the release signing config if it was successfully created above
+            if (signingConfigs.findByName("release") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
