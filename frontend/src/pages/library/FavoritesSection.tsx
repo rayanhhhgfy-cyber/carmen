@@ -74,7 +74,12 @@ export default function FavoritesSection() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    listFavorites()
+    // The browser store may need to heal metadata saved by older builds —
+    // rows paint immediately and stream in through onUpdate as each batch
+    // resolves, so a slow heal never holds the list hostage.
+    listFavorites((rows) => {
+      if (!cancelled) setSongs(rows);
+    })
       .then((rows) => {
         if (!cancelled) {
           setSongs(rows);
