@@ -8,6 +8,7 @@
  */
 import { useState } from 'react';
 
+import DownloadButton from '../../components/DownloadButton';
 import { IconButton, Tooltip } from '../../components/ui';
 import { Menu, MenuItem } from '../../components/ui/Overlay';
 import { useFlag } from '../../db/flags';
@@ -46,6 +47,12 @@ export interface SongRowProps {
   showDownloaded?: boolean;
   /** Shows the "add to playlist" button. */
   showAddToPlaylist?: boolean;
+  /**
+   * Shows the download button — for lists holding songs that are not on the
+   * device yet (the Favorites tab's online rows). It steps aside the moment
+   * the song is saved: the persisted check mark takes over below.
+   */
+  showDownload?: boolean;
   /** Enables the row menu with "Remove from this playlist". */
   onRemove?: () => void;
   /** Fires after a heart toggle — the list may need to refilter itself. */
@@ -84,6 +91,7 @@ export default function SongRow({
   contextTracks = null,
   showDownloaded = false,
   showAddToPlaylist = false,
+  showDownload = false,
   onRemove,
   onFavoriteChange,
 }: SongRowProps) {
@@ -156,6 +164,18 @@ export default function SongRow({
           <span className="hidden min-w-[34px] text-right text-xs leading-[1.4] text-muted sm:block">
             {track.duration ? formatTime(track.duration) : ''}
           </span>
+        )}
+
+        {showDownload && !downloaded && (
+          <DownloadButton
+            track={track}
+            meta={null}
+            size="small"
+            // Like the player menu: while the song streams here, its audio is
+            // already on the wire — saving waits for that cache instead of
+            // racing it with a second fetch.
+            waitForCache={active ? () => player.waitForCache(track.videoId) : undefined}
+          />
         )}
 
         {(showDownloaded || downloaded) && (

@@ -1,8 +1,8 @@
 /**
  * Library — an Apple Music style tabbed hub: one sticky tab bar (Songs,
- * Artists, Albums, Playlists, Recent) with exactly one page mounted below
- * it, so a tab switch unmounts the page behind it instead of stacking every
- * section on one long scroll.
+ * Favorites, Artists, Albums, Playlists, Recent) with exactly one page mounted
+ * below it, so a tab switch unmounts the page behind it instead of stacking
+ * every section on one long scroll.
  *
  * The selected tab is mirrored into `sessionStorage` — deliberately not the
  * app-state DB row, so hopping to a collection and back (or a route restore)
@@ -21,18 +21,20 @@ import type { DownloadedSong } from '../types/models';
 import { cn } from '../utils/cn';
 import AlbumsSection from './library/AlbumsSection';
 import ArtistsSection from './library/ArtistsSection';
+import FavoritesSection from './library/FavoritesSection';
 import PlaylistsSection from './library/PlaylistsSection';
 import PlaylistDetailView from './library/PlaylistDetailView';
 import RecentSection from './library/RecentSection';
 import SongsSection from './library/SongsSection';
 import { LibraryIcon } from './library/glyphs';
 
-/** The five Library tabs, in display order. */
-const TAB_IDS = ['songs', 'artists', 'albums', 'playlists', 'recent'] as const;
+/** The six Library tabs, in display order. */
+const TAB_IDS = ['songs', 'favorites', 'artists', 'albums', 'playlists', 'recent'] as const;
 type LibraryTab = (typeof TAB_IDS)[number];
 
 const TAB_LABELS: Record<LibraryTab, string> = {
   songs: 'Songs',
+  favorites: 'Favorites',
   artists: 'Artists',
   albums: 'Albums',
   playlists: 'Playlists',
@@ -147,6 +149,7 @@ export default function LibraryPage() {
       ) : (
         <>
           {tab === 'songs' && <SongsSection />}
+          {tab === 'favorites' && <FavoritesSection />}
           {tab === 'artists' && <ArtistsSection songs={downloads} loading={downloadsLoading} />}
           {tab === 'albums' && <AlbumsSection songs={downloads} loading={downloadsLoading} />}
           {tab === 'playlists' && <PlaylistsSection onOpen={setSelectedId} />}
