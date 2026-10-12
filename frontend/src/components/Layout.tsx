@@ -7,7 +7,7 @@ import { usePlayer } from '../player/PlayerContext';
 import SmartDownloadWatcher from '../offline/smartDownload';
 import { useArtworkBackground, useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
-import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloads';
+import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloadsStore';
 import { cn } from '../utils/cn';
 import AmbientBackground from './AmbientBackground';
 import MiniPlayer from './MiniPlayer';

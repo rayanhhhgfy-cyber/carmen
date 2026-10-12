@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDownloads } from '../hooks';
 import { usePlayer } from '../player/PlayerContext';
 import type { Track, TrackMeta } from '../types/models';
-import { downloadLyrics, startDownload } from '../utils/downloads';
+import { notify } from '../utils/downloadsStore';
 import { shareTrack } from '../utils/share';
 import {
   AlbumIcon,
@@ -83,11 +83,17 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
   const onDownload = () => {
     close();
     const playingHere = player.current?.videoId === track.videoId;
-    startDownload(track, meta, {
-      // resolves as soon as the server has the file (or waiting stopped
-      // making sense); safe to skip when the song is not streaming
-      waitForCache: playingHere ? () => player.waitForCache(track.videoId) : undefined,
-    });
+    // Lazy-load the pipeline on first use — shared with the row Download
+    // button, so it only ever loads into memory once per session.
+    void import('../utils/downloads')
+      .then((m) =>
+        m.startDownload(track, meta, {
+          // resolves as soon as the server has the file (or waiting stopped
+          // making sense); safe to skip when the song is not streaming
+          waitForCache: playingHere ? () => player.waitForCache(track.videoId) : undefined,
+        }),
+      )
+      .catch(() => notify('error', 'Could not start the download — try again'));
   };
 
   return (
@@ -159,7 +165,9 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
           disabled={!hasLyrics}
           onClick={() => {
             close();
-            downloadLyrics(track, meta);
+            void import('../utils/downloads')
+              .then((m) => m.downloadLyrics(track, meta))
+              .catch(() => notify('error', 'Could not save the lyrics — try again'));
           }}
         >
           <ListItemIcon>

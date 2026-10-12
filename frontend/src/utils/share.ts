@@ -1,5 +1,5 @@
 import type { Track } from '../types/models';
-import { notify } from './downloads';
+import { notify } from './downloadsStore';
 
 /**
  * Sharing a song through Carmen.

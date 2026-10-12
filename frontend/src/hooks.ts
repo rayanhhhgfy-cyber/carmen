@@ -4,7 +4,7 @@ import {
   getDownloadsSnapshot,
   subscribeDownloads,
   type DownloadsSnapshot,
-} from './utils/downloads';
+} from './utils/downloadsStore';
 
 /** Live view of the offline download jobs. */
 export function useDownloads(): DownloadsSnapshot {

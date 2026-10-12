@@ -3,7 +3,7 @@ import { IconButton, Tooltip } from './ui';
 import { CheckCircleIcon, DownloadIcon } from './icons';
 import { useFlag } from '../db/flags';
 import { useDownloads } from '../hooks';
-import { startDownload } from '../utils/downloads';
+import { notify } from '../utils/downloadsStore';
 import type { Track, TrackMeta } from '../types/models';
 
 interface DownloadButtonProps {
@@ -60,7 +60,14 @@ export default function DownloadButton({
           size={size}
           aria-label={label}
           disabled={running || done}
-          onClick={() => startDownload(track, meta, { waitForCache })}
+          onClick={() => {
+            // Lazy-load the pipeline on the first tap — the module (audio
+            // fetching, artwork, filesystem writes) stays out of the initial
+            // bundle and is shared with the in-player menu.
+            void import('../utils/downloads')
+              .then((m) => m.startDownload(track, meta, { waitForCache }))
+              .catch(() => notify('error', 'Could not start the download — try again'));
+          }}
         >
           {running ? (
             /* MIGRATION: the kit `Spinner` only spins — the determinate ring is

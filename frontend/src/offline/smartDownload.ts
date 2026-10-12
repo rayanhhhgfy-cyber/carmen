@@ -23,7 +23,7 @@ import { useEffect, useRef } from 'react';
 
 import { usePlayer, usePlayhead } from '../player/PlayerContext';
 import { useSettings } from '../settings/store';
-import { startDownload } from '../utils/downloads';
+import { notify } from '../utils/downloadsStore';
 import { isDownloaded } from './source';
 
 /** Watches the playhead of the active track and triggers the half-listened save. */
@@ -47,7 +47,11 @@ function useSmartDownload(): void {
     if (fired.current.has(videoId)) return;
     fired.current.add(videoId);
     if (isDownloaded(videoId)) return;
-    startDownload(track, meta, { waitForCache: () => player.waitForCache(videoId) });
+    // Lazy-load the pipeline on the first automatic save — same chunk the
+    // manual Download button and player menu use.
+    void import('../utils/downloads')
+      .then((m) => m.startDownload(track, meta, { waitForCache: () => player.waitForCache(videoId) }))
+      .catch(() => notify('error', 'Could not start the automatic save — try again'));
   }, [smartDownload, currentTime, duration, track, videoId, meta, player]);
 }
 
