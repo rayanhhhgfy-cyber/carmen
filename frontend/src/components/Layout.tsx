@@ -8,17 +8,16 @@ import SmartDownloadWatcher from '../offline/smartDownload';
 import { useArtworkBackground, useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloadsStore';
+import { alpha } from '../utils/color';
 import { cn } from '../utils/cn';
 import AmbientBackground from './AmbientBackground';
 import MiniPlayer from './MiniPlayer';
 import PlayerSheet from './PlayerSheet';
 import type { SvgIconProps } from './SvgIcon';
-import { Alert, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Snackbar } from './ui';
+import { Alert, Snackbar } from './ui';
 import {
-  DarkModeIcon,
   HomeIcon,
   LibraryIcon,
-  LightModeIcon,
   QueueListIcon,
   SearchIcon,
   SettingsIcon,
@@ -42,51 +41,92 @@ const NAV_ITEMS: NavItem[] = [
 /** Section-title typography (MUI h6: 1.25rem/1.6/700, tightened tracking). */
 const TITLE_CLS = 'm-0 text-xl font-extrabold leading-[1.6] tracking-[-0.02em]';
 
-function SideNav() {
+/** The app logo (green tile + note), served from `frontend/public/`. */
+const LOGO_SRC = `${import.meta.env.BASE_URL}logo.png`;
+
+/**
+ * Desktop navigation: a compact floating card pinned to the left edge and
+ * centred vertically (`fixed left-4 top-1/2 -translate-y-1/2`). Icons only
+ * by default — hovering an individual tab expands *that row* to reveal its
+ * label (`max-w-0 → max-w-[120px]`, `transition-all duration-300`) and the
+ * card grows with it; leaving collapses it again.
+ *
+ * Color logic: the active tab wears the app accent — via `text-accent`, so
+ * it is the *adaptive* accent whenever that setting is on (`--app-accent`
+ * tracks the playing artwork) — plus a soft accent glow; hovering an
+ * inactive tab colours icon and label with the same accent. Glass follows
+ * the same effect switch as every other surface — low battery mode paints
+ * solid paper, no blur.
+ */
+function FloatingNav() {
   const location = useLocation();
   // Glass only while the ambient tint can bleed through: low battery
   // mode paints the solid paper colour instead (no backdrop-filter).
   const effectsEnabled = useEffectsEnabled();
-  const { resolved } = useAppTheme();
+  const { resolved, accentInUse } = useAppTheme();
+  // A white accent painted straight onto the light card would be white on
+  // white — the same fallback the bottom bar uses further down.
+  const whiteOnLight = resolved === 'light' && accentInUse.toLowerCase() === '#ffffff';
   return (
-    <aside
-      className="w-[216px] shrink-0 border-r border-line"
+    <nav
+      aria-label="Primary"
+      className={cn(
+        'fixed left-4 top-1/2 z-[1200] flex w-fit max-w-[236px] -translate-y-1/2 flex-col gap-1',
+        'rounded-2xl border border-line p-2',
+      )}
       style={{
-        boxSizing: 'border-box',
         backgroundColor: !effectsEnabled
           ? 'var(--app-paper)'
           : resolved === 'dark'
             ? 'rgba(18,23,20,0.86)'
             : 'rgba(255,255,255,0.86)',
         backdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
+        WebkitBackdropFilter: effectsEnabled ? 'blur(16px)' : 'none',
+        boxShadow: effectsEnabled ? 'var(--shadow-glass)' : 'none',
       }}
     >
-      <div className="flex min-h-14 items-center gap-2 px-5">
-        <span
-          className="grid h-7 w-7 place-items-center bg-accent text-accent-contrast"
-          style={{ borderRadius: 21, fontWeight: 800, fontSize: 15 }}
-        >
-          C
-        </span>
-        <h6 className={TITLE_CLS}>Carmen</h6>
-      </div>
-      <List className="px-3">
-        {NAV_ITEMS.map(({ label, path, icon: Icon }) => (
-          <ListItemButton
+      {NAV_ITEMS.map(({ label, path, icon: Icon }) => {
+        const active = location.pathname === path;
+        return (
+          <NavLink
             key={path}
-            as={NavLink}
             to={path}
-            selected={location.pathname === path}
-            className="mb-1"
+            title={label}
+            aria-current={active ? 'page' : undefined}
+            className={cn(
+              'group flex items-center gap-3 rounded-xl p-3 no-underline',
+              'transition-all duration-300 ease-out',
+              'focus-visible:outline-2 focus-visible:outline-accent',
+              // `text-accent` resolves through `--app-accent`, which the
+              // theme context keeps pointing at the *effective* accent —
+              // stored or adaptive — so the highlight repaints the moment
+              // the artwork color changes.
+              active
+                ? whiteOnLight
+                  ? 'bg-hover text-body'
+                  : 'bg-accent/10 text-accent'
+                : 'text-muted hover:bg-hover hover:text-accent',
+            )}
+            style={
+              active && effectsEnabled && !whiteOnLight
+                ? { boxShadow: `0 0 18px ${alpha('var(--app-accent)', 0.3)}` }
+                : undefined
+            }
           >
-            <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>
-              <Icon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary={label} />
-          </ListItemButton>
-        ))}
-      </List>
-    </aside>
+            <Icon className="shrink-0" />
+            {/* label reveal: 0 → 120px on row hover, hidden again on leave */}
+            <span
+              className={cn(
+                'max-w-0 overflow-hidden whitespace-nowrap text-sm font-semibold',
+                'opacity-0 transition-all duration-300 group-hover:max-w-[120px] group-hover:opacity-100',
+              )}
+            >
+              {label}
+            </span>
+          </NavLink>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -173,9 +213,12 @@ export default function Layout() {
           low battery mode and the Settings choice skip it entirely */}
       {effectsEnabled && artworkBackground && <AmbientBackground />}
 
-      {isDesktop && <SideNav />}
+      {isDesktop && <FloatingNav />}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* md+: the floating nav card sits over the left edge, so the whole
+          content column (header included) clears it with a left inset —
+          everything else stays full-bleed below the breakpoint */}
+      <div className="flex min-w-0 flex-1 flex-col md:pl-[84px]">
         {/* pinned by the flex column, not by `sticky`: the scroll starts at
             `<main>` below, so the header can never scroll away */}
         <header
@@ -194,23 +237,19 @@ export default function Layout() {
                 : 'rgba(246,247,246,0.78)',
           }}
         >
-          <div className="flex min-h-14 items-center px-4 md:min-h-16">
-            {isDesktop ? (
-              <h6 className={TITLE_CLS}>
-                {NAV_ITEMS.find((item) => item.path === location.pathname)?.label || 'Carmen'}
-              </h6>
-            ) : (
-              <h6 className={`${TITLE_CLS} flex-1`}>Carmen</h6>
-            )}
-            <div className="flex-1" />
-            <IconButton
-              aria-label={
-                appTheme.resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
-              }
-              onClick={() => appTheme.setMode(appTheme.resolved === 'dark' ? 'light' : 'dark')}
-            >
-              {appTheme.resolved === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
-            </IconButton>
+          <div className="flex min-h-14 items-center gap-2.5 px-4 md:min-h-16">
+            <img
+              src={LOGO_SRC}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="h-7 w-7 shrink-0 rounded-[9px] md:h-8 md:w-8 md:rounded-[10px]"
+            />
+            <h6 className={TITLE_CLS}>
+              {isDesktop
+                ? NAV_ITEMS.find((item) => item.path === location.pathname)?.label || 'Carmen'
+                : 'Carmen'}
+            </h6>
           </div>
         </header>
 

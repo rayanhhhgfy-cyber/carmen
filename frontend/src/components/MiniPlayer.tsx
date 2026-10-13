@@ -53,9 +53,10 @@ function MiniProgress({ effectsEnabled }: { effectsEnabled: boolean }) {
  * Compact player docked above the navigation bar. Tapping it opens the full
  * player sheet.
  *
- * It sits above the permanent navigation drawer (which is why the z-index is
- * just under `modal`) and starts to the right of it on wide screens so the
- * "Now playing" bar is never hidden behind the side menu.
+ * It sits above the navigation chrome (which is why the z-index is just
+ * under `modal`) and aligns with the content column on wide screens — the
+ * column carries a left inset that clears the floating nav card, so the
+ * "Now playing" bar is never hidden behind it.
  *
  * Styling is a floating glass card that follows the current theme — accent
  * progress line on top, circular accent play button — instead of the old
@@ -77,7 +78,11 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
         // `group` carries the expand button's hover reveal (the old
         // `'&:hover .mini-expand'` selector).
         'group fixed z-[1299] cursor-pointer overflow-hidden rounded-[56px] border border-line text-body',
-        'left-2 right-2 sm:left-3 sm:right-3 md:left-[228px]',
+        // mobile keeps the edge insets; on desktop the bar is a centred
+        // pill hugging its content instead of spanning the content column
+        // — the width cap keeps it clear of the floating nav on the left
+        'left-2 right-2 sm:left-3 sm:right-3',
+        'md:left-1/2 md:right-auto md:w-fit md:max-w-[min(560px,calc(100vw_-_140px))] md:-translate-x-1/2',
         // solid surface without the glass effect: the fill has to carry the
         // surface on its own once nothing blurs behind it
         effectsEnabled ? 'bg-surface/86' : 'bg-surface',
