@@ -397,7 +397,9 @@ export function Snackbar({ open, autoHideDuration = 4000, onClose, anchorOrigin,
   const horizontal = anchorOrigin?.horizontal ?? 'center';
   const placement = cn(
     'absolute z-[1400] px-4',
-    vertical === 'top' ? 'top-4' : 'bottom-4',
+    // top toasts clear the status bar (0px inset on desktop / non-cover
+    // layouts, so this only ever bites on an edge-to-edge phone).
+    vertical === 'top' ? 'top-[max(1rem,var(--sat))]' : 'bottom-4',
     horizontal === 'left'
       ? 'left-0'
       : horizontal === 'right'

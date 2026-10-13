@@ -73,14 +73,17 @@
    * environment variables (Android WebView reports them since M136 — on
    * older webviews they are 0px and the layout simply stays as before).
    *
-   * The root only pads the **top**: the shell header (Layout) and the
-   * full-screen player sheet (PlayerSheet) are wash-backed surfaces painted
-   * under the status bar, and each owns its own `--sat` padding so the
-   * artwork washes reach the very top edge cleanly (no double padding, no
-   * padded band behind the wash). The **bottom** inset is consumed
-   * piecemeal — the fixed bottom nav / mini player (Layout/MiniPlayer) and
-   * the player sheet (PlayerSheet `pb-[max(env(safe-area-inset-bottom),1rem)]`)
-   * already include it — so a bottom pad here would stack double.
+   * The root itself is **never** padded: `padding-top` on html + body +
+   * #root stacked the top inset three times (and a fourth time through the
+   * player sheet's own pad), which is what left the app sitting far below
+   * the status bar. The clearance is owned exactly once, by each
+   * wash-backed surface that reaches the top edge: the shell header
+   * (Layout `paddingTop: var(--sat)`) and the player sheet's handle strip
+   * (PlayerSheet `pt-[max(10px,var(--sat))]`). The **bottom** inset is
+   * consumed piecemeal — the fixed bottom nav / mini player
+   * (Layout/MiniPlayer) and the player sheet
+   * (`pb-[max(env(safe-area-inset-bottom),1rem)]`) already include it — so
+   * a bottom pad here would stack double.
    */
   :root {
     --sat: env(safe-area-inset-top, 0px);
@@ -92,8 +95,7 @@
    * covers the pre-paint gap) so the rule lives with the rest of the CSS.
    * The root can never scroll or rubber-band; `<main id="app-main">` in
    * Layout is the only vertical scroller, and horizontal overflow is dead at
-   * the root by construction. The `padding-top` override after it restores
-   * the status-bar clearance the `padding: 0` shorthand zeroes.
+   * the root by construction.
    */
   html,
   body,
@@ -106,12 +108,6 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
-  }
-
-  html,
-  body,
-  #root {
-    padding-top: var(--sat);
   }
 
   /* Re-enable selection strictly for text inputs. */

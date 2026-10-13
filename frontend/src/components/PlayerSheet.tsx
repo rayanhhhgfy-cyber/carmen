@@ -370,16 +370,18 @@ export default function PlayerSheet() {
       onTouchStart={onStripTouchStart}
       onTouchMove={onStripTouchMove}
       onTouchEnd={onStripTouchEnd}
-      className="relative z-[2] grid shrink-0 cursor-pointer place-items-center touch-none pb-1 pt-[10px] focus-visible:rounded-[28px] focus-visible:[outline:2px_solid_var(--app-accent-fg)] focus-visible:[outline-offset:-2px]"
+      className="relative z-[2] grid shrink-0 cursor-pointer place-items-center touch-none pb-1 pt-[max(10px,var(--sat))] focus-visible:rounded-[28px] focus-visible:[outline:2px_solid_var(--app-accent-fg)] focus-visible:[outline-offset:-2px]"
     >
       <div aria-hidden className="h-1 w-11 rounded-[56px] bg-disabled" />
     </div>
   );
 
   const header = (
-    // `padding-top` clears the status bar (the sheet covers the whole
-    // window edge-to-edge; styles.css only insets the app root beneath it).
-    <div className="relative z-[2] flex shrink-0 flex-row items-center gap-2 px-[10px] py-[6px] pt-[max(6px,var(--sat))]">
+    // No safe-area padding of its own: on a phone the handle strip above is
+    // the sheet's topmost edge and already cleared the status bar (and on a
+    // desktop the sheet is a centred card where `--sat` is 0px anyway).
+    // Padding *both* stacked the inset and dropped the transport controls.
+    <div className="relative z-[2] flex shrink-0 flex-row items-center gap-2 px-[10px] py-[6px]">
       <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
         {isDesktop ? <CloseIcon /> : <ExpandMoreIcon />}
       </IconButton>

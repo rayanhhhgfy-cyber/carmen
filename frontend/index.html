@@ -10,8 +10,8 @@
     <meta name="description" content="Carmen — stream, play and download your music." />
     <!-- iOS Safari / PWA: "Add to Home Screen" runs the app full-screen with
          its own title. `default` status bar keeps an opaque bar above the
-         page — the pinned header does not pad env(safe-area-inset-top), so
-         `black-translucent` would slide it under the clock. -->
+         page; the pinned header clears env(safe-area-inset-top) itself when
+         the layout does run under the bar (see Layout / styles.css). -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -27,10 +27,11 @@
        * scrolls inside <main> only (see Layout).  Mirrored in styles.css
        * (@layer base) — keep both in sync.
        *
-       * The trailing padding-top restores the status-bar clearance that the
-       * `padding: 0` shorthand zeroes — env(safe-area-inset-top) is non-zero
-       * on Android WebView ≥M136 (viewport-fit=cover) and iOS; elsewhere it
-       * is simply 0px.  Mirrored in styles.css — keep both in sync.
+       * Deliberately **no** status-bar padding here: the root must stay
+       * flush with the window edge (the header and the player sheet paint
+       * their washes under the status bar and pad themselves with
+       * `var(--sat)`). Padding all three selectors stacked the inset three
+       * times and shoved the whole app far below the status bar.
        */
       html,
       body,
@@ -38,7 +39,6 @@
         height: 100%;
         margin: 0;
         padding: 0;
-        padding-top: env(safe-area-inset-top, 0px);
         overflow: hidden;
         overscroll-behavior: none;
         user-select: none;

@@ -181,6 +181,11 @@ export default function Layout() {
         <header
           className="relative z-[1100] border-b border-line"
           style={{
+            // Status-bar clearance, owned here (and nowhere else) so the
+            // header's wash paints *under* the status bar instead of
+            // leaving a bare band above it. `--sat` is 0px wherever the
+            // window is not edge-to-edge, so desktop/iOS are untouched.
+            paddingTop: 'var(--sat)',
             backdropFilter: effectsEnabled ? 'blur(12px)' : 'none',
             backgroundColor: !effectsEnabled
               ? 'var(--app-bg)'
