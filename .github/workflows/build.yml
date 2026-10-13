@@ -38,8 +38,11 @@ defaults:
     shell: bash
 
 env:
-  # Release body written by every upload step — identical text everywhere, so
-  # whichever job finishes last cannot clobber it with something different.
+  # Static half of the release body, written by every upload step — the
+  # Download table below. Each attach job first appends .github/RELEASE_NOTES.md
+  # (the "what's new" section, updated as the release takes shape) to it, so
+  # the composed body is still identical everywhere and whichever job
+  # finishes last cannot clobber it with something different.
   # A custom body instead of `generate_release_notes`, whose auto-generated
   # text always appends a "Full Changelog:" compare link.
   RELEASE_BODY: |
@@ -246,13 +249,21 @@ jobs:
           npx tauri build --ci
           ${{ matrix.build-args }}
 
+      - name: Compose release body (Downloads table + .github/RELEASE_NOTES.md)
+        # $RELEASE_BODY comes from the workflow-level env; the same two-step
+        # append runs in every attach job, so all jobs upload identical text.
+        if: github.ref_type == 'tag'
+        run: |
+          printf '%s\n' "$RELEASE_BODY" > "$RUNNER_TEMP/release-body.md"
+          cat .github/RELEASE_NOTES.md >> "$RUNNER_TEMP/release-body.md"
+
       - name: Attach bundles to the GitHub release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.release-files }}
           fail_on_unmatched_files: true
-          body: ${{ env.RELEASE_BODY }}
+          body_path: ${{ runner.temp }}/release-body.md
 
   # ──────────────────────────── Android APK/AAB ────────────────────────────
   android:
@@ -386,6 +397,12 @@ jobs:
         # (apk/<flavor>/release/*.apk, bundle/<flavor>Release/*.aab).
         run: npx tauri android build --ci --apk --aab
 
+      - name: Compose release body (Downloads table + .github/RELEASE_NOTES.md)
+        if: github.ref_type == 'tag'
+        run: |
+          printf '%s\n' "$RELEASE_BODY" > "$RUNNER_TEMP/release-body.md"
+          cat .github/RELEASE_NOTES.md >> "$RUNNER_TEMP/release-body.md"
+
       - name: Attach APK/AAB to the GitHub release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
@@ -394,7 +411,7 @@ jobs:
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
             src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
           fail_on_unmatched_files: true
-          body: ${{ env.RELEASE_BODY }}
+          body_path: ${{ runner.temp }}/release-body.md
 
   # ─────────────────────────── iOS IPA (unsigned) ───────────────────────────
   ios:
@@ -465,10 +482,16 @@ jobs:
         # builds the device slice; output: src-tauri/gen/apple/build/arm64/*.ipa
         run: npx tauri ios build --ci --no-sign
 
+      - name: Compose release body (Downloads table + .github/RELEASE_NOTES.md)
+        if: github.ref_type == 'tag'
+        run: |
+          printf '%s\n' "$RELEASE_BODY" > "$RUNNER_TEMP/release-body.md"
+          cat .github/RELEASE_NOTES.md >> "$RUNNER_TEMP/release-body.md"
+
       - name: Attach IPA to the GitHub release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: src-tauri/gen/apple/build/arm64/*.ipa
           fail_on_unmatched_files: true
-          body: ${{ env.RELEASE_BODY }}
+          body_path: ${{ runner.temp }}/release-body.md
