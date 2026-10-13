@@ -18,7 +18,7 @@ import { useBattery } from '../settings/battery';
 import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
 import { appInfo, isTauri, type AppInfo } from '../platform/env';
 import { LYRICS_PROVIDERS } from '../types/models';
-import type { FontId, ThemeMode } from '../types/models';
+import type { ArtworkPlacement, CoverSize, FontId, LyricsSize, ThemeMode } from '../types/models';
 import {
   CheckIcon,
   DarkModeIcon,
@@ -108,12 +108,18 @@ export default function SettingsPage() {
     accent,
     font,
     lyricsProvider,
+    lyricsSize,
     apiBase,
     lowBatteryMode: lowBatteryManual,
     animatedArtwork,
+    animatedArtworkPlacement,
+    coverSize,
+    cinematicMode,
+    cinematicCover,
     blurEffects,
     artworkBackground,
     lockScreenLyrics,
+    karaokeWords,
     smartDownload,
   } = useSettings();
   // The *effective* mode (manual toggle or the automatic low-battery
@@ -408,6 +414,51 @@ export default function SettingsPage() {
 
             <Divider />
 
+            <div>
+              <p className="m-0 mb-2 text-sm leading-[1.43] font-semibold">
+                Animated artwork placement
+              </p>
+              <ToggleButtonGroup
+                exclusive
+                value={animatedArtworkPlacement}
+                onChange={(_, value) => {
+                  if (
+                    value === 'default' ||
+                    value === 'lyrics' ||
+                    value === 'player' ||
+                    value === 'thumbnail'
+                  ) {
+                    updateSettings({
+                      animatedArtworkPlacement: value satisfies ArtworkPlacement,
+                    });
+                  }
+                }}
+                aria-label="Animated artwork placement"
+                className="w-full"
+              >
+                <ToggleButton disabled={!animatedArtwork} value="default" className="flex-1">
+                  Default
+                </ToggleButton>
+                <ToggleButton disabled={!animatedArtwork} value="lyrics" className="flex-1">
+                  Lyrics bg
+                </ToggleButton>
+                <ToggleButton disabled={!animatedArtwork} value="player" className="flex-1">
+                  Player bg
+                </ToggleButton>
+                <ToggleButton disabled={!animatedArtwork} value="thumbnail" className="flex-1">
+                  Cover
+                </ToggleButton>
+              </ToggleButtonGroup>
+              <span className="mt-[6px] block text-xs leading-[1.4] text-muted">
+                <b>Default</b> follows the device — the whole player card on
+                desktop, the lyrics background on a phone. <b>Lyrics bg</b> and{' '}
+                <b>Player bg</b> pin one surface on every device;{' '}
+                <b>Cover</b> animates the album thumbnail instead.
+              </span>
+            </div>
+
+            <Divider />
+
             <div className="flex flex-row items-center justify-between gap-4">
               <div className="min-w-0">
                 <p className="m-0 text-sm leading-[1.43] font-semibold">
@@ -453,6 +504,79 @@ export default function SettingsPage() {
                 checked={artworkBackground}
                 onChange={(_, checked) => updateSettings({ artworkBackground: checked })}
                 inputProps={{ 'aria-label': 'Artwork background' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <Divider />
+
+            <div>
+              <p className="m-0 mb-2 text-sm leading-[1.43] font-semibold">
+                Player cover size
+              </p>
+              <ToggleButtonGroup
+                exclusive
+                value={coverSize}
+                onChange={(_, value) => {
+                  if (value === 'default' || value === 'large' || value === 'veryLarge') {
+                    updateSettings({ coverSize: value satisfies CoverSize });
+                  }
+                }}
+                aria-label="Player cover size"
+                className="w-full"
+              >
+                <ToggleButton value="default" className="flex-1">
+                  Default
+                </ToggleButton>
+                <ToggleButton value="large" className="flex-1">
+                  Large
+                </ToggleButton>
+                <ToggleButton value="veryLarge" className="flex-1">
+                  Very large
+                </ToggleButton>
+              </ToggleButtonGroup>
+              <span className="mt-[6px] block text-xs leading-[1.4] text-muted">
+                Width of the album cover inside the Now Playing card.
+              </span>
+            </div>
+
+            <Divider />
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Cinematic mode
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Desktop full screen drops every button, the scrubber and
+                  the tab strip — only the cover, the song details and the
+                  lyrics remain, over the artwork backdrop. Press Esc to
+                  leave.
+                </span>
+              </div>
+              <Switch
+                checked={cinematicMode}
+                onChange={(_, checked) => updateSettings({ cinematicMode: checked })}
+                inputProps={{ 'aria-label': 'Cinematic mode' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Cover in cinematic mode
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Keeps the album cover on the left. Turn it off for the
+                  details and the lyrics to take the full width.
+                </span>
+              </div>
+              <Switch
+                checked={cinematicCover}
+                disabled={!cinematicMode}
+                onChange={(_, checked) => updateSettings({ cinematicCover: checked })}
+                inputProps={{ 'aria-label': 'Cover in cinematic mode' }}
                 className="shrink-0"
               />
             </div>
@@ -505,7 +629,57 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="Lyrics">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="m-0 mb-2 text-sm leading-[1.43] font-semibold">
+                Lyrics size
+              </p>
+              <ToggleButtonGroup
+                exclusive
+                value={lyricsSize}
+                onChange={(_, value) => {
+                  if (value === 'default' || value === 'large' || value === 'veryLarge') {
+                    updateSettings({ lyricsSize: value satisfies LyricsSize });
+                  }
+                }}
+                aria-label="Lyrics size"
+                className="w-full"
+              >
+                <ToggleButton value="default" className="flex-1">
+                  Default
+                </ToggleButton>
+                <ToggleButton value="large" className="flex-1">
+                  Large
+                </ToggleButton>
+                <ToggleButton value="veryLarge" className="flex-1">
+                  Very large
+                </ToggleButton>
+              </ToggleButtonGroup>
+              <span className="mt-[6px] block text-xs leading-[1.4] text-muted">
+                Text size of the lyrics inside the Now Playing card.
+              </span>
+            </div>
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Word-by-word karaoke
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Inside the active line, each word lights up as it is sung —
+                  the line's duration spread evenly over its words when the
+                  source carries no per-word stamps.
+                </span>
+              </div>
+              <Switch
+                checked={karaokeWords}
+                onChange={(_, checked) => updateSettings({ karaokeWords: checked })}
+                inputProps={{ 'aria-label': 'Word-by-word karaoke' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
             {LYRICS_PROVIDERS.map((provider) => {
               const selected = lyricsProvider === provider.id;
               return (
@@ -534,6 +708,7 @@ export default function SettingsPage() {
                 </button>
               );
             })}
+            </div>
           </div>
         </Section>
 

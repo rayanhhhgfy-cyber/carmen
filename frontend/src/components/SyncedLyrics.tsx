@@ -1,11 +1,12 @@
-import { memo, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { usePlayhead } from '../player/PlayerContext';
+import { useSettings } from '../settings/store';
 import { useTheme } from '../theme/ThemeContext';
-import type { LyricLine } from '../types/models';
+import type { LyricLine, LyricWord, LyricsSize } from '../types/models';
 import { cn } from '../utils/cn';
-import { activeLineIndexAt as activeIndexAt } from '../utils/lyrics';
+import { activeLineIndexAt as activeIndexAt, karaokeWordsOf } from '../utils/lyrics';
 
 /**
  * Synced lyrics engine — rAF glide + windowed rows, zero renders per tick.
@@ -52,9 +53,21 @@ const OVERSCAN = 6;
 const ESTIMATED_ROW = 52;
 
 /**
- * The *only* component that subscribes to the playhead, so the engine above
- * stays render-free between lines: it forwards each tick and renders
- * nothing at all.
+ * Row font size per Settings → Lyrics size. `default` keeps the old
+ * responsive ladder (a hair larger on desktop); the explicit steps scale
+ * both ends together. Tailwind scans literal class strings, so the sizes
+ * live here as complete utilities, not interpolations.
+ */
+const LYRICS_TEXT: Record<LyricsSize, string> = {
+  default: 'text-[1.1rem] md:text-[1.15rem]',
+  large: 'text-[1.32rem] md:text-[1.38rem]',
+  veryLarge: 'text-[1.58rem] md:text-[1.66rem]',
+};
+
+/**
+ * The engine's playhead subscriber: it forwards each tick and renders
+ * nothing at all, so the engine above stays render-free between lines.
+ * (The only other subscriber is the karaoke leaf below — one active row.)
  */
 function PlayheadProbe({ onTick }: { onTick: (seconds: number) => void }) {
   const { currentTime } = usePlayhead();
@@ -62,6 +75,38 @@ function PlayheadProbe({ onTick }: { onTick: (seconds: number) => void }) {
     onTick(currentTime);
   }, [currentTime, onTick]);
   return null;
+}
+
+/**
+ * Word-by-word karaoke inside the active line — the one component allowed
+ * to repaint per playhead tick: it re-reads the clock and colours the words
+ * the playhead has passed. Only this leaf re-renders (a handful of spans at
+ * the tick rate); its row stays memoised and the engine above stays
+ * render-free between lines.
+ */
+function KaraokeWords({ words, accentFg }: { words: LyricWord[]; accentFg: string }) {
+  const { currentTime } = usePlayhead();
+  const nowMs = currentTime * 1000;
+  return (
+    <>
+      {words.map((word, index) => {
+        const sung = nowMs >= word.startMs;
+        return (
+          <span
+            key={`${word.startMs}-${index}`}
+            style={{
+              color: sung ? accentFg : undefined,
+              opacity: sung ? 1 : 0.55,
+              transition: 'color 160ms ease, opacity 160ms ease',
+            }}
+          >
+            {word.text}
+            {index + 1 < words.length ? ' ' : ''}
+          </span>
+        );
+      })}
+    </>
+  );
 }
 
 interface SyncedLyricsProps {
@@ -82,14 +127,29 @@ const LyricRow = memo(function LyricRow({
   past,
   accentFg,
   onSelect,
+  textClass,
+  karaoke,
+  nextStartMs,
 }: {
   line: LyricLine;
   active: boolean;
   past: boolean;
   accentFg: string;
   onSelect: (timeMs: number) => void;
+  /** Font-size utility from `LYRICS_TEXT`, decided by the parent once. */
+  textClass: string;
+  /** Word-by-word karaoke on (Settings → Word-by-word karaoke). */
+  karaoke: boolean;
+  /** The next line's timestamp — the end boundary for estimated word slots. */
+  nextStartMs: number | undefined;
 }) {
   const handleClick = useCallback(() => onSelect(line.timeMs), [onSelect, line.timeMs]);
+  // Derived once per line change, never per tick — the karaoke leaf below
+  // only *reads* the clock against these stamps.
+  const words = useMemo(
+    () => (karaoke ? karaokeWordsOf(line, nextStartMs) : null),
+    [karaoke, line, nextStartMs],
+  );
   return (
     <button
       type="button"
@@ -97,7 +157,8 @@ const LyricRow = memo(function LyricRow({
       onClick={handleClick}
       className={cn(
         'm-0 block w-full cursor-pointer rounded-[28px] border-none bg-transparent p-[10px]',
-        'text-center text-[1.1rem] md:text-[1.15rem] text-body',
+        'text-center text-body',
+        textClass,
         active
           ? 'opacity-100 hover:opacity-100'
           : past
@@ -126,13 +187,18 @@ const LyricRow = memo(function LyricRow({
         } as CSSProperties
       }
     >
-      {line.text || '♪'}
+      {active && words?.length ? (
+        <KaraokeWords words={words} accentFg={accentFg} />
+      ) : (
+        (line.text || '♪')
+      )}
     </button>
   );
 });
 
 export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
   const { accentFg } = useTheme();
+  const { lyricsSize, karaokeWords } = useSettings();
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   /** React mirror of the active line — the only state a tick can change. */
@@ -378,6 +444,9 @@ export default function SyncedLyrics({ lines, onSeek }: SyncedLyricsProps) {
                   past={row.index < activeIdx}
                   accentFg={accentFg}
                   onSelect={handleSelect}
+                  textClass={LYRICS_TEXT[lyricsSize]}
+                  karaoke={karaokeWords}
+                  nextStartMs={lines[row.index + 1]?.timeMs}
                 />
               </div>
             );

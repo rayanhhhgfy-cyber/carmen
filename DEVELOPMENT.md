@@ -187,9 +187,12 @@ npm run dev:frontend        # = npm --prefix frontend run dev → vite
   under `<app data>/motion/`, and is switched off by Settings →
   *Animated artwork* or by low battery mode. It renders **only in the Now
   Playing sheet** (home/search/queue cards *and* the cover tiles stay
-  static, Apple-Music style): on desktop the loop is fitted over the whole
-  card — video + scrim behind every piece of content — while a phone plays
-  it only behind the lyrics panel. Resolution
+  static, Apple-Music style), on the surface Settings → *Animated artwork
+  placement* picks: **Default** follows the device — the loop fitted over
+  the whole card on desktop (video + scrim behind every piece of content),
+  only behind the lyrics panel on a phone — while *Lyrics bg* / *Player
+  bg* pin one of those surfaces on every device and *Cover* plays the loop
+  inside the cover tile itself. Resolution
   starts only while the sheet is open, so plain listening costs no catalogue
   calls. Settings → *Blur effects* and *Artwork background* independently
   switch off the glass surfaces and the ambient artwork wash.

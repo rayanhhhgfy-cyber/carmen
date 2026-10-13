@@ -10,7 +10,16 @@
 import { useSyncExternalStore } from 'react';
 
 import { getSetting, setSetting } from '../db/repos/settings';
-import type { AppSettings, FontId, LyricsProvider, SettingsKey, ThemeMode } from '../types/models';
+import type {
+  AppSettings,
+  ArtworkPlacement,
+  CoverSize,
+  FontId,
+  LyricsProvider,
+  LyricsSize,
+  SettingsKey,
+  ThemeMode,
+} from '../types/models';
 import { isBatteryLow, useBattery } from './battery';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -19,9 +28,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   adaptiveAccent: false,
   font: 'alexandria',
   lyricsProvider: 'auto',
+  lyricsSize: 'default',
+  karaokeWords: true,
   apiBase: '',
   lowBatteryMode: false,
   animatedArtwork: true,
+  animatedArtworkPlacement: 'default',
+  coverSize: 'default',
+  cinematicMode: false,
+  cinematicCover: true,
   blurEffects: true,
   artworkBackground: true,
   lockScreenLyrics: true,
@@ -34,9 +49,15 @@ const KEYS: SettingsKey[] = [
   'adaptiveAccent',
   'font',
   'lyricsProvider',
+  'lyricsSize',
+  'karaokeWords',
   'apiBase',
   'lowBatteryMode',
   'animatedArtwork',
+  'animatedArtworkPlacement',
+  'coverSize',
+  'cinematicMode',
+  'cinematicCover',
   'blurEffects',
   'artworkBackground',
   'lockScreenLyrics',
@@ -62,6 +83,9 @@ const RENAMED_KEYS: Partial<Record<SettingsKey, string>> = {
 const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
 const FONTS: FontId[] = ['alexandria', 'cairo', 'system'];
 const LYRICS: LyricsProvider[] = ['auto', 'lrclib', 'musixmatch', 'netease', 'megalobiz', 'genius'];
+const LYRICS_SIZES: LyricsSize[] = ['default', 'large', 'veryLarge'];
+const COVER_SIZES: CoverSize[] = ['default', 'large', 'veryLarge'];
+const ARTWORK_PLACEMENTS: ArtworkPlacement[] = ['default', 'lyrics', 'player', 'thumbnail'];
 
 let snapshot: AppSettings = { ...DEFAULT_SETTINGS };
 let hydrated = false;
@@ -93,9 +117,24 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
       return LYRICS.includes(raw as LyricsProvider)
         ? (raw as LyricsProvider)
         : DEFAULT_SETTINGS.lyricsProvider;
+    case 'lyricsSize':
+      return LYRICS_SIZES.includes(raw as LyricsSize)
+        ? (raw as LyricsSize)
+        : DEFAULT_SETTINGS.lyricsSize;
+    case 'coverSize':
+      return COVER_SIZES.includes(raw as CoverSize)
+        ? (raw as CoverSize)
+        : DEFAULT_SETTINGS.coverSize;
+    case 'animatedArtworkPlacement':
+      return ARTWORK_PLACEMENTS.includes(raw as ArtworkPlacement)
+        ? (raw as ArtworkPlacement)
+        : DEFAULT_SETTINGS.animatedArtworkPlacement;
     case 'adaptiveAccent':
       return raw === '1' || raw === 'true';
     case 'lowBatteryMode':
+      return raw === '1' || raw === 'true';
+    case 'cinematicMode':
+      // Absent = off: it hides most of the player chrome, opt-in only.
       return raw === '1' || raw === 'true';
     case 'smartDownload':
       // Absent = off: auto-saving songs costs storage, so it is opt-in.
@@ -104,6 +143,8 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
     case 'blurEffects':
     case 'artworkBackground':
     case 'lockScreenLyrics':
+    case 'karaokeWords':
+    case 'cinematicCover':
       // Absent = on: only an explicit "0" turns the feature off.
       return raw !== '0' && raw !== 'false';
     case 'accent':
@@ -123,7 +164,10 @@ function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
     key === 'blurEffects' ||
     key === 'artworkBackground' ||
     key === 'lockScreenLyrics' ||
-    key === 'smartDownload'
+    key === 'smartDownload' ||
+    key === 'karaokeWords' ||
+    key === 'cinematicMode' ||
+    key === 'cinematicCover'
   ) {
     return value ? '1' : '0';
   }

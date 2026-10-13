@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { usePlayer } from '../player/PlayerContext';
+import { useSettings } from '../settings/store';
 import type { LyricLine } from '../types/models';
 import { Shimmer } from './ui';
 import SyncedLyrics from './SyncedLyrics';
@@ -55,6 +56,10 @@ const LYRICS_FADE_KEYFRAMES = `@keyframes lyrics-fade {
  */
 export default function LyricsView({ synced, unsynced, source, loading = false }: LyricsViewProps) {
   const { seek, current } = usePlayer();
+  // The plain-text page follows the same size setting as the synced rows.
+  const { lyricsSize } = useSettings();
+  const unsyncedFontSize =
+    lyricsSize === 'veryLarge' ? '1.45rem' : lyricsSize === 'large' ? '1.22rem' : '1.05rem';
 
   /** Only the plain-text fallback scrolls by hand — the engine owns its box. */
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -156,7 +161,7 @@ export default function LyricsView({ synced, unsynced, source, loading = false }
           className="m-0 whitespace-pre-line text-center text-base leading-[1.5] text-muted"
           style={{
             lineHeight: 2,
-            fontSize: '1.05rem',
+            fontSize: unsyncedFontSize,
             animation: 'lyrics-fade 500ms ease',
           }}
         >

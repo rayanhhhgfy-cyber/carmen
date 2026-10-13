@@ -11,14 +11,16 @@ import RelatedTab from "./RelatedTab";
 import { useNavigate } from "react-router-dom";
 import { useIsDesktop } from "../hooks";
 import { usePlayer } from "../player/PlayerContext";
-import { useEffectsEnabled } from "../settings/store";
+import { useEffectsEnabled, useSettings } from "../settings/store";
 import { useTheme as useAppTheme } from "../theme/ThemeContext";
 import { cn } from "../utils/cn";
 import { alpha } from "../utils/color";
 import { lyricsOf } from "../utils/lyrics";
 import { pickArtwork } from "../utils/track";
+import type { ArtworkPlacement, CoverSize } from '../types/models';
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -67,6 +69,18 @@ const DISMISS_DISTANCE = 72;
  * already renders without `text-transform`.
  */
 const TAB_CLASS = 'min-h-[50px] min-w-0 !font-semibold';
+
+/**
+ * Cover-tile width caps per Settings → Player cover size. Each entry keeps
+ * the phone / tablet / desktop ladder of the default (viewport- and
+ * height-capped on phones, column-capped on desktop) and steps it up for
+ * Large / Very large.
+ */
+const COVER_MAXW: Record<CoverSize, string> = {
+  default: 'max-w-[min(86vw,392px,44vh)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]',
+  large: 'max-w-[min(88vw,440px,48vh)] sm:max-w-[min(62vw,384px)] md:max-w-[min(100%,500px)]',
+  veryLarge: 'max-w-[min(90vw,488px,52vh)] sm:max-w-[min(64vw,428px)] md:max-w-[min(100%,560px)]',
+};
 
 /**
  * The full "Now Playing" experience, in two shapes switched at the `md`
@@ -171,6 +185,22 @@ export default function PlayerSheet() {
   // covers everything, so the control never appears there.
   const [fullScreen, setFullScreen] = useState(false);
 
+  /**
+   * Drop full screen — the sheet stays open, the window (Tauri) or the
+   * document (browser) returns to normal. Shared by the sheet-close sweep
+   * below and by Esc / backdrop in cinematic mode.
+   */
+  const exitFullScreen = useCallback(() => {
+    setFullScreen(false);
+    if (isTauri) {
+      void import('@tauri-apps/api/window')
+        .then((win) => win.getCurrentWindow().setFullscreen(false))
+        .catch(() => {});
+    } else if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
   // Browser Esc / system exit keeps the toggle honest.
   useEffect(() => {
     const onFullScreenChange = () => setFullScreen(Boolean(document.fullscreenElement));
@@ -181,15 +211,8 @@ export default function PlayerSheet() {
   // Closing the sheet drops any full-screen mode with it.
   useEffect(() => {
     if (player.sheetOpen || !fullScreen) return;
-    setFullScreen(false);
-    if (isTauri) {
-      void import('@tauri-apps/api/window')
-        .then((win) => win.getCurrentWindow().setFullscreen(false))
-        .catch(() => {});
-    } else if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
-    }
-  }, [player.sheetOpen, fullScreen]);
+    exitFullScreen();
+  }, [player.sheetOpen, fullScreen, exitFullScreen]);
 
   const toggleFullScreen = async () => {
     const next = !fullScreen;
@@ -230,6 +253,17 @@ export default function PlayerSheet() {
       }
     : null;
   const animatedArtwork = useAnimatedArtwork();
+  const { animatedArtworkPlacement, coverSize, cinematicMode, cinematicCover } = useSettings();
+  // Effective surface for the motion loop: `default` follows the device —
+  // the whole card on desktop, behind the lyrics on a phone — the explicit
+  // values pin one surface everywhere, and `thumbnail` animates the cover
+  // tile itself instead of any background.
+  const motionPlacement: ArtworkPlacement =
+    animatedArtworkPlacement === 'default'
+      ? isDesktop
+        ? 'player'
+        : 'lyrics'
+      : animatedArtworkPlacement;
   // Resolves only while the sheet is open: listening without looking at the
   // player costs no catalogue calls at all.
   const motionUrl = useMotionArtwork(motionRef, animatedArtwork && player.sheetOpen);
@@ -243,8 +277,10 @@ export default function PlayerSheet() {
   // allows again (see artwork/useVideoPowerGuard).
   const cardVideoRef = useRef<HTMLVideoElement | null>(null);
   const panelVideoRef = useRef<HTMLVideoElement | null>(null);
+  const coverVideoRef = useRef<HTMLVideoElement | null>(null);
   useVideoPowerGuard(cardVideoRef, Boolean(motionUrl));
   useVideoPowerGuard(panelVideoRef, Boolean(motionUrl));
+  useVideoPowerGuard(coverVideoRef, Boolean(motionUrl));
   // Readability scrim shared by both motion layers — theme-coloured so the
   // light mode sheet stays light and the dark one stays dark.
   const motionScrim =
@@ -252,7 +288,23 @@ export default function PlayerSheet() {
       ? 'linear-gradient(180deg, rgba(10,13,11,0.48) 0%, rgba(10,13,11,0.72) 100%)'
       : 'linear-gradient(180deg, rgba(246,247,246,0.62) 0%, rgba(246,247,246,0.82) 100%)';
 
+  /**
+   * Cinematic mode (Settings → Cinematic mode): full screen with every
+   * affordance stripped — no close button, no transport, no scrubber, no
+   * tab strip — just the song's details and the lyrics riding the artwork
+   * backdrop. Esc (the kit Dialog's `onClose`) lands in `handleClose` and
+   * leaves the immersion; the player card comes back with its controls.
+   */
+  const cinematic = isDesktop && fullScreen && cinematicMode;
+
   const handleClose = () => {
+    // In cinematic mode a dismissal (Esc, backdrop) exits full screen
+    // instead of closing the sheet — the only way out is back through the
+    // regular card, exactly like the mode promises.
+    if (cinematic) {
+      exitFullScreen();
+      return;
+    }
     setPanelOpen(false);
     setTab(LYRICS_TAB);
     player.setSheetOpen(false);
@@ -412,7 +464,7 @@ export default function PlayerSheet() {
    * colour instead.
    */
   const artworkBox = (
-    <div className="relative mx-auto w-full max-w-[min(86vw,392px,44vh)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]">
+    <div className={cn('relative mx-auto w-full', COVER_MAXW[coverSize])}>
       <Artwork
         src={artwork}
         alt={track.albumName || track.title}
@@ -426,11 +478,30 @@ export default function PlayerSheet() {
           boxShadow: 'var(--shadow-elev-10)',
         }}
       />
+      {/* "Cover" placement: the motion loop plays *inside* the tile, on top
+          of the static poster, instead of any background surface. Same
+          rounded corners as the artwork, same fade-in as the other layers. */}
+      {motionUrl && motionPlacement === 'thumbnail' && (
+        <video
+          ref={coverVideoRef}
+          src={motionUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          onCanPlay={() => setMotionReady(true)}
+          onError={() => setMotionReady(false)}
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-[2] h-full w-full rounded-[42px] object-cover"
+          style={{ opacity: motionReady ? 1 : 0, transition: 'opacity 400ms ease' }}
+        />
+      )}
       {player.buffering && (
         <Spinner
           size={44}
           color="inherit"
-          className="absolute inset-0 z-[2] m-auto text-accent-fg"
+          className="absolute inset-0 z-[3] m-auto text-accent-fg"
         />
       )}
     </div>
@@ -602,12 +673,12 @@ export default function PlayerSheet() {
         />
       </Tabs>
       <div className="relative mt-2 min-h-[220px] flex-1 overflow-hidden rounded-[28px]">
-        {/* Phone only: the animated cover, fitted edge-to-edge behind the
-            lyrics under a theme-coloured scrim, so every line stays
-            readable on top of moving pixels. A phone animates nowhere else
-            — on desktop the whole card carries the loop instead, and queue
-            and related keep the plain surface. */}
-        {tab === LYRICS_TAB && motionUrl && !isDesktop && (
+        {/* The animated cover, fitted edge-to-edge behind the lyrics under a
+            theme-coloured scrim, so every line stays readable on top of
+            moving pixels. Paints when the placement resolves to the lyrics
+            background — the device default on a phone, or an explicit
+            choice on any device. */}
+        {tab === LYRICS_TAB && motionUrl && motionPlacement === 'lyrics' && (
           <>
             <video
               ref={panelVideoRef}
@@ -760,7 +831,65 @@ export default function PlayerSheet() {
     </div>
   );
 
-  const showHeader = isDesktop || !panelOpen;
+  // ── Desktop: cinematic full screen ─────────────────────────────────────
+  // Full screen with every affordance gone: the song's details (no
+  // scrubber), the lyrics in full, and the artwork backdrop carrying the
+  // colour. No buttons, no tabs, no close control — Esc leaves (see
+  // `handleClose`), which is the whole point of the mode. The cover keeps
+  // its place on the left unless Settings → Cover in cinematic mode is off.
+  const cinematicDetails = (
+    // Centered block — tucked directly under the cover in the left column,
+    // or on top when the cover is hidden. Capped so a huge display doesn't
+    // stretch it.
+    <div className="mx-auto w-full max-w-[720px] shrink-0 text-center">
+      <div className="flex min-w-0 items-center justify-center gap-[6px]">
+        <MarqueeText text={track.title} variant="h5" />
+        {track.isExplicit && (
+          <ExplicitIcon
+            aria-label="Explicit"
+            sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }}
+          />
+        )}
+      </div>
+      <p className="m-0 truncate text-base leading-[1.43] text-muted">
+        {track.artist}
+        {track.albumName ? ` — ${track.albumName}` : ''}
+      </p>
+    </div>
+  );
+
+  const cinematicLyrics = (
+    <LyricsView
+      synced={lyrics.synced}
+      unsynced={lyrics.unsynced}
+      source={lyrics.source}
+      loading={meta === null}
+    />
+  );
+
+  const cinematicBody = cinematicCover ? (
+    // Cover on the left with the song's details tucked directly under it;
+    // the lyrics take the right column in full.
+    <div className="relative z-[1] grid min-h-0 flex-1 grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-x-8 overflow-hidden pb-8 md:px-10">
+      <div className="flex min-h-0 min-w-0 flex-col items-center justify-center gap-4 py-4">
+        {artworkBox}
+        {cinematicDetails}
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+        {cinematicLyrics}
+      </div>
+    </div>
+  ) : (
+    // Cover hidden by choice — details centred on top, lyrics full width.
+    <div className="relative z-[1] flex min-h-0 flex-1 flex-col items-center overflow-hidden px-10 pb-8 pt-6">
+      {cinematicDetails}
+      <div className="mt-5 min-h-0 w-full max-w-[860px] flex-1">{cinematicLyrics}</div>
+    </div>
+  );
+
+  // The header's close + full-screen buttons are the affordances cinematic
+  // mode exists to remove — the whole strip disappears with them.
+  const showHeader = !cinematic && (isDesktop || !panelOpen);
 
   // MIGRATION: `fullScreen` / `TransitionComponent` / `PaperProps` have no
   // kit equivalents — the kit Dialog animates the layer itself (a short
@@ -792,13 +921,16 @@ export default function PlayerSheet() {
         className="relative flex h-full min-h-0 flex-col"
       >
         {backdrop}
-        {/* Desktop: the motion cover spans the whole Now Playing card —
-            one fitted video under the shared scrim, painted above the
-            backdrop but below every piece of content (the body and header
-            carry their own z-index). The static cover tile and the controls
-            sit on top of it; on a phone this layer never mounts — there the
-            loop plays only behind the lyrics panel. */}
-        {isDesktop && motionUrl && (
+        {/* The motion cover spans the whole Now Playing card — one fitted
+            video under the shared scrim, painted above the backdrop but
+            below every piece of body/header content. Paints when the
+            placement resolves to the player background — the device
+            default on desktop, or an explicit choice on any device.
+            Cinematic mode also borrows the lyrics placement: with no
+            card layer of its own to sit in, the loop becomes the stage. */}
+        {motionUrl &&
+          (motionPlacement === 'player' ||
+            (cinematic && motionPlacement === 'lyrics')) && (
           <>
             <video
               ref={cardVideoRef}
@@ -827,7 +959,7 @@ export default function PlayerSheet() {
         )}
         {!isDesktop && strip}
         {showHeader && header}
-        {isDesktop ? desktopBody : panelOpen ? mobilePanel : mobileMain}
+        {isDesktop ? (cinematic ? cinematicBody : desktopBody) : panelOpen ? mobilePanel : mobileMain}
       </div>
     </Dialog>
   );

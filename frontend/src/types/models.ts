@@ -40,6 +40,15 @@ export interface LyricLine {
   timeMs: number;
   endTimeMs?: number;
   text: string;
+  /** Per-word karaoke stamps, when the source carries them (enhanced LRC). */
+  words?: LyricWord[];
+}
+
+/** One karaoke word with explicit stamps (enhanced LRC), in milliseconds. */
+export interface LyricWord {
+  text: string;
+  startMs: number;
+  endMs: number;
 }
 
 export interface TrackLyrics {
@@ -132,6 +141,17 @@ export const LYRICS_PROVIDERS: { id: LyricsProvider; label: string }[] = [
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type FontId = 'alexandria' | 'cairo' | 'system';
+/** Text size of the lyrics inside the Now Playing card. */
+export type LyricsSize = 'default' | 'large' | 'veryLarge';
+/** Size of the album cover (thumbnail) inside the Now Playing card. */
+export type CoverSize = 'default' | 'large' | 'veryLarge';
+/**
+ * Where an enabled animated artwork plays: `default` follows the device —
+ * the whole player card on desktop, the lyrics background on a phone —
+ * while the explicit values pin one surface on every device and
+ * `thumbnail` animates the cover tile itself instead of any background.
+ */
+export type ArtworkPlacement = 'default' | 'lyrics' | 'player' | 'thumbnail';
 
 /** Everything the Settings screen can change. Persisted in SQLite. */
 export interface AppSettings {
@@ -140,6 +160,15 @@ export interface AppSettings {
   adaptiveAccent: boolean;
   font: FontId;
   lyricsProvider: LyricsProvider;
+  /** Lyrics text size — the synced rows and the plain-text fallback alike. */
+  lyricsSize: LyricsSize;
+  /**
+   * Word-by-word karaoke — inside the active line every word lights up as
+   * the playhead passes it. Words use the source's own stamps when it has
+   * them (enhanced LRC), otherwise the line's duration is spread evenly
+   * across its words.
+   */
+  karaokeWords: boolean;
   /** Optional override of the FastAPI backend URL (empty = bundled default). */
   apiBase: string;
   /**
@@ -157,6 +186,29 @@ export interface AppSettings {
    * this toggle.
    */
   animatedArtwork: boolean;
+  /**
+   * Where animated artwork plays (Settings → Animated artwork placement).
+   * `default` follows the device (whole card on desktop, lyrics background
+   * on a phone); `lyrics` / `player` pin one surface everywhere;
+   * `thumbnail` animates the cover tile itself instead of a background.
+   */
+  animatedArtworkPlacement: ArtworkPlacement;
+  /**
+   * Album-cover size in the Now Playing card — the square thumbnail's
+   * width cap, stepped up from the default ladder by Large / Very large.
+   */
+  coverSize: CoverSize;
+  /**
+   * Cinematic mode (desktop) — full screen drops every affordance: no
+   * buttons, no scrubber, no tabs — just the song details and the lyrics
+   * over the artwork backdrop. Escape leaves full screen again.
+   */
+  cinematicMode: boolean;
+  /**
+   * Keep the album cover on the left inside cinematic mode (default).
+   * Off = the details and the lyrics take the full width instead.
+   */
+  cinematicCover: boolean;
   /**
    * Blur & glass effects — backdrop blur on the navigation and player
    * surfaces, accent glows and the ambient artwork wash. Off gives flat,
