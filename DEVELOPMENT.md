@@ -226,8 +226,11 @@ Details of what that does:
   events), *Quit Carmen* (the only path that exits the process).
 - **Commands**: `app_info` (name/version/platform/arch), `storage_paths`
   (below) and `battery_status` (charge level for the low-battery auto mode —
-  `supported: false` where no backend exists, e.g. Android webviews, which
-  report through `navigator.getBattery` instead) — everything else goes
+  `supported: false` where no backend exists: Android webviews report through
+  `navigator.getBattery` instead, and iOS is target-gated out entirely — the
+  `battery` crate compiles its IOKit backend for `target_os = "ios"` but the
+  iOS SDK doesn't export those symbols, so the archive would fail to link
+  (see the Cargo.toml comment)) — everything else goes
   through the fs/sql/opener/http plugins, which are
   gated by `src-tauri/capabilities/default.json` (fs scope `$APPDATA/**`,
   opener limited to `http(s)://` URLs, http fetch scoped to Apple's

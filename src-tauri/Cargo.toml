@@ -29,8 +29,14 @@ tauri-plugin-http = { version = "2.7.0", features = ["unsafe-headers"] }
 # Battery reading for the low-battery auto mode (macOS / Linux WebKit has no
 # Battery Status API). Android is excluded on purpose: the crate has no
 # backend there (`compile_error!`) — its webview is Chromium and reports the
-# battery through `navigator.getBattery` instead.
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# battery through `navigator.getBattery` instead. iOS is excluded too: the
+# crate's platform gate is `any(target_os = "macos", target_os = "ios")`, so
+# it compiles its IOKit backend for iOS, but the iOS SDK does not export
+# `_IOServiceMatching` & friends — the app archive dies at link with
+# "Undefined symbols for architecture arm64". WKWebView has no Battery
+# Status API either, so iOS reports `supported: false` and the mode stays a
+# manual toggle.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 battery = "0.7"
 
 [profile.release]

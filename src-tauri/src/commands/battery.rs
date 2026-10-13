@@ -4,7 +4,10 @@
 //! Android). macOS and Linux run WebKit, so the frontend falls back to this
 //! command — backed by the `battery` crate (IOKit on macOS, sysfs on Linux,
 //! Win32 on Windows). Targets without a backend report `supported: false`
-//! and the mode stays a manual toggle.
+//! and the mode stays a manual toggle — Android (Chromium reports the
+//! battery through `navigator.getBattery` instead) and iOS (the crate's
+//! IOKit backend cannot link against the iOS SDK, and WKWebView has no
+//! Battery Status API) among them.
 
 use serde::Serialize;
 
@@ -16,8 +19,8 @@ pub struct BatteryStatus {
     pub level: Option<f64>,
     /// Whether the battery is (reported as) charging, `null` when unknown.
     pub charging: Option<bool>,
-    /// `false` when this target has no battery backend (e.g. Android, or a
-    /// desktop machine without a battery) — auto mode stays off.
+    /// `false` when this target has no battery backend (e.g. Android, iOS,
+    /// or a desktop machine without a battery) — auto mode stays off.
     pub supported: bool,
 }
 
@@ -26,7 +29,7 @@ pub fn battery_status() -> BatteryStatus {
     read_battery().unwrap_or_default()
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn read_battery() -> Option<BatteryStatus> {
     use battery::{Manager, State};
     use battery::units::ratio::percent;
@@ -44,8 +47,11 @@ fn read_battery() -> Option<BatteryStatus> {
     })
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn read_battery() -> Option<BatteryStatus> {
-    // The Android WebView is Chromium: `navigator.getBattery` covers it.
+    // Android's WebView is Chromium: `navigator.getBattery` covers it. iOS
+    // has neither side — the `battery` crate's IOKit code cannot link against
+    // the iOS SDK and WKWebView ships no Battery Status API — so the crate is
+    // target-gated out of the build (Cargo.toml) and this stays the fallback.
     None
 }
