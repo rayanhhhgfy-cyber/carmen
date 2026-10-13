@@ -1,9 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main Carmen window (desktop + Android).",
+  "description": "Default capability for the main Carmen window (desktop + Android + iOS).",
   "windows": ["main"],
-  "platforms": ["linux", "macOS", "windows", "android"],
+  "platforms": ["linux", "macOS", "windows", "android", "iOS"],
   "permissions": [
     "core:default",
     "core:app:default",
