@@ -45,6 +45,8 @@
 
     "deep-link:default",
 
+    "media:default",
+
     "opener:default",
     {
       "identifier": "opener:allow-open-url",

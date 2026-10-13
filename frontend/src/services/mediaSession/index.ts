@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { localArtworkDataUrl } from "../../offline/source";
+import {
+  setMediaControlHandler,
+  updateNativeMediaSession,
+} from "../../platform/androidMedia";
 import { DEFAULT_SETTINGS, getSettingsSnapshot, subscribeSettings } from "../../settings/store";
 import type { Track, TrackMeta } from "../../types/models";
 import { syncedLines } from "../../utils/lyrics";
@@ -74,6 +78,13 @@ const IMMEDIATE_EVENTS = [
   'durationchange',
   'ratechange',
 ] as const;
+
+/**
+ * The same set (plus `ended`) mirrored to the **native** Android session —
+ * the queue advancing on its own is exactly the moment the notification's
+ * title and play button have to be repainted.
+ */
+const ANDROID_MIRROR_EVENTS = [...IMMEDIATE_EVENTS, 'ended'] as const;
 
 function session(): MediaSession | undefined {
   return typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
@@ -279,6 +290,43 @@ export function useMediaSession({
     lyricLineRef.current = null;
   }, [videoId]);
 
+  // Same metadata-preferred duration as the player (see PlayerContext): the
+  // element's own number is only the fallback, never the source of truth.
+  // Declared before the lyric tracker and the Android push, which both read
+  // it (§4's position effect does too).
+  const trustedDuration = current?.durationSeconds || meta?.duration_seconds || 0;
+
+  // ── Android: the native media session (Tauri `media` plugin) ────────────
+  // Android WebView has no `navigator.mediaSession`, so the shade /
+  // lock-screen card there is a Kotlin media3 MediaSession + foreground
+  // service (gen/android/…/media/). It is fed the same facts the Web API
+  // consumes — including the currently sung lyric line on the artist slot —
+  // and calls back into the handlers of §3; see `platform/androidMedia` for
+  // the wire format. Everywhere else (and under plain `vite dev`) these
+  // pushes are no-ops.
+
+  /** One payload: whatever the element says beats whatever state says. */
+  const publishAndroidMedia = useCallback(() => {
+    const audio = audioOf(audioRef);
+    const base = current ? buildMetadata(current, meta, localCover) : null;
+    const duration = trustedDuration || (audio && audio.duration > 0 ? audio.duration : 0);
+    const line = lockLyricsEnabled ? lyricLineRef.current : null;
+    updateNativeMediaSession({
+      title: base?.title ?? '',
+      artist: line
+        ? LYRIC_LINE_PREFIX
+          ? `${LYRIC_LINE_PREFIX} ${line}`
+          : line
+        : (base?.artist ?? ''),
+      album: base?.album ?? '',
+      artworkUrl: base?.artwork?.[0]?.src ?? null,
+      duration: duration || undefined,
+      active: Boolean(current),
+      isPlaying: Boolean(current) && (audio ? !audio.paused : isPlaying),
+      position: audio && Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+    });
+  }, [audioRef, current, meta, localCover, isPlaying, trustedDuration, lockLyricsEnabled]);
+
   const publishMetadata = useCallback(() => {
     if (!media || typeof MediaMetadata !== 'function') return;
     if (!current) {
@@ -303,9 +351,12 @@ export function useMediaSession({
     onLine: useCallback(
       (line: string | null) => {
         lyricLineRef.current = line;
+        // The Web widget's artist slot and the native card repaint together
+        // so the lyric line lands on both lock screens at once.
         publishMetadata();
+        publishAndroidMedia();
       },
-      [publishMetadata],
+      [publishMetadata, publishAndroidMedia],
     ),
   });
 
@@ -380,11 +431,6 @@ export function useMediaSession({
   }, [media, audioRef]);
 
   // ── 4. Position state ───────────────────────────────────────────────────
-  // Same metadata-preferred duration as the player (see PlayerContext): the
-  // element's own number is only the fallback, never the source of truth.
-  // Hoisted to function scope so the effect's dependency array can see it.
-  const trustedDuration = current?.durationSeconds || meta?.duration_seconds || 0;
-
   useEffect(() => {
     const audio = audioOf(audioRef);
     if (!media || !audio || typeof media.setPositionState !== 'function') return undefined;
@@ -465,4 +511,66 @@ export function useMediaSession({
     },
     [media],
   );
+
+  // ── 6. Android pushes + button echo ─────────────────────────────────────
+  // The payload lives above §1 (the lyric tracker repaints through it too);
+  // this side only wires the triggers.
+
+  // Track changes, metadata resolution, play/pause flips.
+  useEffect(() => {
+    publishAndroidMedia();
+  }, [publishAndroidMedia]);
+
+  // Element-side events (seek, stall, natural end) land immediately — a
+  // seek while paused changes nothing the effect above depends on.
+  useEffect(() => {
+    const audio = audioOf(audioRef);
+    if (!audio) return undefined;
+    const onEvent = () => publishAndroidMedia();
+    ANDROID_MIRROR_EVENTS.forEach((name) => audio.addEventListener(name, onEvent));
+    return () => {
+      ANDROID_MIRROR_EVENTS.forEach((name) => audio.removeEventListener(name, onEvent));
+    };
+  }, [audioRef, videoId, publishAndroidMedia]);
+
+  // Shade / lock-screen buttons → the very handlers the Web Media Session
+  // would drive, through the latest-callbacks ref so nothing re-registers.
+  useEffect(() => {
+    setMediaControlHandler((action, value) => {
+      const audio = audioOf(audioRef);
+      switch (action) {
+        case 'play': {
+          const attempt = audio?.play();
+          if (attempt) attempt.catch(() => {});
+          break;
+        }
+        case 'toggle': {
+          if (!audio) break;
+          if (audio.paused) {
+            const attempt = audio.play();
+            attempt.catch(() => {});
+          } else {
+            audio.pause();
+          }
+          break;
+        }
+        case 'pause':
+        case 'stop':
+          audio?.pause();
+          break;
+        case 'next':
+          actions.current.onNext?.();
+          break;
+        case 'previous':
+          actions.current.onPrevious?.();
+          break;
+        case 'seek':
+          if (Number.isFinite(value)) actions.current.onSeek?.(value as number);
+          break;
+        default:
+          break;
+      }
+    });
+    return () => setMediaControlHandler(null);
+  }, [audioRef]);
 }

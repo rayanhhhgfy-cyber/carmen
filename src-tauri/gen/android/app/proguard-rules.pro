@@ -5,12 +5,11 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The `media` Tauri plugin: Tauri instantiates `MediaPlugin` by reflection
+# (register_android_plugin → Class.forName), dispatches its `@Command`
+# methods by name, and Jackson materialises the `@InvokeArg` classes — none
+# of which R8 can see. The package is tiny; keep all of it.
+-keep class com.z44d.carmen.media.** { *; }
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.

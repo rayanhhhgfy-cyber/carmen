@@ -634,26 +634,68 @@ renders on the nginx copy — Pages answers `/?song=…` with the plain shell.
         *Artwork background* off → plain theme background (both persist);
         *Accent color* → **White** → light mode stays readable (labels and
         line art fall back to the text colour)
-  - [ ] Android: the "Carmen" header clears the status bar (safe-area top
-        inset; needs WebView ≥ M136 on the device), the bottom nav sits
-        above the gesture bar, and the full-screen player's close button
-        is not under the status bar
+  - [ ] Android: the "Carmen" header clears the status bar with **exactly
+        one** safe-area pad (WebView ≥ M136 on the device — older ones
+        report 0px and stay flush), the bottom nav sits above the gesture
+        bar, and in the full-screen player the handle strip — not the close
+        row — is what clears the status bar (close/transport must not be
+        pushed a second time)
+  - [ ] Android: play a track → the media notification appears (shade +
+        quick-settings card + lock screen) with cover, title/artist and
+        working ⏮ ⏯ ⏭; tapping it returns to the app. *Allow
+        notifications* when the app asks on first play — Android 13+
+        hides the card otherwise
   - [ ] Android: audio keeps playing after screen lock (switch the screen
         off a few seconds into a song, wait, unlock — the playhead moved)
+        and back-press **while a track is loaded** only backgrounds the app
+        (notification keeps working); back with nothing loaded still exits
 
 ### Known Android WebView gaps (as of 2026-10)
 
-- **Media Session in the notification shade does not work.** The Android
-  System WebView (Blink, the engine behind Tauri Android) has never shipped
-  `navigator.mediaSession`; Chromium's trackers (`issues.chromium.org`
-  40765779 / 40540400) are still open and w3c/mediasession#337 was closed
-  as "venue mismatch". The frontend hook
-  (`frontend/src/services/mediaSession`) already registers it defensively —
-  it just no-ops on Android. The manifest declares
-  `FOREGROUND_SERVICE`/`FOREGROUND_SERVICE_MEDIA_PLAYBACK`/`WAKE_LOCK` so
-  background playback groundwork is in place; actual shade/lock-screen
-  controls need a Kotlin `MediaSessionService` bridged to the webview, same
-  as every wrapped-webview music player.
+- **`navigator.mediaSession` itself is still missing.** The Android System
+  WebView (Blink, the engine behind Tauri Android) has never shipped it;
+  Chromium's trackers (`issues.chromium.org` 40765779 / 40540400) are still
+  open and w3c/mediasession#337 was closed as "venue mismatch". The Web hook
+  (`frontend/src/services/mediaSession`) still registers it defensively — it
+  simply no-ops on Android.
+- **The shade / lock screen works through a native media3 bridge instead.**
+  Playback stays in the WebView (it is the only side that ever sees stream
+  URLs — they stay hidden, `server/sanitizers.py`); the card is fed over the
+  in-app Tauri **`media` plugin**, following the deep-link plugin's pattern
+  (`register_android_plugin` + `run_mobile_plugin` + `Channel`):
+  - `frontend/src/platform/androidMedia.ts` — `updateNativeMediaSession(...)`
+    invokes `plugin:media|update_media_metadata` /
+    `update_playback_state` (track facts + transport in one call, seconds)
+    and listens for `media-control:<action>` events (`play`, `pause`,
+    `toggle`, `next`, `previous`, `seek`, `stop`, `sync`); a `sync` replays
+    the last payload. `useMediaSession` (§1 + §6) drives it — including the
+    lock-screen lyric line on the artist slot — and routes buttons into the
+    same handlers the Web Media Session uses. Everything is best-effort: no
+    Tauri, no pushes.
+  - `src-tauri/src/media.rs` + `src-tauri/build.rs` (`InlinedPlugin`) +
+    `capabilities/default.json` (`media:default`) — the Rust half: two
+    commands forwarded to Kotlin, and a `Channel` that re-emits every
+    Kotlin-side button as a `media-control:*` event. On desktop the commands
+    are registered but no-op (the Web API owns those platforms).
+  - `gen/android/…/media/MediaPlugin.kt` — the Kotlin `@Command` half of the
+    plugin; pure IPC into `MediaBridge`.
+  - `gen/android/…/media/MediaBridge.kt` — the state hub: marshals pushes
+    onto the main thread, caches the last state, starts/stops the service,
+    asks for `POST_NOTIFICATIONS` on first play (Android 13+), and patches
+    play/pause optimistically before the page echoes back.
+  - `gen/android/…/media/PlaybackService.kt` — a media3
+    **`MediaSessionService`** (`androidx.media3:media3-session`): the
+    session's `Player` is `WebViewPlayer`, a `SimpleBasePlayer` that owns no
+    media — every state push becomes a fresh `State`, every system button
+    routes back into the page. The notification / quick-settings card /
+    lock-screen card (channel, actions, artwork decoding) are built by
+    media3's `DefaultMediaNotificationProvider`; covers travel as raw bytes
+    (`MediaMetadata.setArtworkData`, remote URL or a downloaded song's
+    `data:` URL) fetched off the main thread. The manifest declares the
+    service `exported` with the `androidx.media3.session.MediaSessionService`
+    intent-filter (media3's documented configuration). Back-press with a
+    track loaded backgrounds the app (`MainActivity`), keeping the WebView —
+    and therefore the audio — alive.
 - `AGENTS.md` still holds: verify changes by **running the server**, not via
   JS/TS tooling, when the change is server-side.
 

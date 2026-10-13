@@ -2,13 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Background audio playback: keeps the process alive (WAKE_LOCK) and
-         lets a media foreground service run when the screen is off
-         (FOREGROUND_SERVICE + the API-34 mediaPlayback subtype). Planned
-         for a Kotlin media-session service — see DEVELOPMENT.md §9. -->
+    <!-- Background audio playback: WAKE_LOCK keeps the process awake and
+         the mediaPlayback foreground service (`.media.PlaybackService`)
+         owns the shade / quick-settings / lock-screen media card while the
+         WebView plays. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Android 13+: the media card in the shade / quick settings is a
+         notification, so it needs the runtime permission. The app asks for
+         it the first time a track starts playing (MediaBridge). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -59,6 +63,20 @@
             </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
         </activity>
+
+        <!-- The media session behind the notification-shade / lock-screen
+             controls — a media3 MediaSessionService. `mediaPlayback` is what
+             the API-34 typed-FGS rules require (and what lets it run while
+             the screen is off); the intent-filter is how the system binds to
+             the session (media3's documented configuration). -->
+        <service
+            android:name=".media.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <provider
           android:name="androidx.core.content.FileProvider"

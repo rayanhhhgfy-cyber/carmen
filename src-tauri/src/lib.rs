@@ -1,10 +1,15 @@
 //! Carmen — Tauri v2 shell.
 //!
 //! The Rust side intentionally stays thin: plugins own cross-cutting
-//! capabilities (fs, sql, opener, window-state) and `commands` only exposes the
-//! few app-level operations plugins do not cover.
+//! capabilities (fs, sql, opener, window-state, plus the in-app `media`
+//! bridge) and `commands` only exposes the few app-level operations plugins
+//! do not cover.
 
 mod commands;
+// In-app Tauri plugin: the Rust half of the Android media-session bridge
+// (Kotlin: gen/android/…/media/). Commands live on the plugin namespace
+// (`plugin:media|…`); see the module docs and DEVELOPMENT.md.
+mod media;
 // The tray (menus, tray icons, minimize-to-tray) only exists on desktop —
 // `tauri::menu` / `tauri::tray` are compiled out on mobile targets, so the
 // whole module is gated or the Android/iOS builds fail to resolve them.
@@ -25,6 +30,9 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        // In-app plugin — the IPC spine of the Android media session
+        // (metadata / playback state in, `media-control:*` events out).
+        .plugin(media::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_opener::init())

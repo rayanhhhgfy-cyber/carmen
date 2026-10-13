@@ -6219,6 +6219,36 @@
           "markdownDescription": "Denies the fetch_send command without any pre-configured scope."
         },
         {
+          "description": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-update-media-metadata`\n- `allow-update-playback-state`",
+          "type": "string",
+          "const": "media:default",
+          "markdownDescription": "Default plugin permissions.\n#### This default permission set includes:\n\n- `allow-update-media-metadata`\n- `allow-update-playback-state`"
+        },
+        {
+          "description": "Enables the update_media_metadata command without any pre-configured scope.",
+          "type": "string",
+          "const": "media:allow-update-media-metadata",
+          "markdownDescription": "Enables the update_media_metadata command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_playback_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "media:allow-update-playback-state",
+          "markdownDescription": "Enables the update_playback_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_media_metadata command without any pre-configured scope.",
+          "type": "string",
+          "const": "media:deny-update-media-metadata",
+          "markdownDescription": "Denies the update_media_metadata command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_playback_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "media:deny-update-playback-state",
+          "markdownDescription": "Denies the update_playback_state command without any pre-configured scope."
+        },
+        {
           "description": "This permission set allows opening `mailto:`, `tel:`, `https://` and `http://` urls using their default application\nas well as reveal file in directories using default file explorer\n#### This default permission set includes:\n\n- `allow-open-url`\n- `allow-reveal-item-in-dir`\n- `allow-default-urls`",
           "type": "string",
           "const": "opener:default",
