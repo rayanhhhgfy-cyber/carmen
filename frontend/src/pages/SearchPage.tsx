@@ -14,6 +14,7 @@ import { useSearchParams } from 'react-router-dom';
 import { apiGet } from '../api';
 import { usePlayer } from '../player/PlayerContext';
 import { normalizeTrack } from '../utils/track';
+import { loadSearchHistory, rememberSearch } from '../utils/searchHistory';
 import type { Track } from '../types/models';
 import MediaCard from '../components/MediaCard';
 import TrackList, { EmptyState } from '../components/TrackList';
@@ -81,6 +82,7 @@ export default function SearchPage() {
   const [filter, setFilter] = useState(() => filterFromParams(searchParams));
   const [results, setResults] = useState<Record<string, unknown>[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(loadSearchHistory);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -183,7 +185,31 @@ export default function SearchPage() {
     setShowSuggestions(false);
     setInput(term);
     setQuery(term);
+    if (term) setHistory(rememberSearch(term));
   };
+
+  // Dropdown rows: the recent searches first (matching what's typed, or all
+  // of them while the field is empty), then the server's suggestions —
+  // deduped case-insensitively and typed so the key never collides.
+  const entries = useMemo(() => {
+    const needle = input.trim().toLowerCase();
+    const seen = new Set<string>();
+    const rows: { kind: 'history' | 'suggestion'; text: string }[] = [];
+    for (const text of history) {
+      if (needle && !text.toLowerCase().includes(needle)) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ kind: 'history', text });
+    }
+    for (const text of suggestions) {
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ kind: 'suggestion', text });
+    }
+    return rows;
+  }, [history, suggestions, input]);
 
   return (
     <Container maxWidth="lg" className="pt-4 md:pt-6">
@@ -217,17 +243,22 @@ export default function SearchPage() {
             }}
           />
 
-          {showSuggestions && suggestions.length > 0 && (
+          {showSuggestions && entries.length > 0 && (
             <List className="relative z-[2] mt-1 rounded-[42px] border border-line bg-surface !py-1">
-              {suggestions.map((suggestion) => (
+              {entries.map((entry) => (
                 <ListItemButton
-                  key={suggestion}
+                  key={`${entry.kind}:${entry.text}`}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => submit(suggestion)}
+                  onClick={() => submit(entry.text)}
                   className="mx-1 !rounded-[28px]"
                 >
-                  <HistoryIcon fontSize="small" color="action" sx={{ mr: 1.5 }} />
-                  <ListItemText primary={suggestion} primaryClassName="font-normal" />
+                  {/* history keeps the clock; suggestions get the magnifier */}
+                  {entry.kind === 'history' ? (
+                    <HistoryIcon fontSize="small" color="action" sx={{ mr: 1.5 }} />
+                  ) : (
+                    <SearchIcon fontSize="small" color="action" sx={{ mr: 1.5 }} />
+                  )}
+                  <ListItemText primary={entry.text} primaryClassName="font-normal" />
                 </ListItemButton>
               ))}
             </List>
