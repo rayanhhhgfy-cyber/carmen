@@ -1,4 +1,5 @@
 import type { Track } from '../types/models';
+import { isTauri } from '../platform/env';
 import { notify } from './downloadsStore';
 
 /**
@@ -17,10 +18,18 @@ import { notify } from './downloadsStore';
  * user did not ask for here.
  */
 
+/**
+ * The public web origin. The Tauri WebView's own origin (`tauri://localhost`)
+ * is meaningless to a link crawler and to a human pasting it, so shares from
+ * the installed app always point at the hosted site instead.
+ */
+const WEB_ORIGIN = 'https://carmen.z44d.com';
+
 /** Absolute shareable link of one song. */
 export function songShareUrl(videoId: string): string {
   const { origin, pathname } = window.location;
-  return `${origin}${pathname}?song=${encodeURIComponent(videoId)}`;
+  const base = isTauri ? `${WEB_ORIGIN}${pathname}` : `${origin}${pathname}`;
+  return `${base}?song=${encodeURIComponent(videoId)}`;
 }
 
 /**
