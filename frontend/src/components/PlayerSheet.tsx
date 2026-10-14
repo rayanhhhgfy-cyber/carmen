@@ -25,6 +25,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type TouchEvent,
 } from 'react';
 import {
@@ -132,6 +133,10 @@ export default function PlayerSheet() {
   const dragDistance = useRef(0);
   /** True between a real swipe and the click the browser synthesises after it. */
   const draggedRef = useRef(false);
+  /** Nearest scrollable ancestor of the current sheet-zone gesture, if any. */
+  const scrollParentRef = useRef<HTMLElement | null>(null);
+  /** When the last real swipe ended — the click the browser synthesises after it is swallowed. */
+  const swipeEndedAt = useRef(0);
 
   // A new song drops straight back to the default panel (lyrics).
   useEffect(() => {
@@ -346,14 +351,53 @@ export default function PlayerSheet() {
     dragStartY.current = event.touches[0]?.clientY ?? null;
     draggedRef.current = false;
     dragDistance.current = 0;
+    scrollParentRef.current = null;
     const node = sheetRef.current;
     if (node) node.style.transition = 'none';
+  };
+
+  /**
+   * The whole top half of the phone sheet is a dismiss zone, not just the
+   * handle: a gesture that begins there drags the sheet exactly like the
+   * strip's does. Classified once at touchstart and left alone when it
+   * belongs to something else — a scrubber drag, or a list that has already
+   * scrolled away from its top (content keeps its own scrolling; only a
+   * pull-down at the very top of a list dismisses, like native sheets).
+   */
+  const onSheetTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (isDesktop) return; // the desktop card is dragged by its title bar
+    const touch = event.touches[0];
+    const node = sheetRef.current;
+    if (!touch || !node) return;
+    const target = event.target as HTMLElement | null;
+    // seeking keeps its own gesture
+    if (target?.closest('[role="slider"]')) return;
+    const rect = node.getBoundingClientRect();
+    if (touch.clientY - rect.top > rect.height / 2) return; // bottom half = content's
+    // nearest vertically scrolling ancestor — the sheet takes the pull-down
+    // only when that list (if any) sits at its very top
+    let scroller: HTMLElement | null = null;
+    for (let el: HTMLElement | null = target; el && el !== node; el = el.parentElement) {
+      const overflowY = window.getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        scroller = el;
+        break;
+      }
+    }
+    if (scroller && scroller.scrollTop > 0) return;
+    onStripTouchStart(event);
+    scrollParentRef.current = scroller;
   };
 
   const onStripTouchMove = (event: TouchEvent<HTMLDivElement>) => {
     const start = dragStartY.current;
     const node = sheetRef.current;
     if (start === null || !node) return;
+    // A list under the finger scrolling back up from below its top owns the
+    // gesture — the sheet waits (it tracks the *net* displacement from the
+    // start, so it picks up exactly where the finger is once the list is at
+    // the top again).
+    if (scrollParentRef.current && scrollParentRef.current.scrollTop > 0) return;
     const delta = (event.touches[0]?.clientY ?? start) - start;
     if (delta <= 0) {
       // dragging up does nothing (no rubber band), so the sheet stays put
@@ -375,6 +419,12 @@ export default function PlayerSheet() {
     const distance = dragDistance.current;
     dragStartY.current = null;
     dragDistance.current = 0;
+    scrollParentRef.current = null;
+    // Hand the "was this a swipe?" flag over to the timestamp: the capture
+    // handler below swallows the browser's synthesised click for a beat,
+    // then every tap behaves normally again.
+    if (draggedRef.current) swipeEndedAt.current = Date.now();
+    draggedRef.current = false;
     if (distance > DISMISS_DISTANCE) {
       // Keep the dragged offset in place: the Dialog's slide-down exit now
       // takes the sheet out from wherever the finger let go instead of
@@ -392,11 +442,15 @@ export default function PlayerSheet() {
 
   const onStripClick = () => {
     // the click a browser synthesises after a swipe must not close twice
-    if (draggedRef.current) {
-      draggedRef.current = false;
-      return;
-    }
+    if (Date.now() - swipeEndedAt.current < 400) return;
     handleClose();
+  };
+
+  // A swipe over tappable content (title, cover, tabs) must not also fire
+  // that element's tap action — the capture phase beats every descendant's
+  // own click handler to it.
+  const onSheetClickCapture = (event: MouseEvent<HTMLDivElement>) => {
+    if (Date.now() - swipeEndedAt.current < 400) event.stopPropagation();
   };
 
   // ── Pieces ─────────────────────────────────────────────────────────────
@@ -919,6 +973,14 @@ export default function PlayerSheet() {
       <div
         ref={sheetRef}
         className="relative flex h-full min-h-0 flex-col"
+        // Phone: the top half of the sheet is a dismiss zone — a swipe that
+        // begins there drags the sheet like the handle strip does (see
+        // onSheetTouchStart); desktop is left to its own devices.
+        onTouchStart={onSheetTouchStart}
+        onTouchMove={onStripTouchMove}
+        onTouchEnd={onStripTouchEnd}
+        onTouchCancel={onStripTouchEnd}
+        onClickCapture={onSheetClickCapture}
       >
         {backdrop}
         {/* The motion cover spans the whole Now Playing card — one fitted
