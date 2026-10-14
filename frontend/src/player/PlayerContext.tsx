@@ -30,6 +30,7 @@ import type {
   TrackMeta,
 } from '../types/models';
 import { addSuggestions, recordPlay } from '../utils/library';
+import { cachedStreamSource, fillStreamCache } from '../utils/streamCache';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
 import { useMediaSession } from '../services/mediaSession';
@@ -497,8 +498,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const load = async () => {
       // Offline first, same chain as the WebView: the asset protocol where
       // one exists, the IndexedDB blob where it doesn't (browser / iOS), the
-      // live stream only when the song is not on the device at all.
+      // live stream only when the song is not on the device at all. Between
+      // the download and the network sits the stream cache (Tauri only): a
+      // copy parked in `<app data>/.cache` by an earlier play.
       let local = localAssetSource(current.videoId);
+      if (!local) local = cachedStreamSource(current.videoId);
       if (!local && !isTauri) {
         try {
           local = await localBlobSource(current.videoId);
@@ -510,6 +514,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const source: AudioSource = local ?? { url: streamUrl(current.videoId), kind: 'stream' };
       if (cancelled) return;
       sourceRef.current = source;
+      if (source.kind === 'stream') void fillStreamCache(current.videoId);
       audio.src = source.url;
       audio.load();
       const attempt = audio.play();
@@ -808,7 +813,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!videoId || !audio) return;
     setError(null);
     const source =
-      localAssetSource(videoId) ?? { url: streamUrl(videoId), kind: 'stream' as const };
+      localAssetSource(videoId) ??
+      cachedStreamSource(videoId) ??
+      { url: streamUrl(videoId), kind: 'stream' as const };
+    if (source.kind === 'stream') void fillStreamCache(videoId);
     sourceRef.current = source;
     setBuffering(true);
     audio.src = source.url;

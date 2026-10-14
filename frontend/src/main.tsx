@@ -94,6 +94,9 @@ async function bootstrap(): Promise<void> {
     // Battery reading for the low-battery auto mode — a device without one
     // simply keeps the mode manual (settings/battery.ts).
     startBatteryTracking(),
+    // Tauri: sweep week-old songs out of `<app data>/.cache` and index what
+    // is left, before the first track can play (no-op in the browser).
+    import('./utils/streamCache').then((m) => m.initStreamCache()),
   ]);
   // Downloaded / favorited flags feed the badges + "already saved" state of
   // every row, so they are seeded before the first render too.

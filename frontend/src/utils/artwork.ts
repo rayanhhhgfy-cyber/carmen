@@ -149,6 +149,39 @@ async function store(url: string, blob: Blob): Promise<void> {
   }
 }
 
+/** Total bytes of the covers kept in Cache Storage (Settings → Storage). */
+export async function artworkCacheSize(): Promise<number> {
+  try {
+    const cache = await artworkCache();
+    if (!cache) return 0;
+    let total = 0;
+    for (const request of await cache.keys()) {
+      const response = await cache.match(request);
+      if (response) total += (await response.blob()).size;
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Drops every cached cover (Settings → Storage → Clear). The cache handle
+ * itself stays open — emptied, not deleted — so later `store` writes need
+ * no re-open.
+ */
+export async function clearArtworkCache(): Promise<void> {
+  try {
+    const cache = await artworkCache();
+    if (!cache) return;
+    for (const request of await cache.keys()) {
+      await cache.delete(request);
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
 /**
  * source url -> `blob:` url already handed to an `<img>`.
  *
