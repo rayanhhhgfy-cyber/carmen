@@ -1,4 +1,5 @@
 import {
+  Button,
   Chip,
   Container,
   Divider,
@@ -11,12 +12,17 @@ import {
 } from '../components/ui';
 import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../utils/cn';
 import { ACCENTS, DEFAULT_ACCENT, FONTS, fontStack } from '../theme';
 import { useTheme } from '../theme/ThemeContext';
 import { useBattery } from '../settings/battery';
 import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
 import { appInfo, isTauri, type AppInfo } from '../platform/env';
+import { listDownloads } from '../db/repos/downloads';
+import { notify } from '../utils/downloadsStore';
+import { formatBytes } from '../utils/format';
+import { appCacheSize, clearAppCache } from '../utils/streamCache';
 import { LYRICS_PROVIDERS } from '../types/models';
 import type { ArtworkPlacement, CoverSize, FontId, LyricsSize, ThemeMode } from '../types/models';
 import {
@@ -153,6 +159,41 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  const navigate = useNavigate();
+
+  // Storage numbers (Settings → Storage): the cache on this platform plus
+  // what the offline catalogue adds up to. Read on mount — the manage page
+  // is its own route, so coming back from it re-runs this effect.
+  const [storage, setStorage] = useState<{ cache: number; count: number; bytes: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([appCacheSize().catch(() => 0), listDownloads().catch(() => [])])
+      .then(([cache, songs]) => {
+        if (cancelled) return;
+        setStorage({
+          cache,
+          count: songs.length,
+          bytes: songs.reduce((total, song) => total + (song.bytes || 0), 0),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const clearCache = async () => {
+    try {
+      await clearAppCache();
+      setStorage((current) => (current ? { ...current, cache: 0 } : current));
+      notify('success', 'Cache cleared');
+    } catch {
+      notify('error', 'Could not clear the cache');
+    }
+  };
 
   return (
     <Container maxWidth="sm" className="pb-8 pt-4 md:pt-6">
@@ -742,6 +783,47 @@ export default function SettingsPage() {
             <span className="text-xs leading-[1.4] text-muted">
               Songs longer than 1 hour are not offered by the API.
             </span>
+          </div>
+        </Section>
+
+        <Section title="Storage">
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">Cached streams</p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  {isTauri
+                    ? 'Songs played from the network are parked in the app cache, so replaying them needs no network. Copies older than a week are dropped automatically.'
+                    : 'Covers kept by the browser cache; streamed audio itself lives in the browser’s HTTP cache.'}
+                </span>
+              </div>
+              <div className="flex shrink-0 flex-row items-center gap-2">
+                <span className="text-sm font-semibold tabular-nums text-muted">
+                  {storage ? formatBytes(storage.cache) : '…'}
+                </span>
+                <Button color="error" className="shrink-0" onClick={() => void clearCache()}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <Divider />
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">Downloaded songs</p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  {storage
+                    ? `${storage.count} song${storage.count === 1 ? '' : 's'} · ${formatBytes(
+                        storage.bytes,
+                      )} on this device`
+                    : '…'}
+                </span>
+              </div>
+              <Button className="shrink-0" onClick={() => navigate('/settings/downloads')}>
+                Manage
+              </Button>
+            </div>
           </div>
         </Section>
 

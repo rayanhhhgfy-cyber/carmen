@@ -6,6 +6,7 @@ import ArtistPage from './pages/ArtistPage';
 import CollectionPage from './pages/CollectionPage';
 import HomePage from './pages/HomePage';
 import LibraryPage from './pages/LibraryPage';
+import ManageDownloadsPage from './pages/ManageDownloadsPage';
 import QueuePage from './pages/QueuePage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
@@ -88,6 +89,7 @@ export default function App() {
               <Route path="queue" element={<QueuePage />} />
               <Route path="library" element={<LibraryPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="settings/downloads" element={<ManageDownloadsPage />} />
               <Route path="collection/:kind/:id" element={<CollectionPage />} />
               {/* artist cards open here; `#/song/:videoId` is the target a
                   shared link folds into (see main.tsx) */}

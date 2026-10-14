@@ -421,15 +421,39 @@ export async function downloadLyrics(track: Track, meta: TrackMeta | null): Prom
   return 'track.json';
 }
 
-/** Removes a song's folder and its row (Library → Songs, long-press/menu). */
-export async function removeDownload(videoId: string): Promise<void> {
-  if (!(await getDownload(videoId))) return;
+/** Drops one offline copy completely — folder, row and every cached trace. */
+async function purgeOne(videoId: string): Promise<boolean> {
+  if (!(await getDownload(videoId))) return false;
   await deleteSongFolder(videoId);
   await deleteDownloadRow(videoId);
   markRemoved(videoId);
   invalidateLocalCaches(videoId);
   setFlag('downloaded', videoId, false);
+  return true;
+}
+
+/** Removes a song's folder and its row (Library → Songs, long-press/menu). */
+export async function removeDownload(videoId: string): Promise<void> {
+  if (!(await purgeOne(videoId))) return;
   setNotice('success', 'Removed the offline copy');
+}
+
+/**
+ * Removes many offline copies at once (Settings → Storage → manage
+ * downloads). The per-song notice of `removeDownload` would stack into
+ * spam here, so the lot reports as a single snackbar.
+ */
+export async function purgeDownloads(videoIds: string[]): Promise<void> {
+  let removed = 0;
+  for (const videoId of videoIds) {
+    if (await purgeOne(videoId)) removed += 1;
+  }
+  setNotice(
+    'success',
+    removed
+      ? `Removed ${removed} offline cop${removed === 1 ? 'y' : 'ies'}`
+      : 'Nothing to remove',
+  );
 }
 
 /**
