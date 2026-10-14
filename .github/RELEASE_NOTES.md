@@ -25,9 +25,36 @@
   accent** — it follows the color of the playing artwork.
 - The theme toggle moved out of the top bar; the app logo moved in. Web build
   ships proper favicon, Apple touch icon and social-preview images.
+- **Phone: swipe down anywhere in the top half of the player to close it** —
+  not just the little handle strip. Lists keep their own scrolling: only a
+  pull-down at the very top of a list dismisses, like native sheets.
+
+**Search**
+
+- **Search history**: the five most recent searches are kept and offered
+  first in the suggestion dropdown — history rows wear the clock icon, live
+  suggestions the magnifier.
+
+**Storage**
+
+- **Stream cache (Tauri)**: songs played from the network are parked in the
+  app's `.cache` folder, so replaying them works with no network at all.
+  Copies older than a week are dropped automatically when the app opens.
+- **Settings → Storage** now reports the cache size and the size of your
+  downloaded songs, with a **Clear** button for the cache.
+- **Manage downloads** (Settings → Storage → Manage): a dedicated page to
+  pick exactly which songs to delete from the device, with **Select all** /
+  **Deselect all**.
+
+**Mobile**
+
+- **Portrait only**: rotation is disabled on Android and iOS.
 
 **Fixes**
 
+- **Share links from the installed app** now point at
+  `https://carmen.z44d.com/?song=…` instead of the useless
+  `tauri://localhost/?song=…` the WebView used to hand out.
 - **iOS: settings and saves now persist across restarts** — the capability set
   was never granted for the iOS target, so every permission was silently
   denied.
