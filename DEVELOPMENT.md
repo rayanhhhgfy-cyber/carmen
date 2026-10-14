@@ -514,6 +514,29 @@ default" for the app (Settings → Apps → Carmen → Open by default), and may
 ask once ("Open with Carmen") before that. The `?search=` / `?playlist=`
 link shapes resolve the same way.
 
+### Portrait-only orientation (mobile builds)
+
+The phone builds never rotate:
+
+- **Android** — `android:screenOrientation="portrait"` on the main activity
+  in `src-tauri/gen/android/app/src/main/AndroidManifest.xml` (committed, so
+  CI needs nothing extra).
+- **iOS** — Tauri exposes no config key for it, and `src-tauri/gen/apple/`
+  is regenerated (not committed), so the `UISupportedInterfaceOrientations*`
+  keys in the generated `Info.plist` are forced to portrait-only by the
+  "Lock orientation to portrait" step in `.github/workflows/build.yml`.
+  For a local `tauri ios build`, apply the same patch after
+  `npx tauri ios init --ci`:
+
+  ```bash
+  PLIST="$(find src-tauri/gen/apple -maxdepth 3 -name Info.plist -print -quit)"
+  for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ipad"; do
+    /usr/libexec/PlistBuddy -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :$KEY array" "$PLIST"
+    /usr/libexec/PlistBuddy -c "Add :$KEY:0 string UIInterfaceOrientationPortrait" "$PLIST"
+  done
+  ```
+
 ---
 
 ## 10. CI/CD (GitHub Actions)
