@@ -287,11 +287,80 @@ def get_album(browseId: str):
     """
     Get information and tracks of an album. browseId must start with "MPRE".
 
+    Tracklists are remapped onto the album's ``audioPlaylistId`` when the
+    browse response serves official music videos (OMV) instead of the studio
+    audio (ATV) — so opening an album anywhere yields the songs, exactly like
+    YouTube Music's own app.
+
     :param browseId: browse id of the album
 
     https://ytmusicapi.readthedocs.io/en/stable/reference/browsing.html#ytmusicapi.YTMusic.get_album
     """
-    return ytm.get_album(browseId)
+    return _prefer_audio_tracklist(ytm.get_album(browseId))
+
+
+def _prefer_audio_tracklist(album: dict):
+    """
+    Album pages sometimes list ``MUSIC_VIDEO_TYPE_OMV`` entries — the official
+    music videos — while the album's ``audioPlaylistId`` playlist carries the
+    ATVs (studio audio) the app must play. Here the album's tracklist is
+    rewritten in place from that audio playlist, position by position.
+    """
+    tracks = album.get("tracks") or []
+    if not tracks:
+        return album
+    audio_only = all(t.get("videoType") == "MUSIC_VIDEO_TYPE_ATV" for t in tracks)
+    if audio_only:
+        return album
+
+    audio_playlist_id = album.get("audioPlaylistId")
+    if not audio_playlist_id:
+        return album
+    try:
+        playlist = ytm.get_playlist(
+            audio_playlist_id, limit=len(tracks), related=False, suggestions_limit=0
+        )
+    except Exception:  # playlist gone/private — serve the page as-is
+        return album
+    audio_tracks = playlist.get("tracks") or []
+    if not audio_tracks:
+        return album
+
+    if len(audio_tracks) != len(tracks):
+        # Positions can drift (bonus tracks, region extras) — fall back to a
+        # title match, keeping positional mapping as the baseline.
+        audio_by_title = {t.get("title"): t for t in audio_tracks}
+        for pos, album_track in enumerate(tracks):
+            audio_track = (
+                audio_tracks[pos]
+                if pos < len(audio_tracks)
+                and album_track.get("title") == audio_tracks[pos].get("title")
+                else audio_by_title.get(album_track.get("title"))
+            )
+            _remap_track(album_track, audio_track)
+    else:
+        for album_track, audio_track in zip(tracks, audio_tracks):
+            _remap_track(album_track, audio_track)
+    return album
+
+
+def _remap_track(album_track: dict, audio_track: dict | None):
+    """Point one album page row at its studio-audio counterpart if available."""
+    if not audio_track or not audio_track.get("videoId"):
+        return
+    if album_track.get("videoId") == audio_track.get("videoId"):
+        album_track["videoType"] = "MUSIC_VIDEO_TYPE_ATV"
+        return
+    album_track["videoId"] = audio_track["videoId"]
+    if audio_track.get("creditsBrowseId"):
+        album_track["creditsBrowseId"] = audio_track["creditsBrowseId"]
+    if audio_track.get("duration_seconds"):
+        album_track["duration_seconds"] = audio_track["duration_seconds"]
+        if audio_track.get("duration"):
+            album_track["duration"] = audio_track["duration"]
+    if audio_track.get("album"):
+        album_track["album"] = audio_track["album"]
+    album_track["videoType"] = "MUSIC_VIDEO_TYPE_ATV"
 
 
 def get_song(videoId: str, signatureTimestamp: int | None = None):
