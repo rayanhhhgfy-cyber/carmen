@@ -4,10 +4,11 @@ import os
 import re
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
 from ytmusicapi import YTMusic
+from ytmusicapi.parsers.browsing import parse_album
 
 from .filters import (
     MAX_DURATION_SECONDS,
@@ -179,11 +180,61 @@ def get_artist_albums(
     :param channelId: channel id of the artist
     :param params: params obtained from get_artist() or artist_shelf_params()
     :param limit: number of albums to return
-    :param order: order of albums to return. Possible values: "Recency", "Popularity", "Alphabetical order"
+    :param order: order of albums to return. Possible values: "Recency", "Popularity",
+        "Alphabetical order" (ignored under the new snapshot page layout)
 
     https://ytmusicapi.readthedocs.io/en/stable/reference/browsing.html#ytmusicapi.YTMusic.get_artist_albums
     """
-    return ytm.get_artist_albums(channelId, params, limit, order)
+    try:
+        return ytm.get_artist_albums(channelId, params, limit, order)
+    except (KeyError, TypeError):
+        # New-layout tokens yield a "full list" snapshot page (grid of two-row
+        # items) that ytmusicapi's grid parser cannot read, or YT silently
+        # ignores the params and serves the artist page instead.
+        albums = _parse_album_snapshot(channelId, params)
+        if not albums:
+            decoded = unquote(params)
+            if decoded != params:
+                albums = _parse_album_snapshot(channelId, decoded)
+        if not albums:
+            return []
+        return albums if limit is None else albums[:limit]
+
+
+def _parse_album_snapshot(channelId: str, params: str) -> list:
+    """Parse album cards out of a snapshot-style browse response (tolerant)."""
+    response = ytm._send_request("browse", {"browseId": channelId, "params": params})
+    albums: list = []
+    seen: set[str] = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            item = node.get("musicTwoRowItemRenderer")
+            if isinstance(item, dict):
+                browse_id = (
+                    item.get("navigationEndpoint", {})
+                    .get("browseEndpoint", {})
+                    .get("browseId")
+                )
+                if (
+                    isinstance(browse_id, str)
+                    and browse_id.startswith("MPREb_")
+                    and browse_id not in seen
+                ):
+                    try:
+                        albums.append(parse_album(item))
+                        seen.add(browse_id)
+                    except Exception:  # card we can't read — skip it
+                        pass
+                return  # two-row items own their subtrees
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(response)
+    return albums
 
 
 def get_user(channelId: str):
