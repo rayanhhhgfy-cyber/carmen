@@ -103,6 +103,73 @@ def get_artist(channelId: str):
     return ytm.get_artist(channelId)
 
 
+def artist_shelf_params(channelId: str, shelf: str) -> str | None:
+    """
+    Extract the "view more" params token for one artist shelf ("Albums",
+    "Singles", ...) directly from the raw browse response.
+
+    get_artist() currently raises KeyError on the new visual-header artist
+    layout (no ytmusicapi release parses it yet), so this reads the shelf
+    headers itself and works across both layouts.
+    """
+    response = ytm._send_request("browse", {"browseId": channelId})
+    tokens: list[str] = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            contents = (
+                node.get("musicCarouselShelfRenderer")
+                or node.get("musicShelfRenderer")
+            )
+            if isinstance(contents, dict) and _shelf_title(contents) == shelf:
+                token = _more_content_params(contents)
+                if token:
+                    tokens.append(token)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    def _shelf_title(contents) -> str | None:
+        header = contents.get("header")
+        if not isinstance(header, dict):
+            return None
+        for value in header.values():
+            if not isinstance(value, dict):
+                continue
+            title = value.get("title")
+            if isinstance(title, dict):
+                runs = title.get("runs")
+                if runs and isinstance(runs, list):
+                    return runs[0].get("text")
+                return title.get("simpleText")
+        return None
+
+    def _more_content_params(contents) -> str | None:
+        header = contents.get("header")
+        if not isinstance(header, dict):
+            return None
+        for value in header.values():
+            if not isinstance(value, dict):
+                continue
+            button = value.get("moreContentButton")
+            if not isinstance(button, dict):
+                continue
+            token = (
+                button.get("buttonRenderer", {})
+                .get("navigationEndpoint", {})
+                .get("browseEndpoint", {})
+                .get("params")
+            )
+            if token:
+                return token
+        return None
+
+    walk(response)
+    return tokens[0] if tokens else None
+
+
 def get_artist_albums(
     channelId: str, params: str, limit: int | None = 100, order: str | None = None
 ):
@@ -110,7 +177,7 @@ def get_artist_albums(
     Get the full list of an artist's albums, singles, or shows.
 
     :param channelId: channel id of the artist
-    :param params: params obtained from get_artist()
+    :param params: params obtained from get_artist() or artist_shelf_params()
     :param limit: number of albums to return
     :param order: order of albums to return. Possible values: "Recency", "Popularity", "Alphabetical order"
 

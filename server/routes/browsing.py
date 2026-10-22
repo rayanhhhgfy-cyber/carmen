@@ -9,6 +9,7 @@ from .. import state
 from ..cache import cached
 from ..core import (
     LYRICS_PROVIDERS,
+    artist_shelf_params,
     get_album,
     get_album_browse_id,
     get_animated_artwork,
@@ -189,17 +190,24 @@ async def artist(channelId: str):
 @sanitized
 @cached("artist_albums", ttl=86400, id_arg="channelId", extra_args=("params",))
 async def artist_albums(
-    channelId: str, params: str, limit: int = 100, order: str | None = None
+    channelId: str, params: str | None = None, limit: int = 100, order: str | None = None
 ):
     """
     Get the full list of an artist's albums, singles, or shows.
 
     - **channelId**: YouTube channel ID of the artist
-    - **params**: params obtained from get_artist()
+    - **params**: params obtained from get_artist(); auto-derived from the
+        artist page's Albums shelf when omitted (artists without one return [])
     - **limit**: number of albums to return (default: 100)
     - **order**: "Recency", "Popularity", or "Alphabetical order"
     """
     loop = asyncio.get_running_loop()
+    if params is None:
+        params = await loop.run_in_executor(
+            executor, partial(artist_shelf_params, channelId, "Albums")
+        )
+        if params is None:
+            return []  # artist has no albums shelf to page through
     return await loop.run_in_executor(
         executor, partial(get_artist_albums, channelId, params, limit, order)
     )
