@@ -30,6 +30,7 @@ import type {
   TrackMeta,
 } from '../types/models';
 import { addSuggestions, recordPlay } from '../utils/library';
+import { moveItem } from '../utils/reorder';
 import { cachedStreamSource, fillStreamCache } from '../utils/streamCache';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
@@ -70,6 +71,7 @@ export interface PlayerContextValue {
   addToQueue: (rawTrack: unknown) => void;
   playNext: (rawTrack: unknown) => void;
   removeFromQueue: (index: number) => void;
+  reorderQueue: (from: number, to: number) => void;
   clearQueue: () => void;
   togglePlay: () => void;
   next: (auto?: boolean) => void;
@@ -366,6 +368,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const removeFromQueue = useCallback((index: number) => {
     setQueue((previous) => previous.filter((_, position) => position !== index));
+  }, []);
+
+  const reorderQueue = useCallback((from: number, to: number) => {
+    setQueue((previous) => {
+      if (
+        from === to ||
+        from < 0 ||
+        to < 0 ||
+        from >= previous.length ||
+        to >= previous.length
+      ) {
+        return previous;
+      }
+      return moveItem(previous, from, to);
+    });
   }, []);
 
   const clearQueue = useCallback(() => setQueue([]), []);
@@ -900,6 +917,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      reorderQueue,
       clearQueue,
       togglePlay,
       next,
@@ -929,6 +947,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      reorderQueue,
       clearQueue,
       togglePlay,
       next,
