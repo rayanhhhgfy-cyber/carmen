@@ -68,6 +68,40 @@ export async function apiGet(path: string, params: QueryParams = {}, signal?: Ab
   return payload;
 }
 
+/**
+ * POST a JSON body to the backend and parse the JSON response.
+ *
+ * Same error plumbing as `apiGet`: network failures and non-2xx answers
+ * surface as `ApiError` carrying the server's `detail` message.
+ *
+ * @param path e.g. "/share/playlists"
+ * @param body JSON-serializable request body
+ * @param signal abort signal
+ */
+export async function apiPostJson(path: string, body: unknown, signal?: AbortSignal): Promise<any> {
+  let response: Response;
+  try {
+    response = await fetch(apiBase() + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    });
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') throw error;
+    throw new ApiError('Cannot reach the server', 0, null);
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail =
+      (payload && (payload.detail || payload.message)) ||
+      `Request failed (${response.status})`;
+    throw new ApiError(String(detail), response.status, payload);
+  }
+  return payload;
+}
+
 /** Absolute URL of the proxied audio stream for a video. */
 export function streamUrl(videoId: string): string {
   return `${apiBase()}/stream?vidId=${encodeURIComponent(videoId)}`;

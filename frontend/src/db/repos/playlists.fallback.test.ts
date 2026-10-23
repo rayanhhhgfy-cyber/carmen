@@ -61,7 +61,7 @@ function track(videoId: string, title: string, artist = 'Artist'): Track {
 
 function conversionResult(videoId: string, title: string) {
   return {
-    spotify: {
+    source: {
       id: videoId,
       title,
       artists: ['Artist'],
@@ -69,8 +69,9 @@ function conversionResult(videoId: string, title: string) {
       album: 'Test Album',
       artwork: null,
       duration_ms: 180000,
-      spotify_url: `https://open.spotify.com/track/${videoId}`,
+      url: `https://open.spotify.com/track/${videoId}`,
       explicit: false,
+      source: 'spotify-playlist',
     },
     status: 'matched' as const,
     confidence: 0.95,

@@ -1,5 +1,8 @@
 import { Button } from './ui';
-import TrackList, { EmptyState } from './TrackList';
+import TrackRow from './TrackRow';
+import { EmptyState } from './TrackList';
+import { GripIcon } from './NPQueue';
+import { useDragReorder } from '../hooks/useDragReorder';
 import { usePlayer } from '../player/PlayerContext';
 import { ShuffleIcon, TrashIcon } from './icons';
 
@@ -9,6 +12,10 @@ const SMALL_BUTTON = { padding: '4px 18px', fontSize: '0.8125rem' } as const;
 /** Up-next list of the active queue. */
 export default function QueueTab() {
   const player = usePlayer();
+  const drag = useDragReorder({
+    itemCount: player.queue.length,
+    onMove: player.reorderQueue,
+  });
 
   return (
     <div className="h-full overflow-y-auto px-1 py-1">
@@ -47,7 +54,31 @@ export default function QueueTab() {
       </div>
 
       {player.queue.length ? (
-        <TrackList tracks={player.queue} showDividers={false} />
+        <div ref={drag.containerRef}>
+          {player.queue.map((track, index) => (
+            <div
+              key={`${track.videoId}-${index}`}
+              {...drag.rowProps(index)}
+              className="flex items-center"
+            >
+              {/* Drag handle — outside the row itself, so grabbing it can
+                  never trigger the row's play action. */}
+              <button
+                type="button"
+                aria-label={`Reorder ${track.title} in queue`}
+                title="Drag to reorder"
+                {...drag.handleProps(index)}
+                onClick={(event) => event.stopPropagation()}
+                className="inline-grid shrink-0 cursor-grab place-items-center self-center rounded-full p-1 text-muted transition-colors hover:bg-hover active:cursor-grabbing"
+              >
+                <GripIcon />
+              </button>
+              <div className="min-w-0 flex-1">
+                <TrackRow track={track} contextTracks={player.queue} />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <EmptyState
           title="Your queue is empty"

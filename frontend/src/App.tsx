@@ -11,6 +11,7 @@ import QueuePage from './pages/QueuePage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
 import SongPage from './pages/SongPage';
+import SharedPlaylistGate from './components/SharedPlaylistGate';
 import UpdateDialog from './components/UpdateDialog';
 import { loadAppState, saveAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/appState';
 import { PlayerProvider } from './player/PlayerContext';
@@ -82,6 +83,9 @@ export default function App() {
           {/* Tauri-only: asks to update when GitHub's latest tag is newer
               than this build (no-op in the browser). */}
           <UpdateDialog />
+          {/* A `?pl=` share link opened the app: resolve the code and ask
+              to import the shared playlist (no-op without the param). */}
+          <SharedPlaylistGate />
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
