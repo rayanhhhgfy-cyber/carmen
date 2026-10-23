@@ -216,3 +216,175 @@ def test_convert_search_error_marks_track_error(client):
     statuses = [p["result"]["status"] for e, p in events if e == "progress"]
     assert statuses == ["not_found", "not_found", "not_found"]
     assert events[-1][1]["summary"]["not_found"] == 3
+
+
+# ── Universal import: GET /convert/resolve + POST /convert/to-ytmusic ─────
+
+from server import importing as _importing  # noqa: E402
+
+APPLE_ALBUM_URL = "https://music.apple.com/us/album/thriller/269572838"
+YT_WATCH_URL = "https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+
+
+def fake_resolve_apple(url):
+    assert url == APPLE_ALBUM_URL
+    return {
+        "source": {
+            "kind": "apple-album", "id": "269572838", "name": "Thriller",
+            "owner": "Michael Jackson", "artwork": "https://is1.mzstatic.com/600x600bb.jpg",
+            "url": APPLE_ALBUM_URL, "track_count": 2,
+        },
+        "tracks": [
+            {"id": "111", "title": "Blinding Lights", "artists": ["The Weeknd"],
+             "artist": "The Weeknd", "album": "Thriller", "artwork": None,
+             "duration_ms": 202_000, "url": "https://music.apple.com/song/111",
+             "explicit": False, "isrc": None},
+            {"id": "222", "title": "Obscure B-Side Nobody Covered", "artists": ["Unknown Act"],
+             "artist": "Unknown Act", "album": "Thriller", "artwork": None,
+             "duration_ms": 180_000, "url": "https://music.apple.com/song/222",
+             "explicit": False, "isrc": None},
+        ],
+    }
+
+
+def fake_resolve_youtube(url):
+    assert url == YT_WATCH_URL
+    return {
+        "source": {
+            "kind": "youtube-video", "id": "dQw4w9WgXcQ",
+            "name": "Never Gonna Give You Up", "owner": "Rick Astley",
+            "artwork": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+            "url": YT_WATCH_URL, "track_count": 1,
+        },
+        "tracks": [
+            {"id": "dQw4w9WgXcQ", "videoId": "dQw4w9WgXcQ",
+             "title": "Never Gonna Give You Up", "artists": ["Rick Astley"],
+             "artist": "Rick Astley", "album": "Whenever You Need Somebody",
+             "artwork": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+             "duration_ms": 213_000, "url": YT_WATCH_URL, "explicit": False,
+             "isrc": None,
+             "thumbnails": [{"url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"}]},
+        ],
+    }
+
+
+@pytest.fixture()
+def universal_client():
+    app = FastAPI()
+    app.include_router(convert_router)
+    with patch("server.routes.convert.search", side_effect=fake_search):
+        yield TestClient(app)
+
+
+def test_resolve_universal_ok(universal_client):
+    with patch.object(_importing, "resolve_import", fake_resolve_apple):
+        response = universal_client.get("/convert/resolve", params={"url": APPLE_ALBUM_URL})
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["source"]["kind"] == "apple-album"
+    assert payload["source"]["name"] == "Thriller"
+    assert [t["title"] for t in payload["tracks"]] == [
+        "Blinding Lights", "Obscure B-Side Nobody Covered",
+    ]
+
+
+def test_resolve_universal_bad_url_is_400(universal_client):
+    def bad(url):
+        raise _importing.ImportUrlError("That doesn't look like a link.")
+
+    with patch.object(_importing, "resolve_import", bad):
+        response = universal_client.get("/convert/resolve", params={"url": "junk"})
+    assert response.status_code == 400
+    assert "link" in response.json()["detail"]
+
+
+def test_resolve_universal_apple_playlist_is_actionable_400(universal_client):
+    def unsupported(url):
+        raise _importing.ImportUnsupportedError(_importing.APPLE_PLAYLIST_MESSAGE)
+
+    with patch.object(_importing, "resolve_import", unsupported):
+        response = universal_client.get(
+            "/convert/resolve",
+            params={"url": "https://music.apple.com/us/playlist/x/pl.u-abc"},
+        )
+    assert response.status_code == 400
+    assert "developer token" in response.json()["detail"]
+
+
+def test_resolve_universal_not_found_is_404(universal_client):
+    def missing(url):
+        raise _importing.ImportNotFoundError("gone")
+
+    with patch.object(_importing, "resolve_import", missing):
+        response = universal_client.get("/convert/resolve", params={"url": APPLE_ALBUM_URL})
+    assert response.status_code == 404
+
+
+def test_convert_universal_streams_source_results(universal_client):
+    with patch.object(_importing, "resolve_import", fake_resolve_apple):
+        response = universal_client.post(
+            "/convert/to-ytmusic", json={"url": APPLE_ALBUM_URL}
+        )
+    assert response.status_code == 200, response.text
+    events = parse_sse(response.text)
+    kinds = [event for event, _ in events]
+    assert kinds[0] == "start"
+    assert kinds[-1] == "done"
+    assert kinds.count("progress") == 2
+
+    start = events[0][1]
+    assert start["total"] == 2
+    assert start["source"]["kind"] == "apple-album"
+
+    progress = [p for e, p in events if e == "progress"]
+    first = progress[0]["result"]
+    assert "spotify" not in first  # universal results carry `source`, not `spotify`
+    assert first["source"]["title"] == "Blinding Lights"
+    assert first["status"] == "matched"
+    assert first["match"]["videoId"] == "yt1"
+    assert progress[1]["result"]["status"] == "not_found"
+    assert events[-1][1]["summary"] == {
+        "total": 2, "matched": 1, "approximate": 0, "not_found": 1, "error": 0,
+    }
+
+
+def test_convert_universal_youtube_skips_matching(universal_client):
+    def forbidden_search(query, **kwargs):
+        raise AssertionError("YouTube sources must not be searched")
+
+    app = FastAPI()
+    app.include_router(convert_router)
+    with (
+        patch.object(_importing, "resolve_import", fake_resolve_youtube),
+        patch("server.routes.convert.search", side_effect=forbidden_search),
+    ):
+        client = TestClient(app)
+        response = client.post("/convert/to-ytmusic", json={"url": YT_WATCH_URL})
+
+    assert response.status_code == 200, response.text
+    events = parse_sse(response.text)
+    progress = [p for e, p in events if e == "progress"]
+    assert len(progress) == 1
+    result = progress[0]["result"]
+    assert result["status"] == "matched"
+    assert result["confidence"] == 1.0
+    assert result["error"] is None
+    assert result["match"]["videoId"] == "dQw4w9WgXcQ"
+    assert result["source"]["title"] == "Never Gonna Give You Up"
+    assert events[-1][1]["summary"]["matched"] == 1
+
+
+def test_convert_universal_bad_url_is_400_before_stream(universal_client):
+    def bad(url):
+        raise _importing.ImportUrlError("nope")
+
+    with patch.object(_importing, "resolve_import", bad):
+        response = universal_client.post("/convert/to-ytmusic", json={"url": "junk"})
+    assert response.status_code == 400
+
+
+def test_convert_universal_rejects_bad_limit(universal_client):
+    response = universal_client.post(
+        "/convert/to-ytmusic", json={"url": APPLE_ALBUM_URL, "limit": 0}
+    )
+    assert response.status_code == 422
