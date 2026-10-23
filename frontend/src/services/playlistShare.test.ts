@@ -43,6 +43,10 @@ vi.mock('../api', () => ({
   apiGet: apiGetMock,
   apiPostJson: apiPostJsonMock,
   apiBase: () => 'https://api.test',
+  serverOutdatedMessage: (feature: string) =>
+    `${feature} isn't available on this Carmen server yet — api.test is running an older Carmen build without the import & sharing endpoints. Update the server to the latest Carmen and try again. Browsing and playback are unaffected.`,
+  isOutdatedServerMessage: (text: unknown) =>
+    typeof text === 'string' && text.includes("isn't available on this Carmen server yet"),
   ApiError: class ApiError extends Error {
     status: number;
     payload: unknown;
@@ -59,12 +63,38 @@ import { fallbackSet } from '../db/repos/fallback';
 import { createPlaylist, listPlaylists, listPlaylistTracks } from '../db/repos/playlists';
 import type { Playlist, Track } from '../types/models';
 import {
+  __resetShareRegistryCacheForTests,
   buildPlaylistShareUrl,
+  decodeSharePayload,
+  encodeSharePayload,
   getStoredShareCode,
   importSharedPlaylist,
   parsePlaylistShareCode,
+  resolveSharedPlaylist,
   sharePlaylistOnline,
 } from './playlistShare';
+
+/** A fetch stub whose registry probe answers JSON (registry exists). */
+function registryPresentFetch() {
+  return vi.fn(async (..._args: unknown[]) => ({
+    status: 404,
+    ok: false,
+    text: async () => JSON.stringify({ detail: 'Shared playlist not found' }),
+    json: async () => ({ detail: 'Shared playlist not found' }),
+  }));
+}
+
+/** A fetch stub whose registry probe answers the SPA HTML (no registry). */
+function registryAbsentFetch() {
+  return vi.fn(async (..._args: unknown[]) => ({
+    status: 200,
+    ok: true,
+    text: async () => '<!doctype html><html><head><title>Carmen</title></head></html>',
+    json: async () => {
+      throw new Error('not json');
+    },
+  }));
+}
 
 const CODE = 'pl_AbC123xYz9qw';
 
@@ -94,6 +124,10 @@ beforeEach(() => {
   fallbackSet('favoriteIds', []);
   apiGetMock.mockReset();
   apiPostJsonMock.mockReset();
+  __resetShareRegistryCacheForTests();
+  // Default probe answer: the registry exists (JSON), so the registry
+  // tests below exercise the server path as before Worker D.
+  vi.stubGlobal('fetch', registryPresentFetch());
   // Web origin for the URL builder/parser (not Tauri in the test env).
   vi.stubGlobal('window', {
     location: {
@@ -202,6 +236,36 @@ describe('sharePlaylistOnline', () => {
     apiPostJsonMock.mockResolvedValue({});
     await expect(sharePlaylistOnline(playlist, [])).rejects.toThrow(/share code/);
   });
+
+  it('maps a 405 from an outdated server to the outdated message, not "Method Not Allowed"', async () => {
+    apiPostJsonMock.mockRejectedValue(
+      Object.assign(new Error('Method Not Allowed'), { status: 405 }),
+    );
+    await expect(sharePlaylistOnline(playlist, [])).rejects.toThrow(
+      /Playlist sharing isn't available on this Carmen server yet — api\.test is running an older Carmen build/,
+    );
+  });
+
+  it('maps a null payload (SPA fallback) to the outdated message', async () => {
+    apiPostJsonMock.mockResolvedValue(null);
+    await expect(sharePlaylistOnline(playlist, [])).rejects.toThrow(
+      /Playlist sharing isn't available on this Carmen server yet/,
+    );
+  });
+});
+
+describe('resolveSharedPlaylist', () => {
+  it('throws the outdated message on a null payload instead of fabricating an empty playlist', async () => {
+    apiGetMock.mockResolvedValue(null);
+    await expect(resolveSharedPlaylist(CODE)).rejects.toThrow(
+      /Playlist sharing isn't available on this Carmen server yet — api\.test is running an older Carmen build/,
+    );
+  });
+
+  it('throws the outdated message on a payload with no tracks, name or code', async () => {
+    apiGetMock.mockResolvedValue({ unexpected: true });
+    await expect(resolveSharedPlaylist(CODE)).rejects.toThrow(/older Carmen build/);
+  });
 });
 
 describe('importSharedPlaylist', () => {
@@ -251,5 +315,142 @@ describe('importSharedPlaylist', () => {
     expect(await listPlaylistTracks(playlistId)).toEqual([]);
     // Silence the unused warning for the seeding helper in this branch.
     expect(typeof createPlaylist).toBe('function');
+  });
+});
+
+/* ── self-contained payload shares (plz_…) ─────────────────────────────── */
+
+describe('payload share codec', () => {
+  const richSong: Track = {
+    ...track('v1', 'One', 'Artist'),
+    artists: ['Artist', 'Guest'],
+    artist: 'Artist, Guest',
+    albumName: 'Alb',
+    duration: '3:22',
+    durationSeconds: 202,
+    artwork: 'https://i.ytimg.com/vi/v1/maxresdefault.jpg',
+    isExplicit: true,
+  };
+
+  it('round-trips name, description and the track fields normalizeTrack needs', async () => {
+    expect(typeof CompressionStream).toBe('function');
+    const token = await encodeSharePayload(
+      { name: 'Payload Mix', description: 'No server needed', artwork: richSong.artwork },
+      [richSong, track('v2', 'Two', 'Duo')],
+    );
+    expect(token.startsWith('plz_')).toBe(true);
+
+    const decoded = await decodeSharePayload(token);
+    expect(decoded.code).toBe(token);
+    expect(decoded.name).toBe('Payload Mix');
+    expect(decoded.description).toBe('No server needed');
+    expect(decoded.tracks).toHaveLength(2);
+    expect(decoded.tracks[0]).toMatchObject({
+      videoId: 'v1',
+      title: 'One',
+      artist: 'Artist, Guest',
+      albumName: 'Alb',
+      durationSeconds: 202,
+      artwork: 'https://i.ytimg.com/vi/v1/maxresdefault.jpg',
+      isExplicit: true,
+    });
+    expect(decoded.tracks[0]?.artists).toEqual(['Artist', 'Guest']);
+    expect(decoded.tracks[1]).toMatchObject({ videoId: 'v2', title: 'Two', artist: 'Duo' });
+  });
+
+  it('parses plz_ tokens bare and from ?pl= URLs', () => {
+    const token = 'plz_AbC-123_xYz';
+    expect(parsePlaylistShareCode(token)).toBe(token);
+    expect(parsePlaylistShareCode(`https://carmen.example/?pl=${token}`)).toBe(token);
+    expect(parsePlaylistShareCode(`https://carmen.example/?x=1&pl=${token}#/library`)).toBe(token);
+    // Registry codes still parse, and plz_ is not swallowed by pl_ patterns.
+    expect(parsePlaylistShareCode(CODE)).toBe(CODE);
+  });
+
+  it('resolves a plz_ token locally without touching the registry', async () => {
+    const token = await encodeSharePayload({ name: 'Local Mix', description: null, artwork: null }, [
+      track('v9', 'Nine'),
+    ]);
+    const resolved = await resolveSharedPlaylist(token);
+    expect(resolved.name).toBe('Local Mix');
+    expect(resolved.tracks.map((entry) => entry.videoId)).toEqual(['v9']);
+    expect(apiGetMock).not.toHaveBeenCalled();
+    // …and via a full share URL, the way the gate / dialog pass it in.
+    const viaUrl = await resolveSharedPlaylist(`https://carmen.example/?pl=${token}`);
+    expect(viaUrl.name).toBe('Local Mix');
+    expect(apiGetMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a damaged payload token', async () => {
+    await expect(decodeSharePayload('plz_not-base64-gzip!!!'.replace(/!/g, 'A'))).rejects.toThrow(
+      /damaged|newer browser/,
+    );
+    await expect(resolveSharedPlaylist('plz_AAAA')).rejects.toThrow(/damaged|newer browser/);
+  });
+});
+
+describe('sharePlaylistOnline probe selection', () => {
+  const playlist: Playlist = {
+    id: 9,
+    name: 'Probe Mix',
+    description: 'probe',
+    coverVideoId: null,
+    isFavorite: false,
+    position: 0,
+    trackCount: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  it('uses the registry when the probe answers JSON (404)', async () => {
+    vi.stubGlobal('fetch', registryPresentFetch());
+    apiPostJsonMock.mockResolvedValue({ code: CODE });
+    const result = await sharePlaylistOnline(playlist, [track('v1', 'One')]);
+    expect(result).toEqual({ code: CODE, url: `https://carmen.example/?pl=${CODE}` });
+    expect(apiPostJsonMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to a self-contained payload link when the probe answers HTML', async () => {
+    vi.stubGlobal('fetch', registryAbsentFetch());
+    const result = await sharePlaylistOnline(playlist, [track('v1', 'One'), track('v2', 'Two')]);
+    expect(apiPostJsonMock).not.toHaveBeenCalled();
+    expect(result.code.startsWith('plz_')).toBe(true);
+    expect(result.url).toBe(`https://carmen.example/?pl=${result.code}`);
+    expect(result.url.length).toBeLessThanOrEqual(8000);
+    const decoded = await decodeSharePayload(result.code);
+    expect(decoded.name).toBe('Probe Mix');
+    expect(decoded.tracks.map((entry) => entry.videoId)).toEqual(['v1', 'v2']);
+  });
+
+  it('falls back to a payload link when the probe cannot reach the server', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('network down');
+      }),
+    );
+    const result = await sharePlaylistOnline(playlist, [track('v1', 'One')]);
+    expect(result.code.startsWith('plz_')).toBe(true);
+    expect(apiPostJsonMock).not.toHaveBeenCalled();
+  });
+
+  it('throws a clear error when the payload link would exceed the 8000-char cap', async () => {
+    vi.stubGlobal('fetch', registryAbsentFetch());
+    // Incompressible titles: a seeded pseudo-random generator keeps the
+    // fixture deterministic while defeating gzip.
+    let seed = 42;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const songs = Array.from({ length: 120 }, (_, index) => {
+      const title = Array.from({ length: 90 }, () => alphabet[Math.floor(rand() * alphabet.length)]).join('');
+      return track(`vid${index}`, title);
+    });
+    await expect(sharePlaylistOnline(playlist, songs)).rejects.toThrow(
+      /too large to share as a self-contained link without a Carmen server/,
+    );
+    expect(apiPostJsonMock).not.toHaveBeenCalled();
   });
 });
