@@ -131,7 +131,7 @@ export default function SharePlaylistDialog({
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>
         Share playlist
-        <span className="block truncate text-xs font-normal leading-[1.4] text-muted">
+        <span className="block break-words text-xs font-normal leading-[1.4] text-muted">
           {playlist.name} · {songs.length} track{songs.length === 1 ? '' : 's'}
         </span>
         <IconButton aria-label="Close" onClick={onClose} className="!absolute right-2 top-2">
@@ -187,14 +187,28 @@ export default function SharePlaylistDialog({
               </span>
             </label>
 
-            <p className="m-0 text-sm leading-[1.43] text-muted">
-              Share code: <span className="font-mono font-semibold text-body">{state.code}</span>
-            </p>
+            {state.code.startsWith('plz_') ? (
+              <>
+                <p className="m-0 text-center text-sm leading-[1.43] text-muted">
+                  Self-contained link — works without a Carmen server
+                </p>
+                <span className="text-center text-xs leading-[1.4] text-disabled">
+                  This link carries the playlist inside it — anyone who opens it
+                  gets this exact snapshot of the playlist.
+                </span>
+              </>
+            ) : (
+              <>
+                <p className="m-0 text-sm leading-[1.43] text-muted">
+                  Share code: <span className="font-mono font-semibold text-body">{state.code}</span>
+                </p>
 
-            <span className="text-center text-xs leading-[1.4] text-disabled">
-              Re-sharing this playlist updates the same link — anyone who has it
-              always opens the latest version.
-            </span>
+                <span className="text-center text-xs leading-[1.4] text-disabled">
+                  Re-sharing this playlist updates the same link — anyone who has it
+                  always opens the latest version.
+                </span>
+              </>
+            )}
           </div>
         )}
       </DialogContent>

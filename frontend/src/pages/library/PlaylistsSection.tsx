@@ -258,12 +258,12 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
       {/* Compact library backup / restore, in the same toolbar area. */}
       <div className="mb-3 flex items-center gap-1">
         <span className="mr-1 text-xs leading-5 text-muted">Library backup:</span>
-        <Button variant="text" className="!px-2 !py-0.5 !text-xs" onClick={() => void handleBackup()}>
+        <Button variant="text" className="!px-2 !py-0.5 !text-xs max-sm:min-h-11" onClick={() => void handleBackup()}>
           Backup
         </Button>
         <Button
           variant="text"
-          className="!px-2 !py-0.5 !text-xs"
+          className="!px-2 !py-0.5 !text-xs max-sm:min-h-11"
           onClick={() => restoreFileRef.current?.click()}
         >
           Restore

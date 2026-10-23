@@ -331,7 +331,7 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
                 title="Drag to reorder"
                 {...drag.handleProps(index)}
                 onClick={(event) => event.stopPropagation()}
-                className="inline-grid shrink-0 cursor-grab place-items-center self-center rounded-full p-1 text-muted transition-colors hover:bg-hover active:cursor-grabbing"
+                className="inline-grid shrink-0 cursor-grab place-items-center self-center rounded-full p-1 text-muted transition-colors hover:bg-hover active:cursor-grabbing max-sm:min-h-11 max-sm:min-w-11"
               >
                 <GripIcon />
               </button>

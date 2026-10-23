@@ -341,6 +341,10 @@ export default function SpotifyImportDialog({
       setStep('preview');
     } catch (fetchError) {
       if ((fetchError as Error)?.name === 'AbortError') return;
+      // A failed resolve must never leave a stale preview behind: clear
+      // it so no convertible state can be presented after a failure —
+      // the dialog stays on the input step with the error banner.
+      setPreview(null);
       // Includes the Apple Music playlist case: the server answers with a
       // precise unsupported-source message, surfaced readably as-is.
       setError(friendlyConvertError(fetchError));
@@ -546,7 +550,7 @@ export default function SpotifyImportDialog({
           </span>
           <span className="min-w-0">
             <span className="block truncate text-lg font-bold leading-7">Import a playlist</span>
-            <span className="block truncate text-xs font-normal leading-5 text-muted">
+            <span className="block break-words text-xs font-normal leading-5 text-muted">
               {isShare
                 ? 'Carmen shared playlist → your library'
                 : `${sourceLabel === 'Imported source' ? 'Spotify, Apple Music, YouTube or a Carmen share' : sourceLabel} → YouTube Music matches → your library`}
