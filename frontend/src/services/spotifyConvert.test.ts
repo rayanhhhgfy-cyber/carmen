@@ -57,12 +57,6 @@ describe('friendlyConvertError', () => {
     expect(friendlyConvertError(400, 'Custom detail')).toBe('Custom detail');
   });
 
-  it('explains missing Spotify credentials on 503', () => {
-    expect(
-      friendlyConvertError(503, 'set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET'),
-    ).toMatch(/isn\u2019t set up/);
-  });
-
   it('treats other 503s as Spotify being busy', () => {
     expect(friendlyConvertError(503, 'rate limited')).toMatch(/busy right now/);
   });

@@ -180,3 +180,77 @@ def test_match_track_survives_search_errors():
     result = match_track(sp_track(), search)
     assert result.status == "not_found"
     assert result.match is None
+
+
+# ── accuracy: collaborations, versions, query cascade ─────────────────────
+
+
+def test_normalize_strips_bare_feat_suffix():
+    assert normalize_text("Levitating feat. Dua Lipa") == "levitating"
+    assert normalize_text("Song ft. Someone") == "song"
+    assert normalize_text("Song featuring Someone Else") == "song"
+
+
+def test_similarity_token_containment_fast_lane():
+    # "Single" suffix is the same song, not a coincidence.
+    assert similarity("Blinding Lights", "Blinding Lights - Single") >= 0.90
+
+
+def test_similarity_no_containment_for_single_token_titles():
+    # "Up" inside "Stand Up" must NOT fast-lane.
+    assert similarity("Up", "Stand Up") < 0.90
+
+
+def test_artist_similarity_collaboration_overlap():
+    item = ytm_item(artists=("KAROL G",))
+    score = artist_similarity(["KAROL G", "Judeline", "rusowsky"], item)
+    assert score >= 0.60
+
+
+def test_artist_similarity_split_collaboration_string():
+    item = ytm_item(artists=("Shakira, Bizarrap",))
+    score = artist_similarity(["Shakira"], item)
+    assert score >= 0.60
+
+
+def test_artist_similarity_no_false_friends():
+    assert artist_similarity(["Adele"], ytm_item(artists=("Someone Else",))) < 0.5
+
+
+def test_score_candidate_prefers_original_over_cover():
+    track = sp_track(title="Hallelujah", artists=("Jeff Buckley",), duration_ms=413_000)
+    original = ytm_item(title="Hallelujah", artists=("Jeff Buckley",), duration="6:53")
+    cover = ytm_item(title="Hallelujah", artists=("Random Cover Artist",), duration="6:53")
+    assert score_candidate(track, original) > score_candidate(track, cover)
+    assert score_candidate(track, original) >= MATCHED_THRESHOLD
+
+
+def test_match_track_retries_with_normalized_title():
+    queries = []
+
+    def search(query):
+        queries.append(query)
+        if query.startswith("Bohemian Rhapsody - Remastered"):
+            return [ytm_item(title="Some Other Song", artists=("Nobody",))]
+        return [ytm_item(title="Bohemian Rhapsody", artists=("Queen",), duration="5:55")]
+
+    track = sp_track(title="Bohemian Rhapsody - Remastered 2011", artists=("Queen",),
+                     duration_ms=355_000)
+    result = match_track(track, search)
+    assert result.status == "matched"
+    assert result.match["title"] == "Bohemian Rhapsody"
+    assert queries[0] == "Bohemian Rhapsody - Remastered 2011 Queen"
+    assert queries[1] == "bohemian rhapsody Queen"
+
+
+def test_match_track_stops_at_confident_match():
+    queries = []
+
+    def search(query):
+        queries.append(query)
+        return [ytm_item()]
+
+    result = match_track(sp_track(), search)
+    assert result.status == "matched"
+    # Confident on the first query: no extra searches needed.
+    assert queries == ["Blinding Lights The Weeknd"]

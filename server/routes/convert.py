@@ -18,7 +18,9 @@ every other payload that leaves this API) so the client can reuse its
 normal track pipeline to save the converted playlist.
 
 Requires ``SPOTIFY_CLIENT_ID`` / ``SPOTIFY_CLIENT_SECRET`` on the server
-(Client Credentials flow — public playlists only). Everything else is
+for the official API (Client Credentials flow — public playlists only).
+Without them the routes transparently read Spotify's public embed page
+instead, so the feature works with zero setup. Everything else is
 unchanged: this router is purely additive.
 """
 
@@ -46,6 +48,7 @@ from ..spotify import (
     parse_spotify_playlist_url,
     spotify_configured,
 )
+from ..spotify_scrape import ScrapedSpotifyClient
 from ..state import executor
 
 router = APIRouter(prefix="/convert", tags=["Convert"])
@@ -74,15 +77,15 @@ def _spotify_error(exc: SpotifyError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
-def _require_configured() -> None:
-    if not spotify_configured():
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Spotify import isn't configured on this server — set "
-                "SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET and restart it."
-            ),
-        )
+def _spotify_client() -> SpotifyClient | ScrapedSpotifyClient:
+    """
+    Official API when credentials are configured (full pagination, higher
+    rate limits); otherwise the zero-setup embed-page reader. Both expose
+    the same ``get_playlist`` contract and ``Spotify*`` errors.
+    """
+    if spotify_configured():
+        return SpotifyClient()
+    return ScrapedSpotifyClient()
 
 
 def _track_to_dict(track: SpotifyTrack) -> dict:
@@ -125,13 +128,12 @@ def _match_to_dict(match: matching.TrackMatch) -> dict:
 
 
 async def _resolve_playlist(url: str) -> SpotifyPlaylist:
-    _require_configured()
     try:
         playlist_id = parse_spotify_playlist_url(url)
     except SpotifyUrlError as exc:
         raise _spotify_error(exc) from exc
     loop = asyncio.get_running_loop()
-    client = SpotifyClient()
+    client = _spotify_client()
     try:
         try:
             return await loop.run_in_executor(executor, client.get_playlist, playlist_id)
@@ -200,7 +202,7 @@ async def convert_spotify_to_ytmusic(body: ConvertRequest):
 
         semaphore = asyncio.Semaphore(_SEARCH_CONCURRENCY)
         loop = asyncio.get_running_loop()
-        search_songs = partial(search, filter="songs", limit=8, ignore_spelling=True)
+        search_songs = partial(search, filter="songs", limit=15, ignore_spelling=True)
 
         async def convert_one(track: SpotifyTrack) -> matching.TrackMatch:
             async with semaphore:

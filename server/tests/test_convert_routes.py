@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from server.routes.convert import router as convert_router
-from server.spotify import SpotifyPlaylist, SpotifyTrack
+from server.spotify import SpotifyClient, SpotifyPlaylist, SpotifyTrack
 
 PLAYLIST_URL = "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
 
@@ -110,17 +110,39 @@ def test_resolve_playlist_bad_url_is_400(client):
     assert "Spotify playlist link" in response.json()["detail"]
 
 
-def test_resolve_playlist_unconfigured_is_503():
+def test_resolve_playlist_unconfigured_uses_scraper():
+    """No credentials -> zero-setup embed-page reader, not a 503."""
     app = FastAPI()
     app.include_router(convert_router)
     with (
-        patch("server.routes.convert.SpotifyClient", FakeSpotifyClient),
+        patch("server.routes.convert.ScrapedSpotifyClient", FakeSpotifyClient),
         patch("server.routes.convert.spotify_configured", return_value=False),
     ):
         client = TestClient(app)
         response = client.get("/convert/spotify/playlist", params={"url": PLAYLIST_URL})
-    assert response.status_code == 503
-    assert "SPOTIFY_CLIENT_ID" in response.json()["detail"]
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == "Test Mix"
+
+
+def test_spotify_client_factory_prefers_api_when_configured(monkeypatch):
+    # This sandbox ships malformed proxy env vars that break httpx.Client()
+    # construction; they don't exist on real servers. Strip them so the
+    # factory's real client construction can be exercised.
+    for var in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY",
+                "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY"):
+        monkeypatch.delenv(var, raising=False)
+
+    from server.routes.convert import _spotify_client
+    from server.spotify_scrape import ScrapedSpotifyClient
+
+    with patch("server.routes.convert.spotify_configured", return_value=True):
+        client = _spotify_client()
+        assert isinstance(client, SpotifyClient)
+        client.close()
+    with patch("server.routes.convert.spotify_configured", return_value=False):
+        client = _spotify_client()
+        assert isinstance(client, ScrapedSpotifyClient)
+        client.close()
 
 
 # ── POST /convert/spotify/to-ytmusic (SSE) ────────────────────────────────

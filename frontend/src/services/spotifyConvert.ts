@@ -230,9 +230,6 @@ export function friendlyConvertError(status: number, detail: string): string {
     return 'Spotify couldn\u2019t find that playlist — it may be private, deleted, or the link is wrong.';
   }
   if (status === 400) return detail;
-  if (status === 503 && /SPOTIFY_CLIENT_ID/.test(detail)) {
-    return 'Spotify import isn\u2019t set up on this server yet (missing Spotify API credentials).';
-  }
   if (status === 503) return 'Spotify is busy right now — try again in a minute.';
   return detail || `Conversion failed (${status}).`;
 }
