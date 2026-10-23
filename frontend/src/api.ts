@@ -21,6 +21,39 @@ export function apiBase(): string {
   return trimBase(override) || trimBase(ENV_BASE);
 }
 
+/**
+ * Friendly message shown when the configured server predates the import
+ * & sharing endpoints (`/convert/*`, `/share/*`).
+ *
+ * An outdated server answers those routes in ways that look broken
+ * rather than missing — its SPA catch-all serves `index.html` with
+ * HTTP 200 for unknown GETs and a bare "Method Not Allowed" for unknown
+ * POSTs — so the import/share services translate those answers into
+ * this exact wording instead of showing a fake empty preview or leaking
+ * the raw framework text. `feature` is the user-facing feature name
+ * ("Playlist import", "Playlist sharing"); the host is the configured
+ * API base with the protocol stripped.
+ */
+export function serverOutdatedMessage(feature: string): string {
+  const base = apiBase();
+  let host = base.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split('/')[0] ?? base;
+  try {
+    host = new URL(base).host || host;
+  } catch {
+    /* keep the stripped base */
+  }
+  return `${feature} isn't available on this Carmen server yet — ${host} is running an older Carmen build without the import & sharing endpoints. Update the server to the latest Carmen and try again. Browsing and playback are unaffected.`;
+}
+
+/** Whether `text` is a {@link serverOutdatedMessage} (surface it verbatim). */
+export function isOutdatedServerMessage(text: unknown): boolean {
+  return (
+    typeof text === 'string' &&
+    text.includes("isn't available on this Carmen server yet") &&
+    text.includes('older Carmen build without the import & sharing endpoints')
+  );
+}
+
 export class ApiError extends Error {
   status: number;
   payload: unknown;

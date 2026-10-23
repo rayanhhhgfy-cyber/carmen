@@ -69,18 +69,25 @@ const DISMISS_DISTANCE = 72;
  * minimum width so they can share the strip, semibold label — the kit Tab
  * already renders without `text-transform`.
  */
-const TAB_CLASS = 'min-h-[50px] min-w-0 !font-semibold';
+const TAB_CLASS = 'min-h-[50px] min-w-0 !px-2 !font-semibold sm:!px-4';
 
 /**
  * Cover-tile width caps per Settings → Player cover size. Each entry keeps
  * the phone / tablet / desktop ladder of the default (viewport- and
  * height-capped on phones, column-capped on desktop) and steps it up for
  * Large / Very large.
+ *
+ * The `max-height: 720px` step tightens the phone cap on short screens
+ * (small phones, landscape): the phone column never scrolls, so at e.g.
+ * 360×640 the full 44vh tile plus title + scrubber + transport + action
+ * bar added up past the viewport and the bottom of the sheet clipped.
+ * Each size steps its short-screen cap down instead, so the whole column
+ * fits with the same look.
  */
 const COVER_MAXW: Record<CoverSize, string> = {
-  default: 'max-w-[min(86vw,392px,44vh)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]',
-  large: 'max-w-[min(88vw,440px,48vh)] sm:max-w-[min(62vw,384px)] md:max-w-[min(100%,500px)]',
-  veryLarge: 'max-w-[min(90vw,488px,52vh)] sm:max-w-[min(64vw,428px)] md:max-w-[min(100%,560px)]',
+  default: 'max-w-[min(86vw,392px,44vh)] [@media(max-height:720px)]:max-w-[min(86vw,392px,36vh)] sm:max-w-[min(60vw,340px)] md:max-w-[min(100%,440px)]',
+  large: 'max-w-[min(88vw,440px,48vh)] [@media(max-height:720px)]:max-w-[min(88vw,440px,40vh)] sm:max-w-[min(62vw,384px)] md:max-w-[min(100%,500px)]',
+  veryLarge: 'max-w-[min(90vw,488px,52vh)] [@media(max-height:720px)]:max-w-[min(90vw,488px,44vh)] sm:max-w-[min(64vw,428px)] md:max-w-[min(100%,560px)]',
 };
 
 /**
@@ -488,7 +495,7 @@ export default function PlayerSheet() {
     // desktop the sheet is a centred card where `--sat` is 0px anyway).
     // Padding *both* stacked the inset and dropped the transport controls.
     <div className="relative z-[2] flex shrink-0 flex-row items-center gap-2 px-[10px] py-[6px]">
-      <IconButton edge="start" aria-label="Close player" onClick={handleClose}>
+      <IconButton edge="start" aria-label="Close player" onClick={handleClose} className="size-11 shrink-0">
         {isDesktop ? <CloseIcon /> : <ExpandMoreIcon />}
       </IconButton>
       {/* Phone: the centred eyebrow a full-screen player expects — pinned
@@ -570,8 +577,8 @@ export default function PlayerSheet() {
    */
   const titleMeta = (titleVariant: 'h5' | 'h6') => (
     <>
-      <div className="flex flex-row items-center justify-center gap-[6px] md:justify-start">
-        <MarqueeText text={track.title} variant={titleVariant} />
+      <div className="flex min-w-0 flex-row items-center justify-center gap-[6px] md:justify-start">
+        <MarqueeText text={track.title} variant={titleVariant} className="min-w-0 flex-1" />
         {track.isExplicit && (
           <ExplicitIcon
             aria-label="Explicit"
@@ -613,7 +620,7 @@ export default function PlayerSheet() {
    * the thing it favourites instead of hiding in the row below.
    */
   const mobileTitleBlock = (
-    <div className="mt-5 flex items-center gap-1 text-center">
+    <div className="mt-5 flex items-center gap-1 text-center [@media(max-height:720px)]:mt-3">
       <div className="min-w-0 flex-1">{titleMeta('h5')}</div>
       <NPFavorite track={track} />
     </div>
@@ -849,7 +856,7 @@ export default function PlayerSheet() {
         <IconButton
           aria-label="Back to player"
           onClick={() => setPanelOpen(false)}
-          className="border border-line"
+          className="size-11 shrink-0 border border-line"
         >
           <ExpandMoreIcon />
         </IconButton>

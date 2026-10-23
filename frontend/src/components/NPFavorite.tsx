@@ -70,6 +70,9 @@ export default function NPFavorite({ track, size = 'medium' }: NPFavoriteProps) 
           aria-pressed={favorite}
           onClick={() => void handleToggle()}
           className={cn(
+            // 44px touch area either size (the kit box was 40px at
+            // `medium`, 30px at `small`) — the glyph keeps its size.
+            'size-11 shrink-0',
             '![transition:color_160ms_ease,transform_160ms_ease]',
             'active:[transform:scale(0.88)]',
             favorite

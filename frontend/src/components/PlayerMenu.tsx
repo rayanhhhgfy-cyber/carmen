@@ -3,6 +3,7 @@ import { IconButton, Tooltip } from '../components/ui';
 import { ListItemIcon, Menu, MenuItem } from '../components/ui/Overlay';
 import { useNavigate } from 'react-router-dom';
 import { useDownloads } from '../hooks';
+import AddToPlaylistDialog from '../pages/library/AddToPlaylistDialog';
 import { usePlayer } from '../player/PlayerContext';
 import type { Track, TrackMeta } from '../types/models';
 import { notify } from '../utils/downloadsStore';
@@ -12,6 +13,7 @@ import {
   DownloadIcon,
   LyricsIcon,
   MoreVertIcon,
+  PlaylistAddIcon,
   ShareIcon,
   UserIcon,
 } from './icons';
@@ -24,8 +26,8 @@ export interface PlayerMenuProps {
 
 /**
  * The player's "⋯" menu: everything about the song that is not a transport
- * control — download it, jump to its artist, jump to its album, save its
- * lyrics.
+ * control — download it, share it, add it to a playlist, jump to its
+ * artist, jump to its album, save its lyrics.
  *
  * It replaced two standalone buttons (info + download): the menu keeps them
  * out of the thumb's way while still being one tap away, and it has room for
@@ -37,13 +39,16 @@ export interface PlayerMenuProps {
  */
 export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [addingToPlaylist, setAddingToPlaylist] = useState(false);
   const { jobs } = useDownloads();
   const player = usePlayer();
   const navigate = useNavigate();
 
-  // a new song: the old anchor node is gone with the old row
+  // a new song: the old anchor node is gone with the old row, and a picker
+  // left open for the previous song must not add the wrong track
   useEffect(() => {
     setAnchor(null);
+    setAddingToPlaylist(false);
   }, [track?.videoId]);
 
   if (!track?.videoId) return null;
@@ -106,7 +111,7 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
           aria-haspopup="menu"
           aria-expanded={anchor ? true : undefined}
           onClick={(event) => setAnchor(event.currentTarget)}
-          className="size-[34px] border border-line"
+          className="size-11 shrink-0 border border-line"
         >
           <MoreVertIcon fontSize="small" />
         </IconButton>
@@ -136,6 +141,17 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
             <ShareIcon fontSize="small" />
           </ListItemIcon>
           Share
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            close();
+            setAddingToPlaylist(true);
+          }}
+        >
+          <ListItemIcon>
+            <PlaylistAddIcon fontSize="small" />
+          </ListItemIcon>
+          Add to playlist
         </MenuItem>
         <MenuItem
           disabled={!artist}
@@ -176,6 +192,17 @@ export default function PlayerMenu({ track, meta }: PlayerMenuProps) {
           Download Lyrics
         </MenuItem>
       </Menu>
+
+      {/* The same picker the library song rows open (SongRow pattern:
+          direct import, local open state, `{ open, track, onClose }`).
+          It renders through the kit Dialog in Overlay.tsx, so it pushes
+          its own layer above the player sheet's layer — Escape/backdrop
+          close the picker alone and the sheet stays open underneath. */}
+      <AddToPlaylistDialog
+        open={addingToPlaylist}
+        track={track}
+        onClose={() => setAddingToPlaylist(false)}
+      />
     </>
   );
 }
