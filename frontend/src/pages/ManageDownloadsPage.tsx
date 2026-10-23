@@ -98,14 +98,14 @@ export default function ManageDownloadsPage() {
           </span>
           <div className="flex flex-row gap-1">
             <Button
-              className="!px-3 !py-1 !text-xs"
+              className="!px-3 !py-1 !text-xs max-sm:min-h-11"
               disabled={!allIds.length || allSelected}
               onClick={() => setSelected(new Set(allIds))}
             >
               Select all
             </Button>
             <Button
-              className="!px-3 !py-1 !text-xs"
+              className="!px-3 !py-1 !text-xs max-sm:min-h-11"
               disabled={!selected.size}
               onClick={() => setSelected(new Set())}
             >

@@ -123,7 +123,7 @@ export function IconButton({
       type={type}
       {...rest}
       className={cn(
-        'relative inline-grid place-items-center rounded-full transition-colors duration-150',
+        'relative inline-grid place-items-center rounded-full transition-colors duration-150 max-sm:min-h-11 max-sm:min-w-11',
         'text-action hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:text-disabled',
         color === 'primary' && 'text-accent',
@@ -166,7 +166,7 @@ export function Button({
       type={type}
       {...rest}
       className={cn(
-        'relative inline-flex select-none items-center justify-center gap-2 rounded-full px-4 py-1.5',
+        'relative inline-flex select-none items-center justify-center gap-2 rounded-full px-4 py-1.5 max-sm:min-h-11',
         'text-sm font-semibold leading-6 transition-colors duration-150',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:opacity-50',
@@ -265,11 +265,15 @@ interface ChipProps extends HTMLAttributes<HTMLSpanElement> {
 
 /** MUI `Chip` — small pill (label/status badge). */
 export function Chip({ label, size = 'medium', variant = 'filled', className, ...rest }: ChipProps) {
+  // Chips that act as controls (search filters, library sort/filter toggles)
+  // get a 44px touch height on phones; pure badges keep their compact size.
+  const clickable = typeof rest.onClick === 'function';
   return (
     <span
       {...rest}
       className={cn(
         'inline-flex items-center justify-center gap-1 rounded-full px-2 text-xs font-medium',
+        clickable && 'max-sm:min-h-11 max-sm:px-3.5',
         size === 'small' ? 'h-6 text-[0.6875rem]' : 'h-8',
         variant === 'outlined'
           ? 'border border-line text-muted'
@@ -426,7 +430,7 @@ export function ListItemButton({
       {...rest}
       {...(isNativeButton ? { type: type ?? 'button' } : null)}
       className={cn(
-        'flex w-full items-center gap-4 rounded-lg px-3 py-2 text-left',
+        'flex w-full items-center gap-4 rounded-lg px-3 py-2 text-left max-sm:min-h-11',
         'transition-colors duration-150 hover:bg-hover',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:opacity-50',
@@ -461,7 +465,9 @@ export function ListItemText({
     <div {...rest} className={cn('min-w-0 flex-1', className)}>
       <div className={cn('truncate text-sm font-semibold', primaryClassName)}>{primary}</div>
       {secondary != null ? (
-        <div className={cn('truncate text-xs text-muted', secondaryClassName)}>{secondary}</div>
+        // Subtitle/body line wraps instead of clipping — only the primary
+        // (title) line keeps the ellipsis.
+        <div className={cn('text-xs text-muted [overflow-wrap:anywhere]', secondaryClassName)}>{secondary}</div>
       ) : null}
     </div>
   );
@@ -582,7 +588,7 @@ export function Tab({
         ctx?.onChange(value as never);
       }}
       className={cn(
-        'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-4 py-2.5',
+        'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-4 py-2.5 max-sm:min-h-11',
         'text-sm font-medium transition-colors duration-150',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'after:absolute after:inset-x-0 after:-bottom-px after:h-[2px] after:content-[""]',

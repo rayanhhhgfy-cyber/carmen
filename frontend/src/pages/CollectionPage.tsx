@@ -136,7 +136,7 @@ export default function CollectionPage() {
           )}
           <span className="mt-2 block text-xs leading-[1.4] text-muted">{metaLine}</span>
 
-          <div className="mt-4 flex flex-row justify-center gap-2 sm:justify-start">
+          <div className="mt-4 flex flex-row flex-wrap justify-center gap-2 sm:justify-start">
             <Button
               variant="contained"
               startIcon={<PlayArrowIcon />}

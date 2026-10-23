@@ -196,7 +196,7 @@ export default function ArtistPage() {
           <h5 className="m-0 text-2xl font-extrabold">{name}</h5>
           {metaLine && <span className="mt-2 block text-xs leading-[1.4] text-muted">{metaLine}</span>}
 
-          <div className="mt-4 flex flex-row justify-center gap-2 sm:justify-start">
+          <div className="mt-4 flex flex-row flex-wrap justify-center gap-2 sm:justify-start">
             <Button
               variant="contained"
               startIcon={<PlayArrowIcon />}

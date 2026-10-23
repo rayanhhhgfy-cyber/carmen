@@ -475,7 +475,7 @@ export default function SettingsPage() {
                   }
                 }}
                 aria-label="Animated artwork placement"
-                className="w-full"
+                className="w-full max-sm:grid max-sm:grid-cols-2"
               >
                 <ToggleButton disabled={!animatedArtwork} value="default" className="flex-1">
                   Default
@@ -730,7 +730,7 @@ export default function SettingsPage() {
                   onClick={() => updateSettings({ lyricsProvider: provider.id })}
                   aria-pressed={selected}
                   className={cn(
-                    'flex w-full cursor-pointer items-center justify-between gap-3',
+                    'flex w-full cursor-pointer items-center justify-between gap-3 max-sm:min-h-11',
                     'rounded-[28px] border-0 px-[10px] py-[6px] text-left text-body hover:bg-hover',
                     selected && 'bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.12)]',
                   )}
