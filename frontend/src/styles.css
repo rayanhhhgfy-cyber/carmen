@@ -104,10 +104,29 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
+    /* Spelled out alongside the shorthand: the horizontal lock is the
+       app-wide guarantee every page relies on — no view may ever push the
+       root sideways, whatever a wide child tries. */
+    overflow-x: hidden;
     overscroll-behavior: none;
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
+  }
+
+  /*
+   * iOS Safari auto-zooms (and leaves the page zoomed, shifted sideways)
+   * when a focused field's text is under 16px. Carmen's fields are 14px by
+   * design on desktop; on phone widths only, fields render at 16px so
+   * focusing Search / a dialog input never triggers the zoom jump.
+   * (Breakpoint mirrors the theme's `sm` step: 600px.)
+   */
+  @media (max-width: 599px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
   }
 
   /* Re-enable selection strictly for text inputs. */
