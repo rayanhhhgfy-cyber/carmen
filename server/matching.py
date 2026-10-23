@@ -5,7 +5,8 @@ The converter takes each Spotify track's ``title`` + ``artists``, searches
 YouTube Music for it, and scores every candidate on three signals:
 
 - **title similarity** (55%) — the strongest signal;
-- **artist similarity** (30%) — best pairwise match across both artist lists;
+- **artist similarity** (30%) — pairwise best plus collaboration-aware
+  token overlap (``"A, B"`` vs ``"A"``, ``"A x B"`` vs ``"B"``);
 - **duration closeness** (15%) — within ~30 s counts as a perfect match.
 
 Scores map to a status the UI renders directly:
@@ -49,6 +50,16 @@ _VERSION_SUFFIX_RES = [
     re.compile(r"\s*-\s*(single|ep|deluxe|expanded|anniversary|tour)\b.*$", re.IGNORECASE),
 ]
 _PAREN_RE = re.compile(r"\s*[(\[].*?[)\]]")
+# Trailing "feat. X" / "ft. X" without parentheses — Spotify and YouTube
+# Music disagree on where the feature credit lives.
+_FEAT_RE = re.compile(r"\s*\b(feat|ft|featuring)\b\.?\s+[^\-]+$", re.IGNORECASE)
+# Collaboration separators inside one artist string: "A, B", "A & B",
+# "A x B", "A feat. B". ("with" is deliberately excluded — real band
+# names like "With Confidence" would split into nonsense.)
+_ARTIST_SPLIT_RE = re.compile(
+    r"\s*(?:,|&|\+|\u00d7|\bx\b|\bfeat\b\.?|\bft\b\.?|\bfeaturing\b)\s*",
+    re.IGNORECASE,
+)
 
 
 def normalize_text(value: str | None) -> str:
@@ -59,6 +70,7 @@ def normalize_text(value: str | None) -> str:
     text = _PAREN_RE.sub(" ", text)
     for pattern in _VERSION_SUFFIX_RES:
         text = pattern.sub("", text)
+    text = _FEAT_RE.sub("", text)
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -70,6 +82,18 @@ def similarity(left: str | None, right: str | None) -> float:
         return 0.0
     if left_norm == right_norm:
         return 1.0
+    # Token containment (multi-token titles only): "blinding lights" inside
+    # "blinding lights single" is the same song with a suffix, not a
+    # coincidence. Single-token titles skip this — "up" inside "stand up"
+    # would be a false friend.
+    left_tokens = set(left_norm.split())
+    right_tokens = set(right_norm.split())
+    if (
+        len(left_tokens) >= 2
+        and len(right_tokens) >= 2
+        and (left_tokens <= right_tokens or right_tokens <= left_tokens)
+    ):
+        return 0.93
     return SequenceMatcher(None, left_norm, right_norm).ratio()
 
 
@@ -99,14 +123,31 @@ def ytm_artist_names(item: dict) -> list[str]:
     return unique
 
 
+def _artist_tokens(name: str) -> set[str]:
+    """Split one artist string into its collaborators: "A, B" → {"a", "b"}."""
+    return {
+        token
+        for part in _ARTIST_SPLIT_RE.split(name or "")
+        if (token := normalize_text(part))
+    }
+
+
 def artist_similarity(spotify_artists: list[str], ytm_item: dict) -> float:
-    """Best pairwise artist similarity, with a containment fast-lane."""
+    """
+    Best artist similarity across both sides.
+
+    Two lanes: pairwise string similarity (with the "Beatles"/"The Beatles"
+    containment fast-lane) and collaboration-aware token overlap, so
+    Spotify's ``["KAROL G", "Judeline"]`` still matches YouTube Music's
+    ``"KAROL G"`` — sharing the headliner is strong evidence.
+    """
     candidates = ytm_artist_names(ytm_item)
     if not spotify_artists or not candidates:
         return 0.0
     best = 0.0
     for spotify_artist in spotify_artists:
         spotify_norm = normalize_text(spotify_artist)
+        spotify_tokens = _artist_tokens(spotify_artist)
         for candidate in candidates:
             candidate_norm = normalize_text(candidate)
             score = similarity(spotify_artist, candidate)
@@ -115,6 +156,13 @@ def artist_similarity(spotify_artists: list[str], ytm_item: dict) -> float:
                 spotify_norm in candidate_norm or candidate_norm in spotify_norm
             ):
                 score = max(score, 0.92)
+            # Token overlap: any shared collaborator counts; a full set
+            # match is as good as an exact string match.
+            candidate_tokens = _artist_tokens(candidate)
+            shared = spotify_tokens & candidate_tokens
+            if shared:
+                union = spotify_tokens | candidate_tokens
+                score = max(score, 0.60 + 0.40 * len(shared) / len(union))
             best = max(best, score)
     return best
 
@@ -183,29 +231,51 @@ def _search_candidates(search: SearchFn, query: str) -> list:
     return [item for item in results or [] if isinstance(item, dict)]
 
 
+def _search_queries(spotify_track: SpotifyTrack) -> list[str]:
+    """
+    Query cascade, cheapest first:
+
+    1. ``"<title> <first artist>"`` — nails the common case;
+    2. ``"<normalized title> <first artist>"`` — version suffixes like
+       " - Remastered 2011" actively confuse YouTube's search, so retry
+       without them;
+    3. bare ``"<title>"`` — last resort when the artist spelling differs.
+    """
+    primary_artist = spotify_track.artists[0] if spotify_track.artists else ""
+    title = spotify_track.title or ""
+    queries = [f"{title} {primary_artist}".strip()]
+    normalized_title = normalize_text(title)
+    if normalized_title and normalize_text(title) != title.lower().strip():
+        queries.append(f"{normalized_title} {primary_artist}".strip())
+    if title:
+        queries.append(title)
+    # de-dupe, keep order, drop empties
+    seen: set[str] = set()
+    unique: list[str] = []
+    for query in queries:
+        if query and query not in seen:
+            seen.add(query)
+            unique.append(query)
+    return unique
+
+
 def match_track(spotify_track: SpotifyTrack, search: SearchFn) -> TrackMatch:
     """
     Find the best YouTube Music match for one Spotify track.
 
-    Primary query is ``"<title> <first artist>"``; when nothing scores
-    above the approximate threshold we retry with the bare title (YouTube
-    Music's spelling correction sometimes needs the nudge).
+    Walks the query cascade, stopping as soon as a candidate scores a
+    confident match — most tracks resolve on the first query, hard ones
+    get the extra searches they need.
     """
-    primary_artist = spotify_track.artists[0] if spotify_track.artists else ""
-    queries = [f"{spotify_track.title} {primary_artist}".strip(), spotify_track.title]
-
     best_item: dict | None = None
     best_score = 0.0
-    for index, query in enumerate(queries):
-        if not query:
-            continue
+    for query in _search_queries(spotify_track):
         for candidate in _search_candidates(search, query):
             score = score_candidate(spotify_track, candidate)
             if score > best_score:
                 best_score = score
                 best_item = candidate
-        # The title-only fallback only runs when the primary query flopped.
-        if index == 0 and best_score >= APPROXIMATE_THRESHOLD:
+        if best_score >= MATCHED_THRESHOLD:
             break
 
     status = status_for_score(best_score)
