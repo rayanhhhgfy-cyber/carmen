@@ -42,6 +42,8 @@ import { cdnArtwork, pickArtwork } from './track';
 // the share flow import the store eagerly, while everything below is loaded
 // lazily on first download interaction (see main.tsx's bootstrap).
 import { getDownloadsSnapshot, patchJob, setNotice } from './downloadsStore';
+import { downloadQueue } from './downloadQueue';
+import { ensurePersistentStorage } from '../services/storage/persist';
 
 // ── Audio bytes ─────────────────────────────────────────────────────────────
 
@@ -275,8 +277,31 @@ export function startDownload(
     progress: 0,
   });
 
-  void (async () => {
+  // Every download — single or playlist — goes through the shared FIFO
+  // queue: at most a few pipelines fetch at once, the rest wait their
+  // turn and say so (step 'Queued'). The pipeline itself never rejects
+  // (it patches its own error state), so the queue always drains.
+  void downloadQueue.schedule(
+    () => runDownload(track, meta, waitForCache),
+    () => patchJob(videoId, { step: 'Queued', progress: 0 }),
+  );
+}
+
+/**
+ * The download pipeline body, run by the queue once a slot is free.
+ * Errors land in the job (and the snackbar) exactly like before — they
+ * are caught here so a failed track never rejects into the queue.
+ */
+async function runDownload(
+  track: Track,
+  meta: TrackMeta | null,
+  waitForCache: (() => Promise<void>) | null,
+): Promise<void> {
+  const videoId = track.videoId;
+  try {
     if (waitForCache) {
+      // Restore the waiting label a 'Queued' patch may have overwritten.
+      patchJob(videoId, { step: 'Waiting for the stream to finish caching', progress: 0 });
       try {
         await waitForCache();
       } catch {
@@ -386,15 +411,16 @@ export function startDownload(
         ? `Saved "${track.artist} - ${track.title}"`
         : `Saved "${track.title}"`,
     );
-  })().catch((error: Error) => {
+  } catch (error) {
+    const failure = error as Error;
     patchJob(videoId, {
       status: 'error',
       step: 'Failed',
       progress: 0,
-      error: error?.message || 'Download failed',
+      error: failure?.message || 'Download failed',
     });
-    setNotice('error', error?.message || 'Download failed');
-  });
+    setNotice('error', failure?.message || 'Download failed');
+  }
 }
 
 /**
@@ -410,6 +436,10 @@ export function startDownload(
  * @returns how many downloads were started
  */
 export function startPlaylistDownload(tracks: Track[]): number {
+  // A bulk download is exactly when the offline copies matter — ask the
+  // browser to keep this origin's storage instead of evicting it under
+  // pressure later. Fire-and-forget: saving never waits on the answer.
+  void ensurePersistentStorage();
   let started = 0;
   for (const track of tracks ?? []) {
     const videoId = track?.videoId;

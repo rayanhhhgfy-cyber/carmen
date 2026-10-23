@@ -27,6 +27,7 @@ import {
 } from './idb';
 
 export type { DownloadRow, FileRow, KvRow, TrackRow } from './idb';
+export { ensurePersistentStorage } from './persist';
 
 // ── KV (settings, playlists, favorites, feed, playback, app state) ──────────
 

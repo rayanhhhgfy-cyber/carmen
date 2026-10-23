@@ -10,7 +10,7 @@ import { bootstrapPlatform } from './platform/env';
 import { startDeepLinkListener } from './platform/deepLink';
 import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
-import { hydrateBrowserStorage } from './services/storage';
+import { ensurePersistentStorage, hydrateBrowserStorage } from './services/storage';
 import { hydrateLibrary } from './utils/library';
 import { shareTarget } from './utils/share';
 import './fonts';
@@ -105,6 +105,12 @@ async function bootstrap(): Promise<void> {
     hydrateFlags(downloaded, favorites);
   } catch {
     /* badges simply start empty */
+  }
+  // Downloaded songs only stay offline if the browser keeps the storage:
+  // IndexedDB is evictable "best-effort" until the origin is persisted,
+  // so ask for persistence up front whenever there is anything to lose.
+  if (downloadedVideoIds().length > 0) {
+    void ensurePersistentStorage();
   }
   await restoreRoute();
   // Android: the app may have been launched by tapping a shared link —

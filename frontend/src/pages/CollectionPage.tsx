@@ -3,12 +3,22 @@ import { Button, Collapse, Container, IconButton, Shimmer } from '../components/
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
+import { useDownloads } from '../hooks';
+import { isDownloaded } from '../offline/source';
 import { usePlayer } from '../player/PlayerContext';
+import { notify } from '../utils/downloadsStore';
 import { normalizeList, pickArtwork } from '../utils/track';
 import type { Thumbnail } from '../types/models';
 import Artwork from '../components/Artwork';
 import TrackList, { EmptyState } from '../components/TrackList';
-import { ArrowBackIcon, ExpandMoreIcon, PlayArrowIcon, ShuffleIcon } from '../components/icons';
+import {
+  ArrowBackIcon,
+  CheckIcon,
+  DownloadIcon,
+  ExpandMoreIcon,
+  PlayArrowIcon,
+  ShuffleIcon,
+} from '../components/icons';
 
 /** Any candidate shape `pickArtwork` understands; the payload is untyped JSON. */
 type ArtworkInput =
@@ -22,8 +32,10 @@ export default function CollectionPage() {
   const { kind, id } = useParams();
   const navigate = useNavigate();
   const player = usePlayer();
+  const { jobs } = useDownloads();
 
   const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [savingCollection, setSavingCollection] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
@@ -107,6 +119,47 @@ export default function CollectionPage() {
     .filter(Boolean)
     .join('  •  ');
 
+  // ── Download all ──────────────────────────────────────────────────────
+  // Same aggregation as the library's PlaylistDetailView: done jobs in
+  // the shared downloads store plus what the offline catalogue already
+  // holds (a track saved in an earlier session has no job anymore).
+  const downloadedCount = tracks.filter(
+    (track) => isDownloaded(track.videoId) || jobs[track.videoId]?.status === 'done',
+  ).length;
+  const downloadInFlight = tracks.some((track) => jobs[track.videoId]?.status === 'running');
+  const allDownloaded = tracks.length > 0 && downloadedCount === tracks.length;
+
+  const handleDownloadAll = async () => {
+    if (savingCollection || downloadInFlight || allDownloaded) return;
+    setSavingCollection(true);
+    try {
+      // The pipeline is heavy — it loads lazily on first download
+      // interaction, like every other download trigger in the app.
+      const [{ ensureCollectionPlaylist }, downloads] = await Promise.all([
+        import('../utils/collectionPlaylist'),
+        import('../utils/downloads'),
+      ]);
+      // Save the collection as a library playlist first (reused when an
+      // identical one exists), so the songs land somewhere reopenable —
+      // then download through the existing pipeline.
+      await ensureCollectionPlaylist(title || (kind === 'album' ? 'Album' : 'Playlist'), tracks);
+      const started = downloads.startPlaylistDownload(tracks);
+      if (started > 0) {
+        notify(
+          'success',
+          `Downloading ${started} track${started === 1 ? '' : 's'} from “${title}”`,
+        );
+      } else {
+        notify('info', 'Nothing new to download — every track is already saved or downloading');
+      }
+    } catch (downloadError) {
+      console.warn('[collection] download all failed', downloadError);
+      notify('error', 'Could not save this collection to your library');
+    } finally {
+      setSavingCollection(false);
+    }
+  };
+
   return (
     <Container maxWidth="lg" className="pt-3 md:pt-6">
       <IconButton aria-label="Back" onClick={() => navigate(-1)} className="mb-2">
@@ -156,7 +209,47 @@ export default function CollectionPage() {
             >
               Shuffle
             </Button>
+            {tracks.length > 0 && (
+              <Button
+                variant="text"
+                startIcon={allDownloaded ? <CheckIcon /> : <DownloadIcon />}
+                disabled={savingCollection || downloadInFlight || allDownloaded}
+                className="border border-accent/50"
+                onClick={() => void handleDownloadAll()}
+              >
+                {downloadInFlight
+                  ? `Downloading ${downloadedCount}/${tracks.length}`
+                  : allDownloaded
+                    ? 'Downloaded'
+                    : savingCollection
+                      ? 'Saving…'
+                      : 'Download all'}
+              </Button>
+            )}
           </div>
+
+          {downloadInFlight && (
+            <div className="mx-auto mt-3 max-w-[420px] sm:mx-0">
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={tracks.length}
+                aria-valuenow={downloadedCount}
+                aria-label="Collection download progress"
+                className="h-1 w-full overflow-hidden rounded-full bg-hover"
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-300"
+                  style={{
+                    width: `${tracks.length ? (downloadedCount / tracks.length) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <span className="mt-1 block text-xs leading-[1.4] text-muted">
+                Downloading {downloadedCount}/{tracks.length}
+              </span>
+            </div>
+          )}
 
           {description && (
             <div className="mt-3 text-center sm:text-left">
