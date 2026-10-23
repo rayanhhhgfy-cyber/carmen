@@ -398,6 +398,30 @@ export function startDownload(
 }
 
 /**
+ * Downloads a whole playlist's tracks through the existing pipeline.
+ *
+ * A plain loop over `startDownload` (idempotent and fire-and-forget, so
+ * per-track failures stay isolated in their own jobs): tracks already
+ * downloaded or already running are skipped — the same checks
+ * `startDownload` itself makes, mirrored here so the returned count is
+ * exactly how many downloads were started. Progress is aggregated by
+ * callers from the downloads job store, like any other download.
+ *
+ * @returns how many downloads were started
+ */
+export function startPlaylistDownload(tracks: Track[]): number {
+  let started = 0;
+  for (const track of tracks ?? []) {
+    const videoId = track?.videoId;
+    if (!videoId) continue;
+    if (isDownloaded(videoId) || isRunning(videoId)) continue;
+    startDownload(track, null);
+    started += 1;
+  }
+  return started;
+}
+
+/**
  * Stores the track metadata of a song next to its (potential) audio — the
  * same `track.json` the download pipeline writes, so lyrics saved this way
  * are read back by `localLyrics` exactly like a full download's.

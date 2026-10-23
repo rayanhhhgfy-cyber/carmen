@@ -209,7 +209,7 @@ class SpotifyClient:
             raise SpotifyApiError(f"Could not reach Spotify: {exc}") from exc
         if response.status_code == 404:
             raise SpotifyNotFoundError(
-                "Spotify couldn't find that playlist — it may be private, "
+                "Spotify couldn't find that item — it may be private, "
                 "deleted, or the link is wrong."
             )
         if response.status_code == 429:
@@ -233,6 +233,21 @@ class SpotifyClient:
         track = item.get("track") if isinstance(item, dict) else None
         if not isinstance(track, dict):
             return None
+        return cls._track_from_full(track)
+
+    @classmethod
+    def _track_from_full(
+        cls, track: dict, fallback_album: dict | None = None
+    ) -> SpotifyTrack | None:
+        """
+        Build a :class:`SpotifyTrack` from a bare track object.
+
+        Handles both the *full* track shape (playlist/top-tracks responses,
+        which carry ``album``) and the *simplified* one (album tracklists,
+        which don't — the caller passes the album as ``fallback_album``).
+        """
+        if not isinstance(track, dict):
+            return None
         if track.get("is_local"):
             return None  # local files have no Spotify metadata to match on
         track_id = track.get("id")
@@ -244,7 +259,7 @@ class SpotifyClient:
             for artist in track.get("artists", [])
             if isinstance(artist, dict) and artist.get("name")
         ]
-        album = track.get("album") or {}
+        album = track.get("album") or fallback_album or {}
         external_ids = track.get("external_ids") or {}
         external_urls = track.get("external_urls") or {}
         return SpotifyTrack(
@@ -258,6 +273,14 @@ class SpotifyClient:
             spotify_url=external_urls.get("spotify", ""),
             explicit=bool(track.get("explicit")),
         )
+
+    @staticmethod
+    def _artist_names(data: dict) -> list[str]:
+        return [
+            (artist.get("name") or "").strip()
+            for artist in data.get("artists", []) or []
+            if isinstance(artist, dict) and artist.get("name")
+        ]
 
     def get_playlist(self, playlist_id: str, market: str = "US") -> SpotifyPlaylist:
         """
@@ -309,3 +332,76 @@ class SpotifyClient:
                 break
             offset += limit
         return playlist
+
+    # ── album / track / artist (universal import) ─────────────────────
+    #
+    # These return the same SpotifyPlaylist container as get_playlist so
+    # the scrape fallback and the importer can treat every Spotify entity
+    # uniformly: metadata on the container, playable tracks in .tracks.
+
+    def get_album(self, album_id: str, market: str = "US") -> SpotifyPlaylist:
+        """Album metadata plus every track (the embedded page, then paging)."""
+        data = self._get(f"/albums/{album_id}", params={"market": market})
+        external_urls = data.get("external_urls") or {}
+        album = SpotifyPlaylist(
+            id=data.get("id", album_id),
+            name=data.get("name") or "Spotify album",
+            owner=", ".join(self._artist_names(data)),
+            artwork=self._largest_image(data.get("images")),
+            spotify_url=external_urls.get("spotify", ""),
+        )
+        fallback_album = {"name": data.get("name") or "", "images": data.get("images")}
+
+        tracks_page = data.get("tracks") or {}
+        limit = 50
+        offset = 0
+        while True:
+            items = tracks_page.get("items") or []
+            for item in items:
+                track = self._track_from_full(item, fallback_album=fallback_album)
+                if track:
+                    album.tracks.append(track)
+            if not tracks_page.get("next") or not items:
+                break
+            offset += limit
+            tracks_page = self._get(
+                f"/albums/{album_id}/tracks",
+                params={"market": market, "limit": limit, "offset": offset},
+            )
+        return album
+
+    def get_track(self, track_id: str, market: str = "US") -> SpotifyPlaylist:
+        """A single track, wrapped in the playlist container (1 track)."""
+        data = self._get(f"/tracks/{track_id}", params={"market": market})
+        track = self._track_from_full(data)
+        if track is None:
+            raise SpotifyNotFoundError(
+                "Spotify couldn't find that track — it may be private, "
+                "deleted, or the link is wrong."
+            )
+        return SpotifyPlaylist(
+            id=data.get("id", track_id),
+            name=track.title,
+            owner=track.artist_display,
+            artwork=track.album_artwork,
+            spotify_url=track.spotify_url,
+            tracks=[track],
+        )
+
+    def get_artist(self, artist_id: str, market: str = "US") -> SpotifyPlaylist:
+        """Artist metadata plus their top tracks (market-scoped, max 10)."""
+        data = self._get(f"/artists/{artist_id}")
+        external_urls = data.get("external_urls") or {}
+        artist = SpotifyPlaylist(
+            id=data.get("id", artist_id),
+            name=data.get("name") or "Spotify artist",
+            owner="",
+            artwork=self._largest_image(data.get("images")),
+            spotify_url=external_urls.get("spotify", ""),
+        )
+        top = self._get(f"/artists/{artist_id}/top-tracks", params={"market": market})
+        for item in top.get("tracks") or []:
+            track = self._track_from_full(item)
+            if track:
+                artist.tracks.append(track)
+        return artist

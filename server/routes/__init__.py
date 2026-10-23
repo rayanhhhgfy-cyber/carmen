@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from .browsing import router as browsing_router
 from .convert import router as convert_router
+from .shares import router as shares_router
 from .playlists import router as playlists_router
 from .podcasts import router as podcasts_router
 from .search import router as search_router
@@ -17,6 +18,7 @@ router.include_router(podcasts_router)
 router.include_router(playlists_router)
 router.include_router(stream_router)
 router.include_router(convert_router)
+router.include_router(shares_router)
 # Registered last on purpose: it is a `/{spa_path:path}` catch-all that serves
 # the web client's index.html (with link-preview tags), so every real API route
 # above must match first. See server/routes/app.py.
