@@ -21,6 +21,39 @@ export function apiBase(): string {
   return trimBase(override) || trimBase(ENV_BASE);
 }
 
+/**
+ * Friendly message shown when the configured server predates the import
+ * & sharing endpoints (`/convert/*`, `/share/*`).
+ *
+ * An outdated server answers those routes in ways that look broken
+ * rather than missing — its SPA catch-all serves `index.html` with
+ * HTTP 200 for unknown GETs and a bare "Method Not Allowed" for unknown
+ * POSTs — so the import/share services translate those answers into
+ * this exact wording instead of showing a fake empty preview or leaking
+ * the raw framework text. `feature` is the user-facing feature name
+ * ("Playlist import", "Playlist sharing"); the host is the configured
+ * API base with the protocol stripped.
+ */
+export function serverOutdatedMessage(feature: string): string {
+  const base = apiBase();
+  let host = base.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split('/')[0] ?? base;
+  try {
+    host = new URL(base).host || host;
+  } catch {
+    /* keep the stripped base */
+  }
+  return `${feature} isn't available on this Carmen server yet — ${host} is running an older Carmen build without the import & sharing endpoints. Update the server to the latest Carmen and try again. Browsing and playback are unaffected.`;
+}
+
+/** Whether `text` is a {@link serverOutdatedMessage} (surface it verbatim). */
+export function isOutdatedServerMessage(text: unknown): boolean {
+  return (
+    typeof text === 'string' &&
+    text.includes("isn't available on this Carmen server yet") &&
+    text.includes('older Carmen build without the import & sharing endpoints')
+  );
+}
+
 export class ApiError extends Error {
   status: number;
   payload: unknown;
@@ -53,6 +86,40 @@ export async function apiGet(path: string, params: QueryParams = {}, signal?: Ab
   let response: Response;
   try {
     response = await fetch(url, { signal });
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError') throw error;
+    throw new ApiError('Cannot reach the server', 0, null);
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail =
+      (payload && (payload.detail || payload.message)) ||
+      `Request failed (${response.status})`;
+    throw new ApiError(String(detail), response.status, payload);
+  }
+  return payload;
+}
+
+/**
+ * POST a JSON body to the backend and parse the JSON response.
+ *
+ * Same error plumbing as `apiGet`: network failures and non-2xx answers
+ * surface as `ApiError` carrying the server's `detail` message.
+ *
+ * @param path e.g. "/share/playlists"
+ * @param body JSON-serializable request body
+ * @param signal abort signal
+ */
+export async function apiPostJson(path: string, body: unknown, signal?: AbortSignal): Promise<any> {
+  let response: Response;
+  try {
+    response = await fetch(apiBase() + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal,
+    });
   } catch (error) {
     if ((error as Error)?.name === 'AbortError') throw error;
     throw new ApiError('Cannot reach the server', 0, null);

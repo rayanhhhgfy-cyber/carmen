@@ -133,7 +133,7 @@ export function Menu({ open, anchorEl, onClose, children, className, ...rest }: 
             transition={{ duration: 0.14, ease: 'easeOut' }}
             style={pos}
             className={cn(
-              'fixed z-[1300] min-w-44 rounded-card border border-line bg-surface py-1 shadow-glass',
+              'fixed z-[1300] min-w-44 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-card border border-line bg-surface py-1 shadow-glass',
               className,
             )}
           >
@@ -177,7 +177,7 @@ export function MenuItem({
         if (!event.defaultPrevented) close?.();
       }}
       className={cn(
-        'flex w-full items-center gap-3 px-4 text-left text-sm text-body',
+        'flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-body',
         dense ? 'py-1' : 'py-1.5',
         'transition-colors duration-100 hover:bg-hover',
         'focus-visible:outline-2 focus-visible:outline-accent',
@@ -207,7 +207,7 @@ export function ListItemIcon({ sx, className, children, style, ...rest }: ListIt
         ...(sx?.color !== undefined ? { color: sx.color } : null),
         ...style,
       }}
-      className={cn('inline-flex min-w-[56px] shrink-0 items-center justify-center', className)}
+      className={cn('inline-flex min-w-[56px] shrink-0 items-center justify-center max-sm:min-w-[40px]', className)}
     >
       {children}
     </span>
@@ -289,7 +289,7 @@ export function Dialog({
       {open ? (
         <motion.div
           data-overlay-root=""
-          className="fixed inset-0 z-[1300] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[1300] flex items-center justify-center pb-[max(1rem,var(--sab))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,var(--sat))]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           // Sliding mode keeps the container opaque: the backdrop fades on
@@ -328,7 +328,7 @@ export function Dialog({
                 : { duration: 0.18, ease: 'easeOut' }
             }
             className={cn(
-              'relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-card bg-surface shadow-glass',
+              'relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-card bg-surface shadow-glass',
               maxWidth === 'xs' && 'max-w-[448px]',
               maxWidth === 'sm' && 'max-w-[600px]',
               maxWidth === 'md' && 'max-w-[900px]',
@@ -348,7 +348,7 @@ export function Dialog({
 /** MUI `DialogTitle` — heading row. */
 export function DialogTitle({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div {...rest} className={cn('px-6 pb-2 pt-5 text-base font-bold leading-6', className)}>
+    <div {...rest} className={cn('px-4 pb-2 pt-5 text-base font-bold leading-6 sm:px-6', className)}>
       {children}
     </div>
   );
@@ -357,7 +357,7 @@ export function DialogTitle({ className, children, ...rest }: HTMLAttributes<HTM
 /** MUI `DialogContent` — scrollable body. */
 export function DialogContent({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div {...rest} className={cn('min-h-0 flex-1 overflow-y-auto px-6 py-2', className)}>
+    <div {...rest} className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-2 sm:px-6', className)}>
       {children}
     </div>
   );
@@ -366,7 +366,7 @@ export function DialogContent({ className, children, ...rest }: HTMLAttributes<H
 /** MUI `DialogActions` — button row (end-aligned, `!`-overrideable). */
 export function DialogActions({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div {...rest} className={cn('flex items-center gap-2 px-6 pb-4 pt-2 justify-end', className)}>
+    <div {...rest} className={cn('flex flex-wrap items-center gap-2 px-4 pb-4 pt-2 justify-end sm:px-6', className)}>
       {children}
     </div>
   );
@@ -399,7 +399,7 @@ export function Snackbar({ open, autoHideDuration = 4000, onClose, anchorOrigin,
     'absolute z-[1400] px-4',
     // top toasts clear the status bar (0px inset on desktop / non-cover
     // layouts, so this only ever bites on an edge-to-edge phone).
-    vertical === 'top' ? 'top-[max(1rem,var(--sat))]' : 'bottom-4',
+    vertical === 'top' ? 'top-[max(1rem,var(--sat))]' : 'bottom-[max(1rem,var(--sab))]',
     horizontal === 'left'
       ? 'left-0'
       : horizontal === 'right'

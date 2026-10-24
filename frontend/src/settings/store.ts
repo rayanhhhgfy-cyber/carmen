@@ -41,6 +41,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   artworkBackground: true,
   lockScreenLyrics: true,
   smartDownload: false,
+  smartDownloadLiked: false,
+  smartDownloadFavPlaylists: false,
+  smartDownloadWifiOnly: true,
+  smartDownloadAllowMetered: false,
+  smartDownloadExcludedPlaylists: [],
 };
 
 const KEYS: SettingsKey[] = [
@@ -62,6 +67,11 @@ const KEYS: SettingsKey[] = [
   'artworkBackground',
   'lockScreenLyrics',
   'smartDownload',
+  'smartDownloadLiked',
+  'smartDownloadFavPlaylists',
+  'smartDownloadWifiOnly',
+  'smartDownloadAllowMetered',
+  'smartDownloadExcludedPlaylists',
 ];
 
 /** Pre-SQLite storage keys, read once so existing choices survive. */
@@ -139,6 +149,27 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
     case 'smartDownload':
       // Absent = off: auto-saving songs costs storage, so it is opt-in.
       return raw === '1' || raw === 'true';
+    case 'smartDownloadLiked':
+    case 'smartDownloadFavPlaylists':
+    case 'smartDownloadAllowMetered':
+      // Absent = off: same opt-in rule as the original smart toggle.
+      return raw === '1' || raw === 'true';
+    case 'smartDownloadWifiOnly':
+      // Absent = on: the safe default — only an explicit "0" lifts the gate.
+      return raw !== '0' && raw !== 'false';
+    case 'smartDownloadExcludedPlaylists': {
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (value): value is number => typeof value === 'number' && Number.isFinite(value),
+          );
+        }
+      } catch {
+        /* corrupt value — fall through to empty */
+      }
+      return [];
+    }
     case 'animatedArtwork':
     case 'blurEffects':
     case 'artworkBackground':
@@ -157,6 +188,11 @@ function coerce(key: SettingsKey, raw: string): AppSettings[SettingsKey] {
 }
 
 function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
+  // The opt-out list is a JSON array — String([1,2]) would be "1,2",
+  // which `coerce` cannot parse back, so it gets its own branch.
+  if (key === 'smartDownloadExcludedPlaylists') {
+    return JSON.stringify(Array.isArray(value) ? value : []);
+  }
   if (
     key === 'adaptiveAccent' ||
     key === 'lowBatteryMode' ||
@@ -165,6 +201,10 @@ function serialize(key: SettingsKey, value: AppSettings[SettingsKey]): string {
     key === 'artworkBackground' ||
     key === 'lockScreenLyrics' ||
     key === 'smartDownload' ||
+    key === 'smartDownloadLiked' ||
+    key === 'smartDownloadFavPlaylists' ||
+    key === 'smartDownloadWifiOnly' ||
+    key === 'smartDownloadAllowMetered' ||
     key === 'karaokeWords' ||
     key === 'cinematicMode' ||
     key === 'cinematicCover'

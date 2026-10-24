@@ -1,5 +1,6 @@
 import { Button, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText } from '../components/ui';
 
+import { useDragReorder, type UseDragReorderResult } from '../hooks/useDragReorder';
 import { usePlayer } from '../player/PlayerContext';
 import { useTheme } from '../theme/ThemeContext';
 import type { Track } from '../types/models';
@@ -10,15 +11,32 @@ import Artwork from './Artwork';
 import MarqueeText from './MarqueeText';
 import { CloseIcon, DownloadIcon, ExplicitIcon, HeartFilledIcon, ShuffleIcon, TrashIcon } from './icons';
 
+/** Six-dot grip — no grip glyph exists in the icon set, so it is drawn
+ *  inline in the set's own idiom (24px grid, `currentColor` fill). */
+export function GripIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={20} height={20} fill="currentColor" aria-hidden focusable="false">
+      <circle cx="9" cy="6" r="1.6" />
+      <circle cx="15" cy="6" r="1.6" />
+      <circle cx="9" cy="12" r="1.6" />
+      <circle cx="15" cy="12" r="1.6" />
+      <circle cx="9" cy="18" r="1.6" />
+      <circle cx="15" cy="18" r="1.6" />
+    </svg>
+  );
+}
+
 /** One upcoming row: tap to jump here, ✕ to drop it from the queue. */
 function QueueRow({
   track,
   index,
   context,
+  drag,
 }: {
   track: Track;
   index: number;
   context: Track[];
+  drag: UseDragReorderResult;
 }) {
   const player = usePlayer();
   // Per-row subscription: badges flip live as downloads / hearts change.
@@ -26,10 +44,10 @@ function QueueRow({
   const favorite = useFlag('favorite', track.videoId);
 
   return (
-    <ListItem disablePadding className="relative mb-1">
+    <ListItem disablePadding className="relative mb-1" {...drag.rowProps(index)}>
       <ListItemButton
         onClick={() => player.playTrack(track, context)}
-        className="!rounded-[28px] !pr-[72px]"
+        className="!rounded-[28px] !pr-[152px]"
       >
         <ListItemIcon sx={{ minWidth: 52 }}>
           <Artwork
@@ -60,9 +78,23 @@ function QueueRow({
       </ListItemButton>
       {/* MIGRATION: MUI's `secondaryAction` slot has no kit equivalent — the
           same block, absolutely positioned after the button (right: 16px,
-          vertically centred). The row keeps `pr-[72px]` so the text never
-          runs underneath it. */}
+          vertically centred). The block is 130px wide (40px handle + 4 +
+          34px duration + 8 + 40px remove + 4 inner padding) starting 16px
+          from the right edge, so the row keeps `pr-[152px]` and the text
+          never runs underneath it. */}
       <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center pr-1">
+        {/* Drag handle — a sibling of the row button (never nested in it),
+            and its click is swallowed so grabbing it can never play the row. */}
+        <button
+          type="button"
+          aria-label={`Reorder ${track.title} in queue`}
+          title="Drag to reorder"
+          {...drag.handleProps(index)}
+          onClick={(event) => event.stopPropagation()}
+          className="mr-1 inline-grid size-10 shrink-0 cursor-grab place-items-center rounded-full p-1 text-muted transition-colors hover:bg-hover active:cursor-grabbing"
+        >
+          <GripIcon />
+        </button>
         <span className="mr-2 min-w-[34px] text-right text-xs leading-[1.4] text-muted tabular-nums">
           {track.duration ? formatTime(track.duration) : ''}
         </span>
@@ -70,6 +102,7 @@ function QueueRow({
           size="small"
           aria-label={`Remove ${track.title} from queue`}
           onClick={() => player.removeFromQueue(index)}
+          className="size-10 shrink-0"
         >
           <CloseIcon fontSize="small" />
         </IconButton>
@@ -96,16 +129,20 @@ export default function NPQueue() {
   const { accentFg } = useTheme();
   /** Full listening context so jumping to a row keeps the queue sensible. */
   const context = current ? [current, ...queue] : queue;
+  const drag = useDragReorder({
+    itemCount: queue.length,
+    onMove: player.reorderQueue,
+  });
 
   return (
-    <div className="h-full overflow-y-auto px-2 py-2">
-      <div className="mb-2 flex items-center justify-between px-2">
+    <div ref={drag.containerRef} className="h-full overflow-y-auto overflow-x-hidden px-2 py-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2">
         <p className="m-0 text-sm font-medium text-muted">
           {queue.length
             ? `${queue.length} track${queue.length === 1 ? '' : 's'} up next`
             : 'Up next'}
         </p>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           <Button
             startIcon={<ShuffleIcon fontSize="small" />}
             onClick={player.toggleShuffle}
@@ -169,6 +206,7 @@ export default function NPQueue() {
             track={track}
             index={index}
             context={context}
+            drag={drag}
           />
         ))}
       </List>

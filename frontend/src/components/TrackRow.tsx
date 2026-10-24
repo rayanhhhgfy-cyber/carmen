@@ -122,7 +122,12 @@ export default function TrackRow({
             paddingTop: 6,
             paddingBottom: 6,
             paddingLeft: 16,
-            paddingRight: 48,
+            // Right reserve must clear the absolute trailing slot, not
+            // just the ⋯ button: right offset 16 + duration span 34 +
+            // gap 8 + 44px button + trailing pad 4 = 106, plus 4px gap.
+            // The old 48px let the last ~58px of title text slide under
+            // the duration/⋯ (the trailing slot paints above the row).
+            paddingRight: 110,
             borderRadius: 28,
           }}
         >

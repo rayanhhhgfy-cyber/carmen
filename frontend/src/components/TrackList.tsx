@@ -51,7 +51,7 @@ export default function TrackList({
 /** Centered placeholder for an empty list. */
 export function EmptyState({ title, hint }: { title: string; hint?: ReactNode }) {
   return (
-    <div className="px-6 py-12 text-center">
+    <div className="px-4 py-12 text-center sm:px-6">
       <p className="m-0 text-base font-semibold text-muted">{title}</p>
       {hint && <span className="text-xs leading-[1.4] text-disabled">{hint}</span>}
     </div>

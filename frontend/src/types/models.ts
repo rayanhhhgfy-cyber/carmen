@@ -237,6 +237,33 @@ export interface AppSettings {
    * `offline/smartDownload.ts`.
    */
   smartDownload: boolean;
+  /**
+   * Smart downloads (library edition, `services/smartDownloads.ts`) —
+   * separate toggles, both off by default: auto-download liked songs, and
+   * auto-download playlists marked favourite. Runs on launch, when a
+   * favourite is added, and when a toggle is switched on, through the
+   * existing download pipeline only.
+   */
+  smartDownloadLiked: boolean;
+  smartDownloadFavPlaylists: boolean;
+  /**
+   * Wi-Fi-only gate, best effort — the web cannot reliably tell Wi-Fi
+   * from cellular (see the header of `services/smartDownloads.ts`):
+   * `navigator.connection` is the only signal, it is missing in some
+   * browsers, and an unknown type is treated as metered. Default on.
+   */
+  smartDownloadWifiOnly: boolean;
+  /**
+   * Explicit opt-in to auto-download on a metered-looking connection.
+   * Default off — without it, a metered verdict blocks the run.
+   */
+  smartDownloadAllowMetered: boolean;
+  /**
+   * Favourite-playlist ids the user excluded from auto-download. A
+   * playlist on this list is never auto-downloaded, however it is
+   * favourited. Stored as a JSON array.
+   */
+  smartDownloadExcludedPlaylists: number[];
 }
 
 export type SettingsKey = keyof AppSettings;

@@ -6,11 +6,20 @@
  * again by construction. The tab bar owns the title; the "New playlist"
  * action sits on the summary line.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import MarqueeText from '../../components/MarqueeText';
 import { Button, IconButton, Shimmer, Tooltip } from '../../components/ui';
 import { Menu, MenuItem } from '../../components/ui/Overlay';
+import { addLocalFiles, LOCAL_FILES_PLAYLIST_NAME } from '../../services/localFiles';
+import {
+  applyLibraryBackup,
+  backupFileName,
+  buildLibraryBackup,
+  parseLibraryBackup,
+  serializeLibraryBackup,
+} from '../../utils/libraryBackup';
+import { notify } from '../../utils/downloadsStore';
 import {
   createPlaylist,
   deletePlaylist,
@@ -34,6 +43,23 @@ interface FormTarget {
   playlist: Playlist | null;
 }
 
+/** A parsed backup awaiting the restore confirmation, with its counts. */
+interface PendingRestore {
+  backup: ReturnType<typeof parseLibraryBackup>;
+  playlists: number;
+  favorites: number;
+}
+
+/** Entry counts of a parsed backup (top level, with a nested fallback). */
+function backupCounts(backup: unknown): { playlists: number; favorites: number } {
+  const root = (backup ?? {}) as Record<string, unknown>;
+  const nested = (root.data ?? root.library ?? root) as Record<string, unknown>;
+  return {
+    playlists: Array.isArray(nested.playlists) ? nested.playlists.length : 0,
+    favorites: Array.isArray(nested.favorites) ? nested.favorites.length : 0,
+  };
+}
+
 export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [covers, setCovers] = useState<Record<number, string | null>>({});
@@ -43,6 +69,11 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
   const [deleteFor, setDeleteFor] = useState<Playlist | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spotifyOpen, setSpotifyOpen] = useState(false);
+  const [addingLocal, setAddingLocal] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<PendingRestore | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const localFilesRef = useRef<HTMLInputElement | null>(null);
+  const restoreFileRef = useRef<HTMLInputElement | null>(null);
 
   /** Playlist list + cover artwork (explicit cover video → first track). */
   const load = useCallback(async () => {
@@ -91,6 +122,82 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
     await load();
   };
 
+  /* ── local audio files ─────────────────────────────────────────────── */
+
+  const handleLocalFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0 || addingLocal) return;
+    const picked = Array.from(files);
+    setAddingLocal(true);
+    try {
+      const { added } = await addLocalFiles(picked);
+      await load();
+      notify(
+        added > 0 ? 'success' : 'info',
+        added > 0
+          ? `${added} file${added === 1 ? '' : 's'} added to “${LOCAL_FILES_PLAYLIST_NAME}”`
+          : 'No playable audio files were in that pick',
+      );
+    } catch {
+      notify('error', 'Could not add those files — please try again.');
+    } finally {
+      setAddingLocal(false);
+    }
+  };
+
+  /* ── library backup / restore ──────────────────────────────────────── */
+
+  const handleBackup = async () => {
+    try {
+      const backup = await buildLibraryBackup();
+      const blob = new Blob([serializeLibraryBackup(backup)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = backupFileName(new Date());
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      notify('success', 'Library backup downloaded');
+    } catch {
+      notify('error', 'Could not create the backup — please try again.');
+    }
+  };
+
+  const handleRestoreFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const backup = parseLibraryBackup(text);
+      setPendingRestore({ backup, ...backupCounts(backup) });
+    } catch (parseError) {
+      notify(
+        'error',
+        parseError instanceof Error && parseError.message
+          ? parseError.message
+          : 'That file is not a valid Carmen library backup.',
+      );
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!pendingRestore || restoring) return;
+    setRestoring(true);
+    try {
+      const result = await applyLibraryBackup(pendingRestore.backup);
+      setPendingRestore(null);
+      await load();
+      notify(
+        'success',
+        `Restored ${result.playlists} playlist${result.playlists === 1 ? '' : 's'} and ${result.favorites} favorite${result.favorites === 1 ? '' : 's'}`,
+      );
+    } catch {
+      notify('error', 'Could not restore that backup — please try again.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteFor || deleting) return;
     setDeleting(true);
@@ -112,14 +219,23 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
           <>
             <Button
               variant="contained"
-              aria-label="Import from Spotify"
+              aria-label="Import a playlist"
               startIcon={<SpotifyMark size={18} />}
               onClick={() => setSpotifyOpen(true)}
               className="!bg-[#1DB954] !text-black hover:!bg-[#1ed760]"
             >
-              {/* Short label on narrow phones so both actions fit. */}
-              <span aria-hidden className="hidden min-[420px]:inline">Import from Spotify</span>
+              {/* Short label on narrow phones so the actions fit. */}
+              <span aria-hidden className="hidden min-[420px]:inline">Import a playlist</span>
               <span aria-hidden className="min-[420px]:hidden">Import</span>
+            </Button>
+            <Button
+              variant="text"
+              className="border border-accent/50"
+              startIcon={<MusicNoteIcon />}
+              disabled={addingLocal}
+              onClick={() => localFilesRef.current?.click()}
+            >
+              {addingLocal ? 'Adding…' : 'Add local files'}
             </Button>
             {/* MIGRATION: the kit Button has no `outlined` variant — the text
             variant plus a border class is the closest match. */}
@@ -138,6 +254,21 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
           ? 'Loading…'
           : `${playlists.length} playlist${playlists.length === 1 ? '' : 's'}`}
       </PageSummary>
+
+      {/* Compact library backup / restore, in the same toolbar area. */}
+      <div className="mb-3 flex items-center gap-1">
+        <span className="mr-1 text-xs leading-5 text-muted">Library backup:</span>
+        <Button variant="text" className="!px-2 !py-0.5 !text-xs max-sm:min-h-11" onClick={() => void handleBackup()}>
+          Backup
+        </Button>
+        <Button
+          variant="text"
+          className="!px-2 !py-0.5 !text-xs max-sm:min-h-11"
+          onClick={() => restoreFileRef.current?.click()}
+        >
+          Restore
+        </Button>
+      </div>
 
       {loading && playlists.length === 0 ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
@@ -253,10 +384,45 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
         onClose={() => setDeleteFor(null)}
       />
 
+      <ConfirmDialog
+        open={pendingRestore !== null}
+        title="Restore library backup?"
+        message={`This backup contains ${pendingRestore?.playlists ?? 0} playlist${pendingRestore?.playlists === 1 ? '' : 's'} and ${pendingRestore?.favorites ?? 0} favorite${pendingRestore?.favorites === 1 ? '' : 's'}. Restoring recreates those playlists in order and re-adds the favorites to your library.`}
+        confirmLabel="Restore"
+        busy={restoring}
+        onConfirm={() => void handleRestore()}
+        onClose={() => setPendingRestore(null)}
+      />
+
       <SpotifyImportDialog
         open={spotifyOpen}
         onClose={() => setSpotifyOpen(false)}
         onOpenPlaylist={onOpen}
+      />
+
+      {/* Hidden pickers: local audio files + the backup JSON. The input
+          value is reset on every change so the same files can be
+          re-picked immediately. */}
+      <input
+        ref={localFilesRef}
+        type="file"
+        hidden
+        accept="audio/*,.mp3,.m4a,.flac,.wav,.ogg,.opus"
+        multiple
+        onChange={(event) => {
+          void handleLocalFiles(event.target.files);
+          event.target.value = '';
+        }}
+      />
+      <input
+        ref={restoreFileRef}
+        type="file"
+        hidden
+        accept="application/json,.json"
+        onChange={(event) => {
+          void handleRestoreFile(event.target.files?.[0] ?? null);
+          event.target.value = '';
+        }}
       />
     </section>
   );

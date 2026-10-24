@@ -30,6 +30,19 @@ import type {
   TrackMeta,
 } from '../types/models';
 import { addSuggestions, recordPlay } from '../utils/library';
+import { moveItem } from '../utils/reorder';
+import {
+  advanceSleepTimer,
+  fadeVolumeAt,
+  IDLE_SLEEP_TIMER,
+  onSleepTrackEnded,
+  remainingMs as sleepTimerRemainingMs,
+  SLEEP_TIMER_FADE_DURATION_MS,
+  SLEEP_TIMER_FADE_STEP_MS,
+  startSleepTimer,
+  type SleepTimerOption,
+  type SleepTimerState,
+} from '../utils/sleepTimer';
 import { cachedStreamSource, fillStreamCache } from '../utils/streamCache';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
@@ -70,6 +83,7 @@ export interface PlayerContextValue {
   addToQueue: (rawTrack: unknown) => void;
   playNext: (rawTrack: unknown) => void;
   removeFromQueue: (index: number) => void;
+  reorderQueue: (from: number, to: number) => void;
   clearQueue: () => void;
   togglePlay: () => void;
   next: (auto?: boolean) => void;
@@ -103,6 +117,28 @@ export interface PlayheadContextValue {
 }
 
 const PlayheadContext = createContext<PlayheadContextValue | null>(null);
+
+/**
+ * Sleep-timer state — deliberately **not** part of `PlayerContext`, for
+ * the same reason the playhead is separate: the countdown ticks once a
+ * second, and if it lived in the main context every player consumer
+ * would repaint on every tick. Only the player menu (the surface that
+ * shows the remaining time) subscribes here.
+ *
+ * See `utils/sleepTimer.ts` for the machine itself: session-scoped
+ * (in-memory only, gone on reload), wall-clock, minute timers survive
+ * track changes, end-of-track timers are bound to one track.
+ */
+export interface SleepTimerContextValue {
+  /** The timer machine state (`idle` when no timer runs). */
+  timer: SleepTimerState;
+  /** Milliseconds left on a minute timer; null for idle / end-of-track / fading. */
+  remainingMs: number | null;
+  /** Set a timer (`'off'` cancels); changing mid-countdown resets it. */
+  setSleepTimer: (option: SleepTimerOption) => void;
+}
+
+const SleepTimerContext = createContext<SleepTimerContextValue | null>(null);
 
 const HISTORY_LIMIT = 100;
 
@@ -159,6 +195,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off'); // off | all | one
   const [sheetOpen, setSheetOpen] = useState(false);
+  /** Sleep timer (see `utils/sleepTimer.ts`): session-scoped, in-memory. */
+  const [sleepTimer, setSleepTimerState] = useState<SleepTimerState>(IDLE_SLEEP_TIMER);
+  const [sleepRemainingMs, setSleepRemainingMs] = useState<number | null>(null);
   /** True once the startup restore finished — persistence starts then. */
   const [restored, setRestored] = useState(false);
 
@@ -254,6 +293,107 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.pause();
     }
   }, [current]);
+
+  // ── Sleep timer driver ────────────────────────────────────────────────
+  // The machine lives in `utils/sleepTimer.ts`; this is the thin driver
+  // that translates its events into audio-element writes. Playback itself
+  // is untouched — no volume UI exists, so the element normally plays at
+  // full level and the fade below is the only writer of `audio.volume`,
+  // always restoring the pre-fade value afterwards.
+  const setSleepTimer = useCallback(
+    (option: SleepTimerOption) => {
+      // Replacing the state is what makes change-mid-countdown reset the
+      // countdown (the new deadline is computed from now) and makes
+      // cancel-mid-fade restore the volume (the fade effect's cleanup
+      // runs when the state leaves `fading`).
+      setSleepTimerState(startSleepTimer(option, Date.now(), current?.videoId ?? null));
+    },
+    [current?.videoId],
+  );
+
+  /** Move a counting timer into its fade phase, capturing live volume. */
+  const beginSleepFade = useCallback(() => {
+    setSleepTimerState((previous) => {
+      // Two firing paths, one function: minute timers fire on the clock
+      // (`advanceSleepTimer`) and end-of-track timers fire on track end
+      // (`onSleepTrackEnded` — `advanceSleepTimer` deliberately never
+      // expires those on the clock, so it must not be used for them).
+      const { state, event } =
+        previous.option === 'end-of-track'
+          ? onSleepTrackEnded(previous, Date.now())
+          : advanceSleepTimer(previous, Date.now());
+      if (event !== 'fade') return previous;
+      const audio = audioRef.current;
+      return { ...state, fadeFromVolume: audio ? audio.volume : state.fadeFromVolume };
+    });
+  }, []);
+
+  /** Wall-clock countdown: ticks the displayed remainder, starts the fade. */
+  useEffect(() => {
+    if (sleepTimer.status !== 'counting' || sleepTimer.endsAtMs === null) {
+      setSleepRemainingMs(null);
+      return undefined;
+    }
+    const tick = () => {
+      const ms = sleepTimerRemainingMs(sleepTimer, Date.now());
+      setSleepRemainingMs(ms);
+      if (ms !== null && ms <= 0) beginSleepFade();
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [sleepTimer, beginSleepFade]);
+
+  /** Fade phase: step the volume to 0 over ~10 s, pause, restore volume. */
+  useEffect(() => {
+    if (sleepTimer.status !== 'fading') return undefined;
+    const audio = audioRef.current;
+    if (!audio) {
+      setSleepTimerState(IDLE_SLEEP_TIMER);
+      return undefined;
+    }
+    const from = sleepTimer.fadeFromVolume;
+    const startedAt = sleepTimer.fadeStartedAtMs ?? Date.now();
+    let finished = false;
+    const step = () => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= SLEEP_TIMER_FADE_DURATION_MS) {
+        audio.volume = 0;
+        audio.pause(); // `onPause` flips `isPlaying`; the timer is done
+        // Restore so a later manual resume plays at normal volume, not
+        // silence — the pause, not a muted element, is the sleep action.
+        audio.volume = from;
+        finished = true;
+        setSleepTimerState(IDLE_SLEEP_TIMER);
+        return;
+      }
+      audio.volume = fadeVolumeAt(elapsed, from);
+    };
+    step();
+    const id = window.setInterval(step, SLEEP_TIMER_FADE_STEP_MS);
+    return () => {
+      window.clearInterval(id);
+      // Cancel or change mid-fade (or unmount): the volume the user had
+      // before the fade is put back, and playback continues untouched.
+      if (!finished) audio.volume = from;
+    };
+  }, [sleepTimer]);
+
+  /**
+   * End-of-track timers die with their track: a manual move to a
+   * different track clears one (its track is over by the user's own
+   * action). Minute timers are deliberately NOT cleared here — they
+   * keep running across track changes. A natural track end never reaches
+   * this effect, because `handleTrackEnded` intercepts it into a fade
+   * before the queue advances.
+   */
+  useEffect(() => {
+    if (sleepTimer.status !== 'counting' || sleepTimer.option !== 'end-of-track') return;
+    if (!sleepTimer.trackVideoId || !current?.videoId) return;
+    if (current.videoId !== sleepTimer.trackVideoId) {
+      setSleepTimerState(IDLE_SLEEP_TIMER);
+    }
+  }, [current?.videoId, sleepTimer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -366,6 +506,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const removeFromQueue = useCallback((index: number) => {
     setQueue((previous) => previous.filter((_, position) => position !== index));
+  }, []);
+
+  const reorderQueue = useCallback((from: number, to: number) => {
+    setQueue((previous) => {
+      if (
+        from === to ||
+        from < 0 ||
+        to < 0 ||
+        from >= previous.length ||
+        to >= previous.length
+      ) {
+        return previous;
+      }
+      return moveItem(previous, from, to);
+    });
   }, []);
 
   const clearQueue = useCallback(() => setQueue([]), []);
@@ -708,6 +863,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const handleTrackEnded = useCallback(() => {
     if (trackEndedRef.current) return;
     trackEndedRef.current = true;
+    // Sleep timer, end-of-track mode: this is the ONLY end-of-track
+    // detection — the shared entry point for the element's `ended` event
+    // and the `timeupdate` watchdog (see `utils/sleepTimer.ts`,
+    // `onSleepTrackEnded`). It runs before repeat / queue logic, so the
+    // fade-and-pause replaces advancing (and beats repeat-one).
+    if (sleepTimer.status === 'counting' && sleepTimer.option === 'end-of-track') {
+      const { event } = onSleepTrackEnded(sleepTimer, Date.now());
+      if (event === 'fade') beginSleepFade();
+      return;
+    }
     if (repeat === 'one') {
       seek(0); // rewinds and re-arms the watchdog for the replayed song
       const attempt = audioRef.current?.play();
@@ -715,7 +880,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     next(true);
-  }, [next, repeat, seek]);
+  }, [next, repeat, seek, sleepTimer, beginSleepFade]);
 
   /**
    * Source fallback chain: local file (asset) → local file (blob) → stream.
@@ -900,6 +1065,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      reorderQueue,
       clearQueue,
       togglePlay,
       next,
@@ -929,6 +1095,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      reorderQueue,
       clearQueue,
       togglePlay,
       next,
@@ -956,13 +1123,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [currentTime, duration, buffered],
   );
 
+  /** Sleep-timer value: ticks once a second, subscribed to only by the menu. */
+  const sleepTimerValue = useMemo<SleepTimerContextValue>(
+    () => ({ timer: sleepTimer, remainingMs: sleepRemainingMs, setSleepTimer }),
+    [sleepTimer, sleepRemainingMs, setSleepTimer],
+  );
+
   return (
     <PlayerContext.Provider value={value}>
       <PlayheadContext.Provider value={playhead}>
-        {children}
+        <SleepTimerContext.Provider value={sleepTimerValue}>
+          {children}
+        </SleepTimerContext.Provider>
       </PlayheadContext.Provider>
-      {/* No volume control: the element plays at full level and the OS mixer
-          owns loudness, so the player keeps no volume state at all. */}
+      {/* No volume control UI: the element plays at full level and the OS
+          mixer owns loudness. The sleep-timer fade is the only writer of
+          `audio.volume`, and it always restores the pre-fade value — so
+          the player still keeps no volume state of its own. */}
       <audio
         ref={audioRef}
         preload="auto"
@@ -1036,5 +1213,16 @@ export function usePlayer(): PlayerContextValue {
 export function usePlayhead(): PlayheadContextValue {
   const context = useContext(PlayheadContext);
   if (!context) throw new Error('usePlayhead must be used inside PlayerProvider');
+  return context;
+}
+
+/**
+ * Sleep-timer state (see `SleepTimerContextValue`). Subscribe here — not
+ * through `usePlayer` — when a component shows the timer, so the 1 Hz
+ * countdown ticks repaint just that component.
+ */
+export function useSleepTimer(): SleepTimerContextValue {
+  const context = useContext(SleepTimerContext);
+  if (!context) throw new Error('useSleepTimer must be used inside PlayerProvider');
   return context;
 }

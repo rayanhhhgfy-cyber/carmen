@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'r
 import Layout from './components/Layout';
 import ArtistPage from './pages/ArtistPage';
 import CollectionPage from './pages/CollectionPage';
+import DiscoverPage from './pages/DiscoverPage';
 import HomePage from './pages/HomePage';
 import LibraryPage from './pages/LibraryPage';
 import ManageDownloadsPage from './pages/ManageDownloadsPage';
@@ -11,6 +12,8 @@ import QueuePage from './pages/QueuePage';
 import SearchPage from './pages/SearchPage';
 import SettingsPage from './pages/SettingsPage';
 import SongPage from './pages/SongPage';
+import StatsPage from './pages/StatsPage';
+import SharedPlaylistGate from './components/SharedPlaylistGate';
 import UpdateDialog from './components/UpdateDialog';
 import { loadAppState, saveAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/appState';
 import { PlayerProvider } from './player/PlayerContext';
@@ -82,12 +85,17 @@ export default function App() {
           {/* Tauri-only: asks to update when GitHub's latest tag is newer
               than this build (no-op in the browser). */}
           <UpdateDialog />
+          {/* A `?pl=` share link opened the app: resolve the code and ask
+              to import the shared playlist (no-op without the param). */}
+          <SharedPlaylistGate />
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<HomePage />} />
               <Route path="search" element={<SearchPage />} />
               <Route path="queue" element={<QueuePage />} />
               <Route path="library" element={<LibraryPage />} />
+              <Route path="discover" element={<DiscoverPage />} />
+              <Route path="stats" element={<StatsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="settings/downloads" element={<ManageDownloadsPage />} />
               <Route path="collection/:kind/:id" element={<CollectionPage />} />

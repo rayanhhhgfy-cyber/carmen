@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Button,
   Chip,
   Container,
   IconButton,
@@ -9,15 +10,17 @@ import {
   Shimmer,
   TextField,
 } from '../components/ui';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { apiGet } from '../api';
 import { usePlayer } from '../player/PlayerContext';
 import { normalizeTrack } from '../utils/track';
 import { loadSearchHistory, rememberSearch } from '../utils/searchHistory';
+import { detectImportLink } from '../services/spotifyConvert';
 import type { Track } from '../types/models';
 import MediaCard from '../components/MediaCard';
 import TrackList, { EmptyState } from '../components/TrackList';
+import SpotifyImportDialog, { importKindLabel } from './library/SpotifyImportDialog';
 import { CloseIcon, HistoryIcon, SearchIcon } from '../components/icons';
 import { cn } from '../utils/cn';
 
@@ -74,6 +77,7 @@ function cardKey(item: Record<string, unknown>, index: number): string {
 /** Search page with suggestions, type filters and mixed results. */
 export default function SearchPage() {
   const player = usePlayer();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('query') || '';
 
@@ -86,7 +90,12 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [importUrl, setImportUrl] = useState<string | null>(null);
   const debounceRef = useRef<number | undefined>(undefined);
+
+  // A pasted import link (Spotify / Apple / YouTube / Carmen share) is not
+  // a search at all — offer the import flow for it instead.
+  const detectedImport = useMemo(() => detectImportLink(input.trim()), [input]);
 
   // Keep the URL in sync so results can be shared / deep linked — the
   // active filter rides along as `?filter=` (omitted while it is the
@@ -243,6 +252,21 @@ export default function SearchPage() {
             }}
           />
 
+          {detectedImport && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[28px] border border-line bg-surface px-4 py-2.5">
+              <p className="m-0 min-w-0 flex-1 text-sm leading-6">
+                Link detected — import this {importKindLabel(detectedImport.kind)}
+              </p>
+              <Button
+                variant="contained"
+                onClick={() => setImportUrl(input.trim())}
+                className="shrink-0"
+              >
+                Import
+              </Button>
+            </div>
+          )}
+
           {showSuggestions && entries.length > 0 && (
             <List className="relative z-[2] mt-1 rounded-[42px] border border-line bg-surface !py-1">
               {entries.map((entry) => (
@@ -326,6 +350,18 @@ export default function SearchPage() {
           </div>
         )}
       </div>
+
+      {/* The pasted-link import flow: opens prefilled and auto-advances;
+          the saved playlist lives in the Library. */}
+      <SpotifyImportDialog
+        open={importUrl !== null}
+        initialUrl={importUrl ?? undefined}
+        onClose={() => setImportUrl(null)}
+        onOpenPlaylist={() => {
+          setImportUrl(null);
+          navigate('/library');
+        }}
+      />
     </Container>
   );
 }

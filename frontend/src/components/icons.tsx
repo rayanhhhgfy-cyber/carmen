@@ -217,6 +217,13 @@ export const MusicNoteIcon = (props: SvgIconProps) => (
   </Solid>
 );
 
+/** Bar chart — used for the Stats tab (no chart glyph existed). */
+export const ChartIcon = (props: SvgIconProps) => (
+  <Solid {...props}>
+    <path d="M4 20h16v-2H4v2Zm2-2V9h3v9H6Zm5 0V5h3v13h-3Zm5 0v-6h3v6h-3Z" />
+  </Solid>
+);
+
 /* ── navigation & chrome ─────────────────────────────────────────────── */
 
 export const HomeIcon = (props: SvgIconProps) => (

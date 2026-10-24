@@ -28,14 +28,14 @@ interface PageSummaryProps {
  */
 export function PageSummary({ children, action }: PageSummaryProps) {
   return (
-    <div className="mb-3 flex min-h-[28px] items-center gap-2">
+    <div className="mb-3 flex min-h-[28px] flex-wrap items-center gap-2">
       {children && <p className="m-0 min-w-0 text-sm leading-[1.43] text-muted">{children}</p>}
       {/* MIGRATION: the old `ml: 'auto'` on this box was a dead letter under
           MUI — Stack's spacing reset (`> :not(style) ~ :not(style)`, specificity
           0,1,2) beat the child rule (0,1,0), so the action never pushed right
           and kept the 8px spacing margin instead. Flex `gap` reproduces that
           spacing; no `ml-auto` is added. */}
-      {action && <div className="flex shrink-0 gap-2">{action}</div>}
+      {action && <div className="flex flex-wrap gap-2">{action}</div>}
     </div>
   );
 }

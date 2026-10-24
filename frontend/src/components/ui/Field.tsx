@@ -130,7 +130,7 @@ export function TextField({
           error ? 'border-error' : 'border-line',
           disabled && 'opacity-60',
           multiline ? 'items-stretch' : 'h-11',
-          size === 'small' && !multiline && 'h-9',
+          size === 'small' && !multiline && 'h-9 max-sm:h-11',
         )}
       >
         {startAdornment ? <InputAdornment position="start">{startAdornment}</InputAdornment> : null}
@@ -193,6 +193,9 @@ export function Switch({ checked, onChange, disabled, className, inputProps }: S
       onClick={(event) => onChange(event, !checked)}
       className={cn(
         'relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+        // Invisible 44px-tall hit area — the painted track keeps its 24px
+        // MUI height, only the tappable zone grows (harmless for a mouse).
+        'after:absolute after:inset-x-0 after:-top-[10px] after:-bottom-[10px] after:content-[""]',
         'focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2',
         checked ? 'bg-accent' : 'bg-[rgba(0,0,0,0.38)] dark:bg-[rgba(255,255,255,0.3)]',
         disabled && 'pointer-events-none opacity-50',
@@ -278,7 +281,7 @@ export function ToggleButton({ value, children, disabled, className, ...rest }: 
       disabled={disabled}
       onClick={(event) => ctx?.onChange(event, value)}
       className={cn(
-        'rounded-[10px] px-3 py-1.5 text-sm font-medium transition-colors duration-150',
+        'min-w-0 rounded-[10px] px-3 py-1.5 text-center text-sm font-medium transition-colors duration-150 max-sm:min-h-11',
         'focus-visible:outline-2 focus-visible:outline-accent',
         'disabled:pointer-events-none disabled:opacity-40',
         selected ? 'bg-accent text-accent-contrast' : 'text-muted hover:bg-hover',

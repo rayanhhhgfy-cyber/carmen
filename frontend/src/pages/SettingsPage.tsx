@@ -20,11 +20,16 @@ import { useBattery } from '../settings/battery';
 import { updateSettings, useLowBatteryMode, useSettings } from '../settings/store';
 import { appInfo, isTauri, type AppInfo } from '../platform/env';
 import { listDownloads } from '../db/repos/downloads';
+import { listPlaylists } from '../db/repos/playlists';
+import {
+  runSmartDownloadsFromApp,
+  useSmartDownloadsStatusLine,
+} from '../services/smartDownloads';
 import { notify } from '../utils/downloadsStore';
 import { formatBytes } from '../utils/format';
 import { appCacheSize, clearAppCache } from '../utils/streamCache';
 import { LYRICS_PROVIDERS } from '../types/models';
-import type { ArtworkPlacement, CoverSize, FontId, LyricsSize, ThemeMode } from '../types/models';
+import type { ArtworkPlacement, CoverSize, FontId, LyricsSize, Playlist, ThemeMode } from '../types/models';
 import {
   CheckIcon,
   DarkModeIcon,
@@ -127,6 +132,11 @@ export default function SettingsPage() {
     lockScreenLyrics,
     karaokeWords,
     smartDownload,
+    smartDownloadLiked,
+    smartDownloadFavPlaylists,
+    smartDownloadWifiOnly,
+    smartDownloadAllowMetered,
+    smartDownloadExcludedPlaylists,
   } = useSettings();
   // The *effective* mode (manual toggle or the automatic low-battery
   // kick-in) and the reading behind its status line.
@@ -184,6 +194,32 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  // Smart downloads status line + the favourite playlists the opt-out
+  // list applies to. Loaded on mount — favouriting a playlist in the
+  // Library and coming back here re-runs this effect with fresh data.
+  const smartStatusLine = useSmartDownloadsStatusLine();
+  const [favPlaylists, setFavPlaylists] = useState<Playlist[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    listPlaylists()
+      .then((all) => {
+        if (!cancelled) setFavPlaylists(all.filter((playlist) => playlist.isFavorite));
+      })
+      .catch(() => {
+        if (!cancelled) setFavPlaylists([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleExcluded = (playlistId: number, excluded: boolean) => {
+    const next = excluded
+      ? [...smartDownloadExcludedPlaylists, playlistId]
+      : smartDownloadExcludedPlaylists.filter((id) => id !== playlistId);
+    updateSettings({ smartDownloadExcludedPlaylists: next });
+  };
 
   const clearCache = async () => {
     try {
@@ -475,7 +511,7 @@ export default function SettingsPage() {
                   }
                 }}
                 aria-label="Animated artwork placement"
-                className="w-full"
+                className="w-full max-sm:grid max-sm:grid-cols-2"
               >
                 <ToggleButton disabled={!animatedArtwork} value="default" className="flex-1">
                   Default
@@ -730,7 +766,7 @@ export default function SettingsPage() {
                   onClick={() => updateSettings({ lyricsProvider: provider.id })}
                   aria-pressed={selected}
                   className={cn(
-                    'flex w-full cursor-pointer items-center justify-between gap-3',
+                    'flex w-full cursor-pointer items-center justify-between gap-3 max-sm:min-h-11',
                     'rounded-[28px] border-0 px-[10px] py-[6px] text-left text-body hover:bg-hover',
                     selected && 'bg-[rgba(0,0,0,0.08)] dark:bg-[rgba(255,255,255,0.12)]',
                   )}
@@ -773,6 +809,144 @@ export default function SettingsPage() {
                 className="shrink-0"
               />
             </div>
+
+            <Divider />
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Auto-download liked songs
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Songs you favourite are saved to this device automatically,
+                  so they keep playing offline. Songs already on the device
+                  are skipped, and a failed song never stops the rest.
+                </span>
+              </div>
+              <Switch
+                checked={smartDownloadLiked}
+                onChange={(_, checked) => {
+                  updateSettings({ smartDownloadLiked: checked });
+                  if (checked) void runSmartDownloadsFromApp({ force: true }).catch(() => {});
+                }}
+                inputProps={{ 'aria-label': 'Auto-download liked songs' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Auto-download favourite playlists
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Playlists you mark favourite are saved whole, through the
+                  same download queue as a manual Download all. Runs on app
+                  launch, when you favourite a song, and when you switch
+                  this on.
+                </span>
+              </div>
+              <Switch
+                checked={smartDownloadFavPlaylists}
+                onChange={(_, checked) => {
+                  updateSettings({ smartDownloadFavPlaylists: checked });
+                  if (checked) void runSmartDownloadsFromApp({ force: true }).catch(() => {});
+                }}
+                inputProps={{ 'aria-label': 'Auto-download favourite playlists' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Wi-Fi only (best effort)
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  The web cannot reliably tell Wi-Fi from cellular: the
+                  browser only reports a connection type when it has one,
+                  and a fast connection is not proof of Wi-Fi. So this gate
+                  is best effort — an unknown or cellular-looking
+                  connection is treated as metered and blocks auto-downloads
+                  unless you allow metered connections below.
+                </span>
+              </div>
+              <Switch
+                checked={smartDownloadWifiOnly}
+                onChange={(_, checked) => updateSettings({ smartDownloadWifiOnly: checked })}
+                inputProps={{ 'aria-label': 'Wi-Fi only (best effort)' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Allow on metered connections
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Explicitly allow auto-downloads on a metered-looking
+                  connection. Off by default. With Wi-Fi only switched off
+                  this has no extra effect — the restriction itself is off.
+                </span>
+              </div>
+              <Switch
+                checked={smartDownloadAllowMetered}
+                onChange={(_, checked) => updateSettings({ smartDownloadAllowMetered: checked })}
+                inputProps={{ 'aria-label': 'Allow on metered connections' }}
+                className="shrink-0"
+              />
+            </div>
+
+            <span className="block pt-1 text-xs leading-[1.4] text-muted">
+              Smart downloads status: {smartStatusLine}
+            </span>
+
+            {smartDownloadFavPlaylists && (
+              <div className="flex flex-col gap-1 pt-1">
+                <p className="m-0 text-sm leading-[1.43] font-semibold">
+                  Favourite playlists — auto-download per playlist
+                </p>
+                <span className="block text-xs leading-[1.4] text-muted">
+                  Switch a playlist off here and it is never auto-downloaded,
+                  however it stays favourited.
+                </span>
+                {favPlaylists === null ? (
+                  <span className="text-xs leading-[1.4] text-muted">…</span>
+                ) : favPlaylists.length === 0 ? (
+                  <span className="text-xs leading-[1.4] text-muted">
+                    No favourite playlists yet — favourite one in the Library
+                    and it appears here.
+                  </span>
+                ) : (
+                  favPlaylists.map((playlist) => {
+                    const excluded = smartDownloadExcludedPlaylists.includes(playlist.id);
+                    return (
+                      <div
+                        key={playlist.id}
+                        // Single-line rows pitch 28px (24px row + 4px gap)
+                        // but each Switch's invisible hit area is 44px
+                        // tall, so neighbouring hit areas overlapped by
+                        // 16px and a tap near a row edge could toggle the
+                        // row below. py-2.5 lifts the pitch to 48px, so
+                        // the 44px hit areas no longer touch.
+                        className="flex flex-row items-center justify-between gap-4 py-2.5"
+                      >
+                        <p className="m-0 min-w-0 truncate text-sm leading-[1.43]">
+                          {playlist.name}
+                        </p>
+                        <Switch
+                          checked={!excluded}
+                          onChange={(_, checked) => toggleExcluded(playlist.id, !checked)}
+                          inputProps={{ 'aria-label': `Auto-download ${playlist.name}` }}
+                          className="shrink-0"
+                        />
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
 
             <p className="m-0 pt-2 text-sm leading-[1.43]">
               Every <b>Download</b> runs entirely in your browser: the audio is fetched from the

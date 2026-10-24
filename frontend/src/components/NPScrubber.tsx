@@ -168,7 +168,12 @@ export default function NPScrubber({ onSeek }: NPScrubberProps) {
             aria-valuemin={0}
             aria-valuemax={duration}
             aria-valuenow={progress}
-            className="relative block h-4 w-full cursor-pointer touch-none select-none"
+            // 44px touch area, −14px margins above/below: the *layout*
+            // height stays the 16px it always was (the rail/fill centre on
+            // the group's 16px box, which is exactly the tall box's centre
+            // once the negative margins land), only the hit box grows —
+            // into the empty mt-5 gap above and the time labels below.
+            className="relative -my-[14px] block h-11 w-full cursor-pointer touch-none select-none"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}

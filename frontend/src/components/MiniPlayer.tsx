@@ -128,7 +128,7 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             event.stopPropagation();
             player.togglePlay();
           }}
-          className="size-[42px] bg-accent !text-accent-contrast hover:!bg-accent hover:[transform:scale(1.08)] hover:[filter:brightness(1.08)] ![transition:transform_150ms_ease,filter_150ms_ease]"
+          className="size-11 shrink-0 bg-accent !text-accent-contrast hover:!bg-accent hover:[transform:scale(1.08)] hover:[filter:brightness(1.08)] ![transition:transform_150ms_ease,filter_150ms_ease]"
         >
           {player.isPlaying ? <PauseIcon /> : <PlayArrowIcon />}
         </IconButton>
@@ -139,13 +139,13 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             event.stopPropagation();
             player.next();
           }}
-          className="size-10 !text-muted hover:!text-body"
+          className="size-11 shrink-0 !text-muted hover:!text-body"
         >
           <SkipNextIcon />
         </IconButton>
         <IconButton
           size="small"
-          className="mini-expand size-10 !text-muted hover:!text-body opacity-100 md:opacity-55 group-hover:!opacity-100 group-focus-within:!opacity-100"
+          className="mini-expand size-11 shrink-0 !text-muted hover:!text-body opacity-100 md:opacity-55 group-hover:!opacity-100 group-focus-within:!opacity-100"
           aria-label="Open player"
           onClick={(event) => {
             event.stopPropagation();

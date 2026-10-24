@@ -10,7 +10,7 @@ import { bootstrapPlatform } from './platform/env';
 import { startDeepLinkListener } from './platform/deepLink';
 import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
-import { hydrateBrowserStorage } from './services/storage';
+import { ensurePersistentStorage, hydrateBrowserStorage } from './services/storage';
 import { hydrateLibrary } from './utils/library';
 import { shareTarget } from './utils/share';
 import './fonts';
@@ -106,6 +106,25 @@ async function bootstrap(): Promise<void> {
   } catch {
     /* badges simply start empty */
   }
+  // Downloaded songs only stay offline if the browser keeps the storage:
+  // IndexedDB is evictable "best-effort" until the origin is persisted,
+  // so ask for persistence up front whenever there is anything to lose.
+  if (downloadedVideoIds().length > 0) {
+    void ensurePersistentStorage();
+  }
+  // Smart downloads (opt-in, `services/smartDownloads.ts`): liked songs +
+  // favourite playlists through the existing download pipeline, gated on
+  // the connection type. Runs here at launch — after the catalogue and
+  // flags are hydrated, so already-downloaded tracks are skipped — and
+  // the watcher below re-runs it whenever a favourite is added. Both are
+  // fire-and-forget: a failure here must never block first paint. (This
+  // is the only boot hook; App/Layout/PlayerContext are untouched.)
+  void import('./services/smartDownloads')
+    .then((m) => {
+      m.startSmartDownloadsWatcher();
+      return m.runSmartDownloadsFromApp();
+    })
+    .catch(() => {});
   await restoreRoute();
   // Android: the app may have been launched by tapping a shared link —
   // resolve it over the restored route (no-op in a browser).

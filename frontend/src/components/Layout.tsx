@@ -5,6 +5,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useIsDesktop } from '../hooks';
 import { usePlayer } from '../player/PlayerContext';
 import SmartDownloadWatcher from '../offline/smartDownload';
+import PlayStatsWatcher from '../hooks/usePlayStats';
 import { useArtworkBackground, useEffectsEnabled } from '../settings/store';
 import { useTheme as useAppTheme } from '../theme/ThemeContext';
 import { clearNotice, getDownloadsSnapshot, subscribeDownloads } from '../utils/downloadsStore';
@@ -16,8 +17,10 @@ import PlayerSheet from './PlayerSheet';
 import type { SvgIconProps } from './SvgIcon';
 import { Alert, Snackbar } from './ui';
 import {
+  ChartIcon,
   HomeIcon,
   LibraryIcon,
+  MusicNoteIcon,
   QueueListIcon,
   SearchIcon,
   SettingsIcon,
@@ -33,8 +36,10 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Home', path: '/', icon: HomeIcon },
   { label: 'Search', path: '/search', icon: SearchIcon },
+  { label: 'Discover', path: '/discover', icon: MusicNoteIcon },
   { label: 'Queue', path: '/queue', icon: QueueListIcon },
   { label: 'Library', path: '/library', icon: LibraryIcon },
+  { label: 'Stats', path: '/stats', icon: ChartIcon },
   { label: 'Settings', path: '/settings', icon: SettingsIcon },
 ];
 
@@ -291,7 +296,11 @@ export default function Layout() {
               onClick={() => navigate(path)}
               className={cn(
                 'flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1',
-                'text-xs font-medium transition-colors',
+                // 7 items at 360px = 51px per slot, 43px after padding — a
+                // 12px "Settings"/"Discover" label (~48px) truncates, so
+                // narrow screens drop to 10px + tighter padding (label
+                // ~40px, fits with room) instead of losing the last letter.
+                'text-xs font-medium transition-colors max-sm:px-0.5 max-sm:text-[10px] max-sm:leading-4',
                 'focus-visible:outline-2 focus-visible:outline-accent',
                 location.pathname === path
                   ? whiteAccentOnLightBar
@@ -312,6 +321,9 @@ export default function Layout() {
       {/* paint-less playhead watcher for the smart-downloads rule — kept as
           its own leaf so the shell never re-renders on playback ticks */}
       <SmartDownloadWatcher />
+      {/* paint-less playhead watcher for the listening-stats rule — same
+          leaf pattern as SmartDownloadWatcher: no shell re-renders. */}
+      <PlayStatsWatcher />
     </div>
   );
 }

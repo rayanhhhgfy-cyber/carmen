@@ -21,6 +21,7 @@ import {
   Shimmer,
 } from '../components/ui';
 import { listDownloads } from '../db/repos/downloads';
+import { useSmartDownloadsStatusLine } from '../services/smartDownloads';
 import type { DownloadedSong } from '../types/models';
 import { cn } from '../utils/cn';
 import { notify } from '../utils/downloadsStore';
@@ -32,6 +33,9 @@ export default function ManageDownloadsPage() {
   const [songs, setSongs] = useState<DownloadedSong[] | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  // Same live smart-downloads line as Settings — this page changes
+  // nothing else about downloads (no new delete path lives here).
+  const smartStatusLine = useSmartDownloadsStatusLine();
 
   const load = useCallback(async () => {
     try {
@@ -88,9 +92,12 @@ export default function ManageDownloadsPage() {
             Choose the songs to delete from this device. Streams parked in the cache are cleared
             separately, from Settings → Storage.
           </p>
+          <p className="m-0 mt-1 ps-1 text-xs leading-[1.4] text-muted">
+            Smart downloads: {smartStatusLine}
+          </p>
         </div>
 
-        <div className="flex flex-row items-center justify-between gap-2">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-2">
           <span className="text-sm tabular-nums text-muted">
             {songs === null
               ? '…'
@@ -98,14 +105,14 @@ export default function ManageDownloadsPage() {
           </span>
           <div className="flex flex-row gap-1">
             <Button
-              className="!px-3 !py-1 !text-xs"
+              className="!px-3 !py-1 !text-xs max-sm:min-h-11"
               disabled={!allIds.length || allSelected}
               onClick={() => setSelected(new Set(allIds))}
             >
               Select all
             </Button>
             <Button
-              className="!px-3 !py-1 !text-xs"
+              className="!px-3 !py-1 !text-xs max-sm:min-h-11"
               disabled={!selected.size}
               onClick={() => setSelected(new Set())}
             >

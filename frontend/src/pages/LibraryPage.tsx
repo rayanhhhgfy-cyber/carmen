@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { Container, Tab, Tabs } from '../components/ui';
 import { listDownloads } from '../db/repos/downloads';
+import { runSmartDownloadsFromApp } from '../services/smartDownloads';
 import { useEffectsEnabled } from '../settings/store';
 import type { DownloadedSong } from '../types/models';
 import { cn } from '../utils/cn';
@@ -56,6 +57,16 @@ function readStoredTab(): LibraryTab {
 }
 
 export default function LibraryPage() {
+  // Smart downloads re-run on Library visits: this is what picks up a
+  // newly favourited PLAYLIST (playlist favourites do not patch the
+  // flags store, so the favourites watcher cannot see them) and any
+  // favourite added while the app was elsewhere. The run itself is
+  // cheap when nothing is new — already-downloaded tracks are skipped
+  // twice over — and a no-op when both smart toggles are off.
+  useEffect(() => {
+    void runSmartDownloadsFromApp().catch(() => {});
+  }, []);
+
   const [tab, setTab] = useState<LibraryTab>(readStoredTab);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [downloads, setDownloads] = useState<DownloadedSong[]>([]);

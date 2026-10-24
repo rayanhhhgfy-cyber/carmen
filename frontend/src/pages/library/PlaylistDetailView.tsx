@@ -8,28 +8,52 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Button, IconButton, Shimmer, Tooltip } from '../../components/ui';
+import { ShareIcon } from '../../components/icons';
 import {
   deletePlaylist,
   getPlaylist,
   listPlaylistTracks,
+  moveTrackInPlaylist,
   removeTrackFromPlaylist,
   renamePlaylist,
 } from '../../db/repos/playlists';
+import { useDownloads } from '../../hooks';
+import { useDragReorder } from '../../hooks/useDragReorder';
 import { usePlayer } from '../../player/PlayerContext';
 import type { Playlist, PlaylistSong } from '../../types/models';
+import { startPlaylistDownload } from '../../utils/downloads';
+import { notify } from '../../utils/downloadsStore';
 import { shuffleList } from '../../utils/library';
+import { moveItem } from '../../utils/reorder';
 import { cdnArtwork } from '../../utils/track';
 import { ConfirmDialog, EmptyHint, PlaylistFormDialog } from './common';
 import {
   ArrowBackIcon,
   Artwork,
+  DownloadIcon,
   EditIcon,
   MusicNoteIcon,
   PlayArrowIcon,
   ShuffleIcon,
   TrashIcon,
 } from './glyphs';
+import SharePlaylistDialog from './SharePlaylistDialog';
 import SongRow from './SongRow';
+
+/** Six-dot grip — no grip glyph exists in the icon set, so it is drawn
+ *  inline in the set's own idiom (24px grid, `currentColor` fill). */
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width={20} height={20} fill="currentColor" aria-hidden focusable="false">
+      <circle cx="9" cy="6" r="1.6" />
+      <circle cx="15" cy="6" r="1.6" />
+      <circle cx="9" cy="12" r="1.6" />
+      <circle cx="15" cy="12" r="1.6" />
+      <circle cx="9" cy="18" r="1.6" />
+      <circle cx="15" cy="18" r="1.6" />
+    </svg>
+  );
+}
 
 interface PlaylistDetailViewProps {
   playlistId: number;
@@ -44,7 +68,9 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
   const [loading, setLoading] = useState(true);
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { jobs } = useDownloads();
 
   const reload = useCallback(async () => {
     const [nextPlaylist, nextSongs] = await Promise.all([
@@ -100,6 +126,45 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
       setBusy(false);
     }
   };
+
+  // ── Download all ────────────────────────────────────────────────────────
+  // Progress is aggregated from the shared downloads job store: how many of
+  // this playlist's track ids have a `done` job, out of the playlist total.
+  const downloadedJobs = songs.filter((song) => jobs[song.videoId]?.status === 'done').length;
+  const downloadInFlight = songs.some((song) => jobs[song.videoId]?.status === 'running');
+
+  const handleDownloadAll = () => {
+    if (downloadInFlight) return;
+    const started = startPlaylistDownload(songs);
+    if (started > 0) {
+      notify('success', `Downloading ${started} track${started === 1 ? '' : 's'} from “${playlist?.name ?? 'playlist'}”`);
+    } else {
+      notify('info', 'Nothing new to download — every track is already saved or downloading');
+    }
+  };
+
+  // ── Drag reorder ────────────────────────────────────────────────────────
+  // Optimistic: the on-screen order flips the moment the handle is dropped,
+  // then the existing repo call persists it. A failed save reloads the
+  // stored order instead of leaving the wrong one on screen.
+  const handleMoveSong = useCallback(
+    (from: number, to: number) => {
+      const moved = songs[from];
+      if (!moved) return;
+      setSongs((previous) => moveItem(previous, from, to));
+      void (async () => {
+        try {
+          await moveTrackInPlaylist(playlistId, moved.videoId, to);
+        } catch (moveError) {
+          console.warn('[library] reorder playlist failed', moveError);
+          await reload().catch(() => {});
+        }
+      })();
+    },
+    [songs, playlistId, reload],
+  );
+
+  const drag = useDragReorder({ itemCount: songs.length, onMove: handleMoveSong });
 
   const playAll = () => player.playAll(songs, 0);
 
@@ -190,6 +255,26 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
             >
               Shuffle all
             </Button>
+            {songs.length > 0 && (
+              <Button
+                variant="text"
+                className="border border-accent/50"
+                startIcon={<DownloadIcon />}
+                disabled={downloadInFlight}
+                onClick={handleDownloadAll}
+              >
+                {downloadInFlight ? `Downloading ${downloadedJobs}/${songs.length}` : 'Download all'}
+              </Button>
+            )}
+            <Tooltip title="Share playlist">
+              <IconButton
+                aria-label="Share playlist"
+                disabled={!songs.length}
+                onClick={() => setShareOpen(true)}
+              >
+                <ShareIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Rename playlist">
               <IconButton aria-label="Rename playlist" onClick={() => setRenameOpen(true)}>
                 <EditIcon fontSize="small" />
@@ -201,6 +286,27 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
               </IconButton>
             </Tooltip>
           </div>
+
+          {downloadInFlight && (
+            <div className="mx-auto mt-3 max-w-[420px] sm:mx-0">
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={songs.length}
+                aria-valuenow={downloadedJobs}
+                aria-label="Playlist download progress"
+                className="h-1 w-full overflow-hidden rounded-full bg-hover"
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-300"
+                  style={{ width: `${songs.length ? (downloadedJobs / songs.length) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="mt-1 block text-xs leading-[1.4] text-muted">
+                Downloading {downloadedJobs}/{songs.length}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -210,16 +316,35 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
           hint="Add songs with the playlist button on any row in Songs, Home or Search."
         />
       ) : (
-        <div>
-          {songs.map((song) => (
-            <SongRow
+        <div ref={drag.containerRef}>
+          {songs.map((song, index) => (
+            <div
               key={song.videoId}
-              track={song}
-              contextTracks={songs}
-              showDownloaded={song.isDownloaded}
-              showAddToPlaylist
-              onRemove={() => void handleRemove(song.videoId)}
-            />
+              {...drag.rowProps(index)}
+              className="flex items-center"
+            >
+              {/* Drag handle — outside the SongRow, so grabbing it can never
+                  trigger the row's play action. SongRow itself is untouched. */}
+              <button
+                type="button"
+                aria-label={`Reorder ${song.title} in playlist`}
+                title="Drag to reorder"
+                {...drag.handleProps(index)}
+                onClick={(event) => event.stopPropagation()}
+                className="inline-grid shrink-0 cursor-grab place-items-center self-center rounded-full p-1 text-muted transition-colors hover:bg-hover active:cursor-grabbing max-sm:min-h-11 max-sm:min-w-11"
+              >
+                <GripIcon />
+              </button>
+              <div className="min-w-0 flex-1">
+                <SongRow
+                  track={song}
+                  contextTracks={songs}
+                  showDownloaded={song.isDownloaded}
+                  showAddToPlaylist
+                  onRemove={() => void handleRemove(song.videoId)}
+                />
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -231,6 +356,13 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
         initialDescription={playlist.description}
         onSubmit={handleRename}
         onClose={() => setRenameOpen(false)}
+      />
+
+      <SharePlaylistDialog
+        open={shareOpen}
+        playlist={playlist}
+        songs={songs}
+        onClose={() => setShareOpen(false)}
       />
 
       <ConfirmDialog
