@@ -45,7 +45,11 @@ export default function DownloadButton({
       ? 'Saved to your library'
       : job?.status === 'error'
         ? (job.error ?? 'Download failed — tap to retry')
-        : 'Download for offline listening';
+        : job?.status === 'skipped'
+          ? (job.error
+              ? `Skipped — ${job.error} — tap to retry`
+              : 'Skipped — tap to retry')
+          : 'Download for offline listening';
 
   const ringSize = size === 'small' ? 18 : 20;
   const ringValue = Math.round((job?.progress ?? 0) * 100);

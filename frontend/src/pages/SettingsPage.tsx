@@ -39,6 +39,7 @@ import {
   TelegramIcon,
   XIcon,
 } from '../components/icons';
+import PwaInstallRow from '../components/PwaInstallRow';
 
 /** MUI's stock `warning.main` (light/dark) — the low-battery status lines. */
 const WARNING_TEXT = 'text-[#ed6c02] dark:text-[#ff9800]';
@@ -789,6 +790,10 @@ export default function SettingsPage() {
           </div>
         </Section>
 
+        <Section title="App">
+          <PwaInstallRow />
+        </Section>
+
         <Section title="Downloads">
           <div className="flex flex-col gap-1">
             <div className="flex flex-row items-center justify-between gap-4">
@@ -820,7 +825,9 @@ export default function SettingsPage() {
                 <span className="block text-xs leading-[1.4] text-muted">
                   Songs you favourite are saved to this device automatically,
                   so they keep playing offline. Songs already on the device
-                  are skipped, and a failed song never stops the rest.
+                  are skipped. If a song fails, the downloads behind it
+                  pause: it retries after 30 seconds, and if it still fails
+                  it is skipped and marked, so the rest can continue.
                 </span>
               </div>
               <Switch

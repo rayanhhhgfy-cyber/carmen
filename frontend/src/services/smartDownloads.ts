@@ -352,7 +352,7 @@ export function formatSmartDownloadsStatus(
         if (job?.step === 'Queued') queued += 1;
         else running += 1;
       } else if (job.status === 'done') done += 1;
-      else if (job.status === 'error') failed += 1;
+      else if (job.status === 'error' || job.status === 'skipped') failed += 1;
     }
     const already =
       smart.alreadyDownloaded > 0 ? ` · ${smart.alreadyDownloaded} already on device` : '';

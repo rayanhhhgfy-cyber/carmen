@@ -11,6 +11,7 @@ import { startDeepLinkListener } from './platform/deepLink';
 import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
 import { ensurePersistentStorage, hydrateBrowserStorage } from './services/storage';
+import { initPwaInstall } from './services/pwaInstall';
 import { hydrateLibrary } from './utils/library';
 import { shareTarget } from './utils/share';
 import './fonts';
@@ -138,6 +139,9 @@ async function bootstrap(): Promise<void> {
   // Fire-and-forget and failure-proof: if registration fails, the app
   // simply behaves like before (online-only) and still paints.
   if (!isTauri) {
+    // Capture the one-shot install prompt early — a listener mounted
+    // later (e.g. in Settings) would miss an event that already fired.
+    initPwaInstall();
     void import('virtual:pwa-register')
       .then((m) => m.registerSW({ immediate: true }))
       .catch(() => {});

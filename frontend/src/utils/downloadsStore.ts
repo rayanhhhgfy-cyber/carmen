@@ -9,7 +9,7 @@
  * pipeline into its own chunk.
  */
 
-export type DownloadStatus = 'running' | 'done' | 'error';
+export type DownloadStatus = 'running' | 'done' | 'error' | 'skipped';
 
 export interface DownloadJob {
   videoId: string;

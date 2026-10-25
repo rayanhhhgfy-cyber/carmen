@@ -296,6 +296,11 @@ async function runDownload(
   track: Track,
   meta: TrackMeta | null,
   waitForCache: (() => Promise<void>) | null,
+  /**
+   * The failure-hold retry (see `processHeldDownloads` below) — a retry
+   * that fails again is skipped and marked, never held a second time.
+   */
+  isRetry: boolean = false,
 ): Promise<void> {
   const videoId = track.videoId;
   try {
@@ -413,25 +418,153 @@ async function runDownload(
     );
   } catch (error) {
     const failure = error as Error;
-    patchJob(videoId, {
-      status: 'error',
-      step: 'Failed',
+    const message = failure?.message || 'Download failed';
+    if (isRetry) {
+      // Second failure: skip it and mark it, so the queue can move on.
+      patchJob(videoId, {
+        status: 'skipped',
+        step: 'Skipped',
+        progress: 0,
+        error: message,
+      });
+      setNotice('info', `Skipped "${track.title}" — ${message}`);
+    } else {
+      // First failure: hold the queue behind this song (see below).
+      enterHold(track, meta, waitForCache, message);
+    }
+  }
+}
+
+/* ── Failure hold: pause, timer, one retry, then skip ────────────────────
+ *
+ * A failed download used to let everything behind it drain past it, so
+ * one server hiccup during a playlist download failed song after song.
+ * Now a failure pauses the queue: nothing behind the failed song starts
+ * (pipelines already running finish normally), a timer runs, and the
+ * failed song is retried once. If it still fails it is skipped and
+ * marked, and the queue resumes. The retry runs directly — not through
+ * the paused queue, which would never start it — and the failed song's
+ * job stays `running` while held, so nothing can start it twice.
+ *
+ * Held jobs are session-scoped: closing the app mid-hold drops the
+ * timers, and the song is simply not downloaded until it is retried
+ * manually. A held job's step shows the live countdown (ticked once a
+ * second while any hold is active).
+ */
+
+/** How long the queue waits after a failure before retrying it. */
+const HOLD_RETRY_DELAY_MS = 30_000;
+
+interface HeldDownload {
+  track: Track;
+  meta: TrackMeta | null;
+  waitForCache: (() => Promise<void>) | null;
+  error: string;
+  retryAt: number;
+}
+
+/** Failed songs waiting out their timer, in failure order. */
+const heldDownloads: HeldDownload[] = [];
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+let holdTicker: ReturnType<typeof setInterval> | null = null;
+
+/** Refreshes the "retrying in Ns" countdown on every held job. */
+function tickHeldJobs(): void {
+  for (const held of heldDownloads) {
+    const seconds = Math.max(0, Math.ceil((held.retryAt - Date.now()) / 1000));
+    patchJob(held.track.videoId, {
+      status: 'running',
+      step: `Paused — retrying in ${seconds}s`,
       progress: 0,
-      error: failure?.message || 'Download failed',
     });
-    setNotice('error', failure?.message || 'Download failed');
+  }
+}
+
+function startHoldTicker(): void {
+  if (holdTicker) return;
+  tickHeldJobs();
+  holdTicker = setInterval(tickHeldJobs, 1000);
+}
+
+function stopHoldTickerIfIdle(): void {
+  if (heldDownloads.length === 0 && holdTicker) {
+    clearInterval(holdTicker);
+    holdTicker = null;
+  }
+}
+
+/** Arms the timer for the first held song (no-op while one is running). */
+function startHoldTimer(): void {
+  if (holdTimer || heldDownloads.length === 0) return;
+  const next = heldDownloads[0];
+  const delay = Math.max(0, next.retryAt - Date.now());
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    void processHeldDownloads();
+  }, delay);
+}
+
+/** Pauses the queue behind a failed song and starts its retry timer. */
+function enterHold(
+  track: Track,
+  meta: TrackMeta | null,
+  waitForCache: (() => Promise<void>) | null,
+  error: string,
+): void {
+  downloadQueue.pause();
+  heldDownloads.push({
+    track,
+    meta,
+    waitForCache,
+    error,
+    retryAt: Date.now() + HOLD_RETRY_DELAY_MS,
+  });
+  patchJob(track.videoId, {
+    status: 'running',
+    step: `Paused — retrying in ${Math.ceil(HOLD_RETRY_DELAY_MS / 1000)}s`,
+    progress: 0,
+  });
+  startHoldTicker();
+  startHoldTimer();
+}
+
+/**
+ * Retries the oldest held song once. A success (or a skip, via the
+ * `isRetry` path in `runDownload`) clears it; a further held song gets
+ * its own fresh timer, and the queue resumes only when none are left.
+ */
+async function processHeldDownloads(): Promise<void> {
+  const held = heldDownloads.shift();
+  if (!held) {
+    stopHoldTickerIfIdle();
+    return;
+  }
+  // `runDownload` never throws — its own catch marks the job — so a
+  // retry can never wedge the queue; this guard is belt-and-braces.
+  try {
+    await runDownload(held.track, held.meta, held.waitForCache, true);
+  } catch {
+    /* the job was already marked by runDownload's catch */
+  }
+  if (heldDownloads.length > 0) {
+    heldDownloads[0].retryAt = Date.now() + HOLD_RETRY_DELAY_MS;
+    startHoldTimer();
+  } else {
+    downloadQueue.resume();
+    stopHoldTickerIfIdle();
   }
 }
 
 /**
  * Downloads a whole playlist's tracks through the existing pipeline.
  *
- * A plain loop over `startDownload` (idempotent and fire-and-forget, so
- * per-track failures stay isolated in their own jobs): tracks already
- * downloaded or already running are skipped — the same checks
- * `startDownload` itself makes, mirrored here so the returned count is
- * exactly how many downloads were started. Progress is aggregated by
- * callers from the downloads job store, like any other download.
+ * A plain loop over `startDownload` (idempotent and fire-and-forget):
+ * tracks already downloaded or already running are skipped — the same
+ * checks `startDownload` itself makes, mirrored here so the returned
+ * count is exactly how many downloads were started. A failed track
+ * pauses the queue behind it (hold → 30s timer → one retry → skip),
+ * per the failure-hold policy in `runDownload`. Progress is aggregated
+ * by callers from the downloads job store, like any other download.
  *
  * @returns how many downloads were started
  */

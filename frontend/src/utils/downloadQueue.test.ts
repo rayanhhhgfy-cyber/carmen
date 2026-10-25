@@ -3,8 +3,12 @@
  * (single or playlist) passes through.
  *
  * Pinned behaviour: never more than the limit running at once, queued
- * tasks start strictly in call order as slots free up, and a failed
- * task releases its slot instead of stalling everything behind it.
+ * tasks start strictly in call order as slots free up, a failed task
+ * releases its slot, and `pause()` holds back waiting tasks until
+ * `resume()` (running tasks are never killed). The queue itself does
+ * not decide what a failure means — the failure-hold policy (pause on
+ * failure, timer, one retry, then skip) lives in `utils/downloads.ts`
+ * and only uses the queue's pause/resume.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -112,5 +116,64 @@ describe('download queue', () => {
     hold.resolve();
     await first;
     await second;
+  });
+
+  it('pause holds back waiters even when a slot frees, resume drains them in order', async () => {
+    const queue = createDownloadQueue(1);
+    const started: number[] = [];
+    const first = gate();
+    const second = gate();
+    const third = gate();
+
+    const run0 = queue.schedule(() => {
+      started.push(0);
+      return first.promise;
+    });
+    const run1 = queue.schedule(() => {
+      started.push(1);
+      return second.promise;
+    });
+    const run2 = queue.schedule(() => {
+      started.push(2);
+      return third.promise;
+    });
+    expect(started).toEqual([0]);
+    expect(queue.pendingCount).toBe(2);
+
+    // Pause, then free the slot: nothing behind it may start.
+    queue.pause();
+    expect(queue.paused).toBe(true);
+    first.resolve();
+    await run0;
+    await flush();
+    expect(started).toEqual([0]);
+    expect(queue.pendingCount).toBe(2);
+
+    // Resume drains in FIFO order.
+    queue.resume();
+    expect(queue.paused).toBe(false);
+    await flush();
+    expect(started).toEqual([0, 1]);
+    second.resolve();
+    await run1;
+    await flush();
+    expect(started).toEqual([0, 1, 2]);
+    third.resolve();
+    await run2;
+    expect(queue.activeCount).toBe(0);
+  });
+
+  it('schedule while paused queues even with a free slot', async () => {
+    const queue = createDownloadQueue(2);
+    const onQueued = vi.fn();
+    queue.pause();
+
+    const run = queue.schedule(() => Promise.resolve(), onQueued);
+    expect(onQueued).toHaveBeenCalledTimes(1);
+    expect(queue.pendingCount).toBe(1);
+
+    queue.resume();
+    await run;
+    expect(queue.pendingCount).toBe(0);
   });
 });
