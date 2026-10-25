@@ -13,6 +13,7 @@ import { alpha } from '../utils/color';
 import { cn } from '../utils/cn';
 import AmbientBackground from './AmbientBackground';
 import MiniPlayer from './MiniPlayer';
+import OfflineBanner from './OfflineBanner';
 import PlayerSheet from './PlayerSheet';
 import type { SvgIconProps } from './SvgIcon';
 import { Alert, Snackbar } from './ui';
@@ -257,6 +258,11 @@ export default function Layout() {
             </h6>
           </div>
         </header>
+
+        {/* Offline state is pinned like the header (never scrolls away):
+            the banner explains what still works while the connection is
+            gone, instead of leaving online pages to fail silently. */}
+        <OfflineBanner />
 
         {/* the app's single vertical scroller — pages lay out inside it;
             `id="app-main"` lets HomePage's pull-to-refresh read its position */}

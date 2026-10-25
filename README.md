@@ -24,6 +24,11 @@ tiny **FastAPI** backend that wraps YouTube Music, caches what it can
 - **One-tap downloads** — audio + high-res cover + synced lyrics (+ the
   animated cover when the album has one) live in the app's own sandbox.
   Downloads play from disk first and need zero network.
+- **A real web PWA** — the web app installs to the home screen and opens
+  with no connection at all: the app shell is precached by a service
+  worker, and an offline banner points you at your downloads while the
+  network is gone. (On iOS the installed app keeps its own storage, so
+  songs downloaded in Safari need one re-download inside the app.)
 - **A streaming ladder that just starts** — disk copy → Telegram-cached
   copy → live relay, with size-verified integrity checks and a background
   backfill so the cache heals itself.

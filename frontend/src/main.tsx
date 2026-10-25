@@ -6,7 +6,7 @@ import { loadAppState, type NavigationState, NAVIGATION_KEY } from './db/repos/a
 import { favoriteIds } from './db/repos/favorites';
 import { hydrateFlags } from './db/flags';
 import { hydrateLocalLibrary, downloadedVideoIds } from './offline/source';
-import { bootstrapPlatform } from './platform/env';
+import { bootstrapPlatform, isTauri } from './platform/env';
 import { startDeepLinkListener } from './platform/deepLink';
 import { startBatteryTracking } from './settings/battery';
 import { hydrateSettings } from './settings/store';
@@ -131,6 +131,17 @@ async function bootstrap(): Promise<void> {
   startDeepLinkListener();
   // Repair older downloads that were saved without an album — fire and forget.
   void import('./utils/downloads').then((m) => m.backfillAlbumNames()).catch(() => {});
+
+  // Web only: register the service worker that precaches the app shell,
+  // so the installed app opens with no connection. Tauri bundles the
+  // shell locally and has no service-worker origin, so it skips this.
+  // Fire-and-forget and failure-proof: if registration fails, the app
+  // simply behaves like before (online-only) and still paints.
+  if (!isTauri) {
+    void import('virtual:pwa-register')
+      .then((m) => m.registerSW({ immediate: true }))
+      .catch(() => {});
+  }
 
   const container = document.getElementById('root');
   if (!container) throw new Error('#root missing from index.html');
