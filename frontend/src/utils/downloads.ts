@@ -41,7 +41,7 @@ import { cdnArtwork, pickArtwork } from './track';
 // this heavy pipeline can stay out of the initial bundle — Layout, hooks and
 // the share flow import the store eagerly, while everything below is loaded
 // lazily on first download interaction (see main.tsx's bootstrap).
-import { getDownloadsSnapshot, patchJob, setNotice } from './downloadsStore';
+import { getDownloadsSnapshot, patchJob, removeJob, setNotice } from './downloadsStore';
 import { downloadQueue } from './downloadQueue';
 import { ensurePersistentStorage } from '../services/storage/persist';
 
@@ -64,14 +64,18 @@ function networkError(cause: unknown): Error {
 
 async function fetchAudioOnce(
   videoId: string,
-  onProgress: (ratio: number) => void,
+  onProgress: (ratio: number, loaded: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<{ bytes: Uint8Array; contentType: string | null }> {
   let response: Response;
   try {
     // `no-store`: never reuse a response the player's <audio> element left in
     // the HTTP cache — those are fetched without an Origin header.
-    response = await fetch(streamUrl(videoId), { cache: 'no-store' });
+    response = await fetch(streamUrl(videoId), { cache: 'no-store', signal });
   } catch (cause) {
+    // An abort is a user cancel, not a network failure: re-throw it
+    // unwrapped so the pipeline never retries it or holds the queue.
+    if ((cause as Error)?.name === 'AbortError') throw cause;
     throw networkError(cause);
   }
 
@@ -95,6 +99,7 @@ async function fetchAudioOnce(
 
   if (!response.body || !total) {
     const buffer = await response.arrayBuffer().catch((cause) => {
+      if ((cause as Error)?.name === 'AbortError') throw cause;
       throw networkError(cause);
     });
     return { bytes: new Uint8Array(buffer), contentType };
@@ -109,9 +114,10 @@ async function fetchAudioOnce(
       if (done) break;
       chunks.push(value);
       loaded += value.length;
-      onProgress(Math.min(loaded / total, 1));
+      onProgress(Math.min(loaded / total, 1), loaded, total);
     }
   } catch (cause) {
+    if ((cause as Error)?.name === 'AbortError') throw cause;
     throw networkError(cause);
   }
 
@@ -126,16 +132,19 @@ async function fetchAudioOnce(
 
 async function fetchAudio(
   videoId: string,
-  onProgress: (ratio: number) => void,
+  onProgress: (ratio: number, loaded: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<{ bytes: Uint8Array; contentType: string | null }> {
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    // A cancel during the backoff sleep must not start another attempt.
+    if (signal?.aborted) throw signal.reason ?? new Error('Download cancelled');
     if (attempt > 1) {
       patchJob(videoId, { step: 'Retrying audio', progress: 0 });
       await sleep(600 * (attempt - 1));
     }
     try {
-      return await fetchAudioOnce(videoId, onProgress);
+      return await fetchAudioOnce(videoId, onProgress, signal);
     } catch (error) {
       lastError = error as Error;
       if (!(lastError as Error & { retryable?: boolean }).retryable) throw lastError;
@@ -244,6 +253,180 @@ function isRunning(videoId: string): boolean {
   return Boolean(job && (job.status === 'running' || job.status === 'done'));
 }
 
+/* ── Queue positions, cancel state, audio speed ────────────────────────────
+ *
+ * Waiting jobs show their place in line ("3rd in line") instead of a bare
+ * "Queued": `queuedOrder` mirrors the queue's waiting list, and every
+ * change (a job starts, is cancelled, or joins) rewrites every waiter's
+ * step. A job's `queued` flag — not its step text — is what the
+ * smart-downloads status line counts, so the wording can change freely.
+ *
+ * Cancelling uses three paths, one per state: a held job drops out of the
+ * hold list, a waiting job drops out of the queue, and a fetching job is
+ * aborted (its AbortController, for the long audio fetch) plus flagged
+ * (for the short later phases, which check the flag at each boundary).
+ */
+
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  if (n % 10 === 1) return `${n}st`;
+  if (n % 10 === 2) return `${n}nd`;
+  if (n % 10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+/** VideoIds waiting for a queue slot, in the order they will start. */
+const queuedOrder: string[] = [];
+
+/** Rewrites every waiting job's step to its current queue position. */
+function updateQueuePositions(): void {
+  queuedOrder.forEach((videoId, index) => {
+    patchJob(videoId, { step: `${ordinal(index + 1)} in line`, queued: true });
+  });
+}
+
+function removeFromQueueOrder(videoId: string): void {
+  const index = queuedOrder.indexOf(videoId);
+  if (index >= 0) {
+    queuedOrder.splice(index, 1);
+    updateQueuePositions();
+  }
+}
+
+/** AbortControllers of pipelines currently fetching audio. */
+const activeControllers = new Map<string, AbortController>();
+
+/** Jobs whose cancel was requested while their pipeline was mid-flight. */
+const cancelledIds = new Set<string>();
+
+function throwIfCancelled(videoId: string): void {
+  if (cancelledIds.has(videoId)) {
+    const error = new Error('Download cancelled');
+    error.name = 'Cancelled';
+    throw error;
+  }
+}
+
+/** Last audio-progress sample per job, for the smoothed speed + ETA. */
+interface SpeedSample {
+  loaded: number;
+  at: number;
+  emaBps: number;
+}
+
+const speedSamples = new Map<string, SpeedSample>();
+
+/** Turns an audio-progress tick into a speed + ETA patch for the job. */
+function reportAudioProgress(
+  videoId: string,
+  ratio: number,
+  loaded: number,
+  total: number,
+): void {
+  const now = Date.now();
+  const prev = speedSamples.get(videoId);
+  let emaBps = 0;
+  if (prev && now > prev.at && loaded > prev.loaded) {
+    const instant = ((loaded - prev.loaded) / (now - prev.at)) * 1000;
+    emaBps = prev.emaBps > 0 ? prev.emaBps * 0.7 + instant * 0.3 : instant;
+  } else if (prev) {
+    emaBps = prev.emaBps;
+  }
+  speedSamples.set(videoId, { loaded, at: now, emaBps });
+  patchJob(videoId, {
+    step: 'Downloading audio',
+    progress: ratio * 0.55,
+    loadedBytes: loaded,
+    totalBytes: total,
+    speedBps: emaBps > 0 ? Math.round(emaBps) : undefined,
+    etaSeconds: emaBps > 0 ? Math.ceil((total - loaded) / emaBps) : undefined,
+  });
+}
+
+/**
+ * Cancels a download in progress, from any of its states: a held retry
+ * drops out of the hold list, a waiting job drops out of the queue, and
+ * a fetching pipeline is aborted (audio fetch) and flagged (later
+ * phases). A finished, failed or skipped job is not in progress —
+ * cancelling one is a no-op. The job leaves no trace: no hold, no skip,
+ * no notice, no half-written folder.
+ */
+export function cancelDownload(videoId: string): void {
+  const job = getDownloadsSnapshot().jobs[videoId];
+  if (!job || job.status !== 'running') return;
+
+  // Held for a retry: drop it and hand the timer to the next held song,
+  // or resume the queue when none are left.
+  const heldIndex = heldDownloads.findIndex((held) => held.track.videoId === videoId);
+  if (heldIndex >= 0) {
+    heldDownloads.splice(heldIndex, 1);
+    if (heldIndex === 0) {
+      if (holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      if (heldDownloads.length > 0) {
+        heldDownloads[0].retryAt = Date.now() + HOLD_RETRY_DELAY_MS;
+        startHoldTimer();
+      } else {
+        downloadQueue.resume();
+        stopHoldTickerIfIdle();
+      }
+    }
+    removeJob(videoId);
+    return;
+  }
+
+  // Still waiting for a slot: drop it from the queue and the order.
+  if (downloadQueue.cancel(videoId)) {
+    removeFromQueueOrder(videoId);
+    removeJob(videoId);
+    return;
+  }
+
+  // Already fetching: abort the audio fetch and flag the later phases.
+  // The pipeline's catch removes the job when it surfaces.
+  cancelledIds.add(videoId);
+  activeControllers.get(videoId)?.abort();
+}
+
+/**
+ * Retries every skipped download in this session, oldest first.
+ * `startDownload` itself skips anything already saved or running, so
+ * calling this twice — or while a retry is in flight — is harmless.
+ *
+ * @returns how many retries were started
+ */
+export function retrySkippedDownloads(): number {
+  const jobs = getDownloadsSnapshot().jobs;
+  let started = 0;
+  for (const job of Object.values(jobs)) {
+    if (job.status !== 'skipped' || !job.track) continue;
+    const current = getDownloadsSnapshot().jobs[job.videoId];
+    if (current && (current.status === 'running' || current.status === 'done')) continue;
+    startDownload(job.track, null);
+    started += 1;
+  }
+  return started;
+}
+
+// Skipped songs retry themselves when the connection returns — the
+// common case for a skip is the network going away mid-download. The
+// listener attaches when this lazily-loaded module first loads, which is
+// also the only way skipped jobs can exist in a session.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    const retried = retrySkippedDownloads();
+    if (retried > 0) {
+      setNotice(
+        'info',
+        `Back online — retrying ${retried} skipped download${retried === 1 ? '' : 's'}`,
+      );
+    }
+  });
+}
+
 export interface StartDownloadOptions {
   /** Awaited first — see `PlayerContext.waitForCache`. */
   waitForCache?: () => Promise<void>;
@@ -272,18 +455,29 @@ export function startDownload(
 
   patchJob(videoId, {
     title: track.title,
+    track,
     status: 'running',
     step: waitForCache ? 'Waiting for the stream to finish caching' : 'Downloading audio',
     progress: 0,
+    error: undefined,
+    loadedBytes: undefined,
+    totalBytes: undefined,
+    speedBps: undefined,
+    etaSeconds: undefined,
   });
 
   // Every download — single or playlist — goes through the shared FIFO
   // queue: at most a few pipelines fetch at once, the rest wait their
-  // turn and say so (step 'Queued'). The pipeline itself never rejects
-  // (it patches its own error state), so the queue always drains.
+  // turn and say their place in line (see `updateQueuePositions`). The
+  // pipeline itself never rejects (it patches its own error state), so
+  // the queue always drains.
   void downloadQueue.schedule(
     () => runDownload(track, meta, waitForCache),
-    () => patchJob(videoId, { step: 'Queued', progress: 0 }),
+    () => {
+      if (!queuedOrder.includes(videoId)) queuedOrder.push(videoId);
+      updateQueuePositions();
+    },
+    videoId,
   );
 }
 
@@ -303,22 +497,32 @@ async function runDownload(
   isRetry: boolean = false,
 ): Promise<void> {
   const videoId = track.videoId;
+  // The queue slot is now ours: leave the waiting order and tell the
+  // status line this job is no longer queued.
+  removeFromQueueOrder(videoId);
+  patchJob(videoId, { queued: false });
+  const controller = new AbortController();
+  activeControllers.set(videoId, controller);
   try {
     if (waitForCache) {
-      // Restore the waiting label a 'Queued' patch may have overwritten.
+      // Restore the waiting label a position patch may have overwritten.
       patchJob(videoId, { step: 'Waiting for the stream to finish caching', progress: 0 });
       try {
         await waitForCache();
       } catch {
         /* waiting is an optimisation — the download proceeds either way */
       }
+      throwIfCancelled(videoId);
     }
 
     // 1 — raw audio bytes
     patchJob(videoId, { step: 'Downloading audio', progress: 0 });
-    const { bytes: audioBytes, contentType } = await fetchAudio(videoId, (ratio) =>
-      patchJob(videoId, { step: 'Downloading audio', progress: ratio * 0.55 }),
+    const { bytes: audioBytes, contentType } = await fetchAudio(
+      videoId,
+      (ratio, loaded, total) => reportAudioProgress(videoId, ratio, loaded, total),
+      controller.signal,
     );
+    throwIfCancelled(videoId);
 
     // 2 — straight to disk, no transcode, no tags
     patchJob(videoId, { step: 'Saving audio', progress: 0.58 });
@@ -326,6 +530,7 @@ async function runDownload(
     if (!folder) throw new Error('Local storage is unavailable');
     const audioPath = `${folder}/audio.${extensionFor(contentType)}`;
     await writeBinary(audioPath, audioBytes);
+    throwIfCancelled(videoId);
 
     // 3 — high resolution cover
     patchJob(videoId, { step: 'Fetching cover art', progress: 0.62 });
@@ -340,6 +545,7 @@ async function runDownload(
       /* a missing cover never fails the download */
     }
     patchJob(videoId, { progress: 0.8 });
+    throwIfCancelled(videoId);
 
     // 4 — the full `/browsing/track/{id}` payload → `track.json`.
     // This is the single offline source of truth: it carries the lyrics (so
@@ -363,6 +569,7 @@ async function runDownload(
     } catch {
       /* track.json is best effort — the song still plays without it */
     }
+    throwIfCancelled(videoId);
 
     // 4b — animated cover (Apple motion artwork), when the album has one.
     // Best effort, like the cover and track.json: the catalogue may be slow
@@ -386,6 +593,7 @@ async function runDownload(
     } catch {
       /* motion artwork never fails a download */
     }
+    throwIfCancelled(videoId);
 
     // 5 — record everything in SQLite
     patchJob(videoId, { step: 'Updating library', progress: 0.9 });
@@ -418,6 +626,20 @@ async function runDownload(
     );
   } catch (error) {
     const failure = error as Error;
+    if (failure?.name === 'AbortError' || failure?.name === 'Cancelled') {
+      // User-cancelled: leave nothing behind — no hold, no skip, no
+      // notice, and no half-written folder. A fresh download has no
+      // earlier complete copy to protect (re-downloads are refused while
+      // a copy exists), so deleting the folder is safe.
+      cancelledIds.delete(videoId);
+      try {
+        await deleteSongFolder(videoId);
+      } catch {
+        /* best effort — an orphan folder is invisible, just wasted space */
+      }
+      removeJob(videoId);
+      return;
+    }
     const message = failure?.message || 'Download failed';
     if (isRetry) {
       // Second failure: skip it and mark it, so the queue can move on.
@@ -432,6 +654,9 @@ async function runDownload(
       // First failure: hold the queue behind this song (see below).
       enterHold(track, meta, waitForCache, message);
     }
+  } finally {
+    activeControllers.delete(videoId);
+    speedSamples.delete(videoId);
   }
 }
 

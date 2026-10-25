@@ -4,6 +4,7 @@ import { CheckCircleIcon, DownloadIcon } from './icons';
 import { useFlag } from '../db/flags';
 import { useDownloads } from '../hooks';
 import { notify } from '../utils/downloadsStore';
+import { formatBytes } from '../utils/format';
 import type { Track, TrackMeta } from '../types/models';
 
 interface DownloadButtonProps {
@@ -12,6 +13,15 @@ interface DownloadButtonProps {
   /** See `PlayerContext.waitForCache`. */
   waitForCache?: () => Promise<void>;
   size?: 'small' | 'medium';
+}
+
+/** "1m 5s" / "42s" — the ETA tail of the running label. */
+function formatEta(seconds: number | undefined): string {
+  if (!seconds || seconds <= 0) return '';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
 }
 
 /** Ring geometry copied from MUI's `CircularProgress` (SIZE 44, thickness 3.6). */
@@ -39,8 +49,15 @@ export default function DownloadButton({
   const downloaded = useFlag('downloaded', track.videoId);
   const done = downloaded || job?.status === 'done';
 
+  // While audio bytes are flowing, the running label carries the live
+  // speed + ETA the pipeline reports; other phases have no byte rate.
+  const speedPart =
+    running && job?.step === 'Downloading audio' && job?.speedBps
+      ? ` — ${formatBytes(job.speedBps)}/s${job.etaSeconds ? ` — ${formatEta(job.etaSeconds)} left` : ''}`
+      : '';
+
   const label = running
-    ? `${job?.step ?? 'Downloading'}${job?.progress ? ` — ${Math.round((job.progress || 0) * 100)}%` : ''}`
+    ? `${job?.step ?? 'Downloading'}${job?.progress ? ` — ${Math.round((job.progress || 0) * 100)}%` : ''}${speedPart} — tap to cancel`
     : done
       ? 'Saved to your library'
       : job?.status === 'error'
@@ -63,14 +80,24 @@ export default function DownloadButton({
         <IconButton
           size={size}
           aria-label={label}
-          disabled={running || done}
+          // A running download is tappable: tapping cancels it (queued,
+          // held or fetching). Only a saved song disables the button.
+          disabled={done}
           onClick={() => {
             // Lazy-load the pipeline on the first tap — the module (audio
             // fetching, artwork, filesystem writes) stays out of the initial
             // bundle and is shared with the in-player menu.
             void import('../utils/downloads')
-              .then((m) => m.startDownload(track, meta, { waitForCache }))
-              .catch(() => notify('error', 'Could not start the download — try again'));
+              .then((m) => {
+                if (running) m.cancelDownload(track.videoId);
+                else m.startDownload(track, meta, { waitForCache });
+              })
+              .catch(() =>
+                notify(
+                  'error',
+                  running ? 'Could not cancel the download' : 'Could not start the download — try again',
+                ),
+              );
           }}
         >
           {running ? (

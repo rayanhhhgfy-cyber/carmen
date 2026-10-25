@@ -20,6 +20,8 @@ import {
   serializeLibraryBackup,
 } from '../../utils/libraryBackup';
 import { notify } from '../../utils/downloadsStore';
+import { useFlags } from '../../db/flags';
+import { useDownloads } from '../../hooks';
 import {
   createPlaylist,
   deletePlaylist,
@@ -63,6 +65,10 @@ function backupCounts(backup: unknown): { playlists: number; favorites: number }
 export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [covers, setCovers] = useState<Record<number, string | null>>({});
+  // Track ids per playlist, loaded in the same pass as the covers (the
+  // tracks are already fetched for the first-track artwork) — the
+  // "Downloaded" badge below needs them, and no extra query is spent.
+  const [trackIds, setTrackIds] = useState<Record<number, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [menu, setMenu] = useState<{ anchor: HTMLElement; playlist: Playlist } | null>(null);
   const [form, setForm] = useState<FormTarget | null>(null);
@@ -74,28 +80,45 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
   const [restoring, setRestoring] = useState(false);
   const localFilesRef = useRef<HTMLInputElement | null>(null);
   const restoreFileRef = useRef<HTMLInputElement | null>(null);
+  // Live download state for the badges: flags for saved songs (earlier
+  // sessions) plus session jobs for songs saved just now.
+  const { jobs } = useDownloads();
+  const flags = useFlags();
 
   /** Playlist list + cover artwork (explicit cover video → first track). */
   const load = useCallback(async () => {
     const lists = await listPlaylists();
     setPlaylists(lists);
 
-    const entries: [number, string | null][] = await Promise.all(
-      lists.map(async (playlist): Promise<[number, string | null]> => {
+    const entries: [number, string | null, string[]][] = await Promise.all(
+      lists.map(async (playlist): Promise<[number, string | null, string[]]> => {
+        // The badge needs every playlist's track ids, so the tracks are
+        // fetched even when the cover is explicit (that path used to skip
+        // the query and only the fallback path fetched).
         if (playlist.coverVideoId) {
-          return [playlist.id, cdnArtwork(playlist.coverVideoId)];
+          try {
+            const songs = await listPlaylistTracks(playlist.id);
+            return [playlist.id, cdnArtwork(playlist.coverVideoId), songs.map((song) => song.videoId)];
+          } catch {
+            return [playlist.id, cdnArtwork(playlist.coverVideoId), []];
+          }
         }
         try {
           const songs = await listPlaylistTracks(playlist.id);
-          return [playlist.id, songs[0]?.artwork ?? null];
+          return [playlist.id, songs[0]?.artwork ?? null, songs.map((song) => song.videoId)];
         } catch {
-          return [playlist.id, null];
+          return [playlist.id, null, []];
         }
       }),
     );
     const map: Record<number, string | null> = {};
-    for (const [id, artwork] of entries) map[id] = artwork;
+    const idsMap: Record<number, string[]> = {};
+    for (const [id, artwork, ids] of entries) {
+      map[id] = artwork;
+      idsMap[id] = ids;
+    }
     setCovers(map);
+    setTrackIds(idsMap);
   }, []);
 
   useEffect(() => {
@@ -283,7 +306,17 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
         />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
-          {playlists.map((playlist) => (
+          {playlists.map((playlist) => {
+            // Same rule as the detail view's button: every track saved
+            // (catalogue flag or a just-finished session job), and never
+            // for an empty playlist or one whose tracks failed to load.
+            const ids = trackIds[playlist.id];
+            const fullyDownloaded = Boolean(
+              ids &&
+                ids.length > 0 &&
+                ids.every((id) => flags.downloaded.has(id) || jobs[id]?.status === 'done'),
+            );
+            return (
             <div key={playlist.id} className="relative">
               <button
                 type="button"
@@ -316,6 +349,11 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                   <span className="block text-xs leading-[1.4] text-muted">
                     {playlist.trackCount} song{playlist.trackCount === 1 ? '' : 's'}
                   </span>
+                  {fullyDownloaded && (
+                    <span className="block text-xs leading-[1.4] font-semibold text-accent">
+                      Downloaded
+                    </span>
+                  )}
                 </div>
               </button>
 
@@ -335,7 +373,8 @@ export default function PlaylistsSection({ onOpen }: PlaylistsSectionProps) {
                 </Tooltip>
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

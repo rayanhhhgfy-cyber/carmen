@@ -300,7 +300,9 @@ describe('status line wording', () => {
     };
     expect(
       formatSmartDownloadsStatus(base, {
-        a: { status: 'running', step: 'Queued' },
+        // Queued-ness comes from the job's `queued` flag, not its step
+        // text (waiting jobs now show "Nth in line" as their step).
+        a: { status: 'running', step: '3rd in line', queued: true },
         b: { status: 'running', step: 'Downloading audio' },
         c: { status: 'done' },
       }),

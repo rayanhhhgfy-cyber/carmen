@@ -298,6 +298,31 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
             </Tooltip>
           </div>
 
+          {/* Same progress bar as CollectionPage: shown while a download
+              run is in flight, counting saved tracks (catalogue + jobs). */}
+          {downloadInFlight && (
+            <div className="mx-auto mt-3 max-w-[420px] sm:mx-0">
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={songs.length}
+                aria-valuenow={downloadedJobs}
+                aria-label="Playlist download progress"
+                className="h-1 w-full overflow-hidden rounded-full bg-hover"
+              >
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-300"
+                  style={{
+                    width: `${songs.length ? (downloadedJobs / songs.length) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <span className="mt-1 block text-xs leading-[1.4] text-muted">
+                Downloading {downloadedJobs}/{songs.length}
+              </span>
+            </div>
+          )}
+
           {downloadInFlight && (
             <div className="mx-auto mt-3 max-w-[420px] sm:mx-0">
               <div

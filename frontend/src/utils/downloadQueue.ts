@@ -25,8 +25,21 @@ export interface DownloadQueue {
    * fires synchronously, so the caller can mark the job accordingly. The
    * returned promise settles exactly like the task's — and a failed task
    * releases its slot either way.
+   *
+   * `id` tags the task so `cancel(id)` can drop it while it still waits.
+   * A task that already started cannot be cancelled through the queue —
+   * `cancel` returns false for it, and the caller aborts it another way
+   * (the download pipeline's AbortController).
    */
-  schedule(task: () => Promise<void>, onQueued?: () => void): Promise<void>;
+  schedule(task: () => Promise<void>, onQueued?: () => void, id?: string): Promise<void>;
+  /**
+   * Drops a still-waiting task by id. Returns true when one was dropped;
+   * false when no waiting task carries that id (never started, already
+   * started, or already finished). The dropped task's promise never
+   * settles, so callers must fire-and-forget it (as `startDownload`
+   * does) and never await it.
+   */
+  cancel(id: string): boolean;
   /**
    * Holds back waiting tasks until `resume()`. Pipelines already running
    * keep running to completion; only new starts are blocked.
@@ -47,19 +60,20 @@ export function createDownloadQueue(
 ): DownloadQueue {
   let active = 0;
   let paused = false;
-  const pending: Array<() => void> = [];
+  /** Waiting tasks, each tagged with the id its caller passed to schedule. */
+  const pending: Array<{ id: string | undefined; start: () => void }> = [];
 
   const drain = (): void => {
     if (paused) return;
     while (active < limit && pending.length > 0) {
-      const start = pending.shift() as () => void;
+      const next = pending.shift() as { start: () => void };
       active += 1;
-      start();
+      next.start();
     }
   };
 
   return {
-    schedule(task, onQueued) {
+    schedule(task, onQueued, id) {
       return new Promise<void>((resolve, reject) => {
         const start = (): void => {
           let result: Promise<void>;
@@ -91,9 +105,15 @@ export function createDownloadQueue(
           start();
         } else {
           onQueued?.();
-          pending.push(start);
+          pending.push({ id, start });
         }
       });
+    },
+    cancel(id) {
+      const index = pending.findIndex((entry) => entry.id === id);
+      if (index < 0) return false;
+      pending.splice(index, 1);
+      return true;
     },
     pause() {
       paused = true;

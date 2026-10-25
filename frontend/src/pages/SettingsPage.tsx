@@ -179,16 +179,34 @@ export default function SettingsPage() {
   const [storage, setStorage] = useState<{ cache: number; count: number; bytes: number } | null>(
     null,
   );
+  // Browser storage quota for this origin (`navigator.storage.estimate`):
+  // null when the browser does not report one, and then no row renders.
+  const [quota, setQuota] = useState<{ usage: number; quota: number } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([appCacheSize().catch(() => 0), listDownloads().catch(() => [])])
-      .then(([cache, songs]) => {
+    void Promise.all([
+      appCacheSize().catch(() => 0),
+      listDownloads().catch(() => []),
+      (async () => {
+        try {
+          const estimate = await navigator.storage?.estimate?.();
+          if (!estimate || typeof estimate.quota !== 'number' || estimate.quota <= 0) {
+            return null;
+          }
+          return { usage: estimate.usage ?? 0, quota: estimate.quota };
+        } catch {
+          return null;
+        }
+      })(),
+    ])
+      .then(([cache, songs, quotaEstimate]) => {
         if (cancelled) return;
         setStorage({
           cache,
           count: songs.length,
           bytes: songs.reduce((total, song) => total + (song.bytes || 0), 0),
         });
+        setQuota(quotaEstimate);
       })
       .catch(() => {});
     return () => {
@@ -1005,6 +1023,35 @@ export default function SettingsPage() {
                 Manage
               </Button>
             </div>
+
+            {quota && (
+              <>
+                <Divider />
+
+                <div className="flex flex-col gap-1">
+                  <div className="flex flex-row items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="m-0 text-sm leading-[1.43] font-semibold">Device storage</p>
+                      <span className="block text-xs leading-[1.4] text-muted">
+                        {formatBytes(quota.usage)} used of {formatBytes(quota.quota)} allowed
+                        for this site — downloads, cache and all.
+                      </span>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums text-muted">
+                      {Math.round((quota.usage / quota.quota) * 100)}%
+                    </span>
+                  </div>
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-hover">
+                    <div
+                      className="h-full rounded-full bg-accent transition-[width] duration-300"
+                      style={{
+                        width: `${Math.min(100, (quota.usage / quota.quota) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </Section>
 

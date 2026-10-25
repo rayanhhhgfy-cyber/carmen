@@ -331,7 +331,7 @@ export function useSmartDownloadsStatusLine(): string {
 /** Pure formatter, so the wording is pinned without rendering anything. */
 export function formatSmartDownloadsStatus(
   smart: SmartDownloadsStatus,
-  jobs: Record<string, { status?: string; step?: string }>,
+  jobs: Record<string, { status?: string; step?: string; queued?: boolean }>,
 ): string {
   if (smart.phase === 'off') return 'Smart downloads are off.';
   if (smart.phase === 'idle') return 'Smart downloads have not run yet in this session.';
@@ -347,9 +347,9 @@ export function formatSmartDownloadsStatus(
     for (const videoId of smart.startedIds) {
       const job = jobs[videoId];
       if (!job || job.status === 'running') {
-        // No job yet (or still running): queued only once the pipeline
-        // says so, otherwise it is simply in flight.
-        if (job?.step === 'Queued') queued += 1;
+        // No job yet (or still running): queued only when the pipeline
+        // flags it so, otherwise it is simply in flight.
+        if (job?.queued) queued += 1;
         else running += 1;
       } else if (job.status === 'done') done += 1;
       else if (job.status === 'error' || job.status === 'skipped') failed += 1;

@@ -9,15 +9,30 @@
  * pipeline into its own chunk.
  */
 
+import type { Track } from '../types/models';
+
 export type DownloadStatus = 'running' | 'done' | 'error' | 'skipped';
 
 export interface DownloadJob {
   videoId: string;
   title?: string;
+  /** The track, kept so a skipped job can be retried without its row. */
+  track?: Track;
   status?: DownloadStatus;
   step?: string;
   progress?: number;
   error?: string;
+  /**
+   * Still waiting for a queue slot (see the position steps in
+   * `utils/downloads.ts`). The smart-downloads status line counts these
+   * as queued instead of matching the step text.
+   */
+  queued?: boolean;
+  /** Audio-fetch progress detail, for the speed + ETA label. */
+  loadedBytes?: number;
+  totalBytes?: number;
+  speedBps?: number;
+  etaSeconds?: number;
 }
 
 export interface DownloadNotice {
@@ -45,6 +60,14 @@ function commit(next: Partial<DownloadsSnapshot>): void {
 export function patchJob(videoId: string, patch: Partial<DownloadJob>): void {
   const job: DownloadJob = store.jobs[videoId] || { videoId };
   commit({ jobs: { ...store.jobs, [videoId]: { ...job, ...patch } } });
+}
+
+/** Drops a job entirely — a cancelled download leaves no trace behind. */
+export function removeJob(videoId: string): void {
+  if (!(videoId in store.jobs)) return;
+  const jobs = { ...store.jobs };
+  delete jobs[videoId];
+  commit({ jobs });
 }
 
 export function setNotice(severity: DownloadNotice['severity'], message: string): void {

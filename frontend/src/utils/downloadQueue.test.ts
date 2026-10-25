@@ -176,4 +176,58 @@ describe('download queue', () => {
     await run;
     expect(queue.pendingCount).toBe(0);
   });
+
+  it('cancel drops a waiting task by id and leaves FIFO order intact', async () => {
+    const queue = createDownloadQueue(1);
+    const started: string[] = [];
+    const first = gate();
+    const third = gate();
+
+    const run0 = queue.schedule(
+      () => {
+        started.push('a');
+        return first.promise;
+      },
+      undefined,
+      'a',
+    );
+    // Deliberately not awaited: a dropped task's promise never settles
+    // (its start function is simply removed), so awaiting it would hang.
+    void queue.schedule(
+      () => {
+        started.push('b');
+        return Promise.resolve();
+      },
+      undefined,
+      'b',
+    );
+    const run2 = queue.schedule(
+      () => {
+        started.push('c');
+        return third.promise;
+      },
+      undefined,
+      'c',
+    );
+    expect(queue.pendingCount).toBe(2);
+
+    // 'b' is still waiting: dropped, and its promise never settles —
+    // callers that cancel do not await it. 'a' and 'c' are untouched.
+    expect(queue.cancel('b')).toBe(true);
+    expect(queue.pendingCount).toBe(1);
+    expect(queue.cancel('b')).toBe(false);
+    // An already-started task cannot be cancelled through the queue.
+    expect(queue.cancel('a')).toBe(false);
+    // An unknown id is a no-op, not an error.
+    expect(queue.cancel('nope')).toBe(false);
+
+    first.resolve();
+    await run0;
+    await flush();
+    expect(started).toEqual(['a', 'c']);
+    third.resolve();
+    await run2;
+    expect(queue.activeCount).toBe(0);
+    expect(queue.pendingCount).toBe(0);
+  });
 });

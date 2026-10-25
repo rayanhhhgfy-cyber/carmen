@@ -1,6 +1,7 @@
 /**
  * Settings → Storage → "Manage downloaded songs": pick the offline copies
- * to remove from this device.
+ * to remove from this device, plus the session's skipped downloads (with
+ * their failure reason, a per-song retry, and a retry-all).
  *
  * A route of its own rather than an inline list — rows toggle their own
  * selection, Select all / Deselect all flip the lot, and the delete runs
@@ -21,10 +22,12 @@ import {
   Shimmer,
 } from '../components/ui';
 import { listDownloads } from '../db/repos/downloads';
+import { useDownloads } from '../hooks';
 import { useSmartDownloadsStatusLine } from '../services/smartDownloads';
 import type { DownloadedSong } from '../types/models';
 import { cn } from '../utils/cn';
-import { notify } from '../utils/downloadsStore';
+import { notify, removeJob } from '../utils/downloadsStore';
+import type { DownloadJob } from '../utils/downloadsStore';
 import { formatBytes } from '../utils/format';
 
 export default function ManageDownloadsPage() {
@@ -36,6 +39,28 @@ export default function ManageDownloadsPage() {
   // Same live smart-downloads line as Settings — this page changes
   // nothing else about downloads (no new delete path lives here).
   const smartStatusLine = useSmartDownloadsStatusLine();
+  // Session jobs that failed twice and were skipped (see the failure-hold
+  // policy in `utils/downloads.ts`): they are not in the catalogue below,
+  // so they get their own section with a retry instead of vanishing.
+  const { jobs } = useDownloads();
+  const skipped = Object.values(jobs).filter((job) => job.status === 'skipped');
+
+  const retryOneSkipped = async (job: DownloadJob) => {
+    if (!job.track) return;
+    const { startDownload } = await import('../utils/downloads');
+    startDownload(job.track, null);
+  };
+
+  const retryAllSkipped = async () => {
+    const { retrySkippedDownloads } = await import('../utils/downloads');
+    const retried = retrySkippedDownloads();
+    notify(
+      retried > 0 ? 'success' : 'info',
+      retried > 0
+        ? `Retrying ${retried} skipped download${retried === 1 ? '' : 's'}`
+        : 'Nothing skipped to retry',
+    );
+  };
 
   const load = useCallback(async () => {
     try {
@@ -96,6 +121,55 @@ export default function ManageDownloadsPage() {
             Smart downloads: {smartStatusLine}
           </p>
         </div>
+
+        {skipped.length > 0 && (
+          <div className="rounded-card border border-line bg-surface px-4 py-3">
+            <div className="flex flex-row items-center justify-between gap-2">
+              <p className="m-0 text-sm font-semibold">
+                Skipped downloads ({skipped.length})
+              </p>
+              <Button
+                className="!px-3 !py-1 !text-xs max-sm:min-h-11"
+                onClick={() => void retryAllSkipped()}
+              >
+                Retry all
+              </Button>
+            </div>
+            <p className="m-0 mt-1 text-xs leading-[1.4] text-muted">
+              These failed after a retry and were skipped so the rest could continue.
+              They retry automatically when you are back online.
+            </p>
+            <List className="!py-1">
+              {skipped.map((job) => (
+                <div
+                  key={job.videoId}
+                  className="flex flex-row items-center justify-between gap-2 py-1"
+                >
+                  <div className="min-w-0">
+                    <p className="m-0 truncate text-sm">{job.title ?? job.videoId}</p>
+                    <span className="block truncate text-xs text-muted">
+                      {job.error ?? 'Download failed'}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 flex-row gap-1">
+                    <Button
+                      className="!px-3 !py-1 !text-xs max-sm:min-h-11"
+                      onClick={() => void retryOneSkipped(job)}
+                    >
+                      Retry
+                    </Button>
+                    <Button
+                      className="!px-3 !py-1 !text-xs max-sm:min-h-11"
+                      onClick={() => removeJob(job.videoId)}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </List>
+          </div>
+        )}
 
         <div className="flex flex-row flex-wrap items-center justify-between gap-2">
           <span className="text-sm tabular-nums text-muted">
