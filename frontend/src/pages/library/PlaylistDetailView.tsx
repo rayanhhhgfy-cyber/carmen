@@ -19,6 +19,7 @@ import {
 } from '../../db/repos/playlists';
 import { useDownloads } from '../../hooks';
 import { useDragReorder } from '../../hooks/useDragReorder';
+import { isDownloaded } from '../../offline/source';
 import { usePlayer } from '../../player/PlayerContext';
 import type { Playlist, PlaylistSong } from '../../types/models';
 import { startPlaylistDownload } from '../../utils/downloads';
@@ -30,6 +31,7 @@ import { ConfirmDialog, EmptyHint, PlaylistFormDialog } from './common';
 import {
   ArrowBackIcon,
   Artwork,
+  CheckCircleIcon,
   DownloadIcon,
   EditIcon,
   MusicNoteIcon,
@@ -128,13 +130,18 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
   };
 
   // ── Download all ────────────────────────────────────────────────────────
-  // Progress is aggregated from the shared downloads job store: how many of
-  // this playlist's track ids have a `done` job, out of the playlist total.
-  const downloadedJobs = songs.filter((song) => jobs[song.videoId]?.status === 'done').length;
+  // Same aggregation as CollectionPage: done jobs in the shared downloads
+  // store plus what the offline catalogue already holds (a track saved in
+  // an earlier session has no job anymore). When every track is saved,
+  // the button gives way to a "Downloaded" label instead.
+  const downloadedJobs = songs.filter(
+    (song) => isDownloaded(song.videoId) || jobs[song.videoId]?.status === 'done',
+  ).length;
   const downloadInFlight = songs.some((song) => jobs[song.videoId]?.status === 'running');
+  const allDownloaded = songs.length > 0 && downloadedJobs === songs.length;
 
   const handleDownloadAll = () => {
-    if (downloadInFlight) return;
+    if (downloadInFlight || allDownloaded) return;
     const started = startPlaylistDownload(songs);
     if (started > 0) {
       notify('success', `Downloading ${started} track${started === 1 ? '' : 's'} from “${playlist?.name ?? 'playlist'}”`);
@@ -259,11 +266,15 @@ export default function PlaylistDetailView({ playlistId, onBack }: PlaylistDetai
               <Button
                 variant="text"
                 className="border border-accent/50"
-                startIcon={<DownloadIcon />}
-                disabled={downloadInFlight}
+                startIcon={allDownloaded ? <CheckCircleIcon /> : <DownloadIcon />}
+                disabled={downloadInFlight || allDownloaded}
                 onClick={handleDownloadAll}
               >
-                {downloadInFlight ? `Downloading ${downloadedJobs}/${songs.length}` : 'Download all'}
+                {downloadInFlight
+                  ? `Downloading ${downloadedJobs}/${songs.length}`
+                  : allDownloaded
+                    ? 'Downloaded'
+                    : 'Download all'}
               </Button>
             )}
             <Tooltip title="Share playlist">
