@@ -60,6 +60,12 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           navigateFallback: 'index.html',
           cleanupOutdatedCaches: true,
+          // Take control of open pages as soon as this worker activates
+          // (not just on the next navigation): without it, a page that
+          // was open during the first install stays uncontrolled until
+          // it reloads, which is exactly the page a user would try to
+          // keep using when the connection drops.
+          clientsClaim: true,
         },
       }),
     ],
