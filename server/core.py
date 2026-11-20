@@ -1422,6 +1422,22 @@ STREAM_CLIENTS: tuple[str | None, ...] = (
 )
 
 
+# Proof-of-origin token provider (bgutil): a Deno script cloned at build time
+# by render.yaml (branch 2.0.2, same major version as the pip plugin).
+# When present, yt-dlp asks it for a PO token and attaches it to the player
+# request — that is what makes YouTube answer a datacenter IP instead of
+# "Sign in to confirm you're not a bot". If the clone is missing (e.g. a
+# local checkout), extraction falls back to token-less behaviour.
+_BGUTIL_SERVER_HOME = Path(__file__).resolve().parents[1] / "bgutil-ytdlp-pot-provider" / "server"
+
+
+def _pot_extractor_args() -> dict:
+    """Extractor args pointing yt-dlp at the PO-token script, when installed."""
+    if (_BGUTIL_SERVER_HOME / "src" / "generate_once.ts").is_file():
+        return {"youtubepot-bgutilscript": {"server_home": [str(_BGUTIL_SERVER_HOME)]}}
+    return {}
+
+
 def _client_options(client: str | None, outtmpl: str) -> dict:
     """yt-dlp options for one download attempt (single extraction + download)."""
     options = {
@@ -1429,8 +1445,11 @@ def _client_options(client: str | None, outtmpl: str) -> dict:
         "outtmpl": outtmpl,
         "match_filter": _duration_filter,
     }
+    extractor_args = _pot_extractor_args()
     if client:
-        options["extractor_args"] = {"youtube": {"player_client": [client]}}
+        extractor_args["youtube"] = {"player_client": [client]}
+    if extractor_args:
+        options["extractor_args"] = extractor_args
     return options
 
 
@@ -1574,8 +1593,11 @@ def get_stream_details(video_id: str, client: str | None = None) -> tuple[str, d
     :raises ValueError: if yt-dlp did not return a URL
     """
     options = dict(streaming_options)
+    extractor_args = _pot_extractor_args()
     if client:
-        options["extractor_args"] = {"youtube": {"player_client": [client]}}
+        extractor_args["youtube"] = {"player_client": [client]}
+    if extractor_args:
+        options["extractor_args"] = extractor_args
 
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(_watch_url(video_id), download=False)

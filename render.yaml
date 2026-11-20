@@ -6,7 +6,13 @@
 # taste-profile features require auth cookies. Deno is installed at
 # build time because yt-dlp decrypts stream signatures through it
 # (js_runtimes in server/core.py); if the install fails the build
-# still succeeds and search keeps working.
+# still succeeds and search keeps working. The bgutil PO-token provider
+# repo is also cloned at build time (branch 2.0.2, same as the pip
+# plugin): its Deno script generates proof-of-origin tokens so YouTube
+# answers the player request from a datacenter IP instead of
+# "Sign in to confirm you're not a bot". If the clone or its deno
+# install fails, the build still succeeds and streams fall back to
+# token-less extraction.
 services:
   - type: web
     name: carmen-api
@@ -14,6 +20,9 @@ services:
     plan: free
     buildCommand: >-
       curl -fsSL https://deno.land/install.sh | DENO_INSTALL=$PWD/.deno sh || echo "deno install failed, continuing without it";
+      DENO_BIN="$PWD/.deno/bin/deno";
+      if [ ! -d bgutil-ytdlp-pot-provider ]; then git clone --single-branch --branch 2.0.2 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git || echo "bgutil clone failed"; fi;
+      (cd bgutil-ytdlp-pot-provider/server && "$DENO_BIN" install --allow-scripts=npm:canvas --frozen || echo "bgutil deno install failed, continuing without PO tokens");
       pip install -r server/requirements.txt
     startCommand: export PATH="$PWD/.deno/bin:$PATH" && python -m server
     healthCheckPath: /openapi.json
