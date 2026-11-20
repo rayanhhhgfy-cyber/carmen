@@ -137,7 +137,17 @@ export async function apiPostJson(path: string, body: unknown, signal?: AbortSig
 
 /** Absolute URL of the proxied audio stream for a video. */
 export function streamUrl(videoId: string): string {
-  return `${apiBase()}/stream?vidId=${encodeURIComponent(videoId)}`;
+  // Streams deliberately do NOT follow apiBase() by default: our own Render
+  // server's IP is bot-checked by YouTube, so its /stream fails for every
+  // player client, while the demo server's streams still work (verified
+  // 2026-11-20). Search/browse keep using apiBase(). Set VITE_STREAM_BASE
+  // to your own server once it has YouTube cookies, and the Settings
+  // "Server URL" override still wins over both when it is set.
+  const streamBase =
+    import.meta.env.VITE_STREAM_BASE || 'https://api-carmen-v1.syr.qzz.io';
+  const override = getSettingsSnapshot().apiBase;
+  const base = trimBase(override) || trimBase(streamBase);
+  return `${base}/stream?vidId=${encodeURIComponent(videoId)}`;
 }
 
 /**
