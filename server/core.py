@@ -1282,10 +1282,12 @@ AUDIO_SUFFIXES = (".m4a", ".mp4", ".webm", ".ogg", ".opus")
 
 streaming_options = {
     # No browser cookie jar: decrypting Chrome's cookie store costs 1-3 seconds
-    # on *every* yt-dlp attempt (it shells out to the OS keychain), a headless
-    # server has no browser anyway, and playback does not need those cookies.
+    # on *every* yt-dlp attempt, and a headless server has no Chrome profile
+    # at all (it hard-fails: "could not find chrome cookies database").
+    # Playback does not need those cookies — use the Netscape file the
+    # lifespan writes (server/cookies.txt; empty when unauthenticated).
     "quiet": True,
-    "cookiesfrombrowser": ("chrome", "Default"),
+    "cookiefile": "server/cookies.txt",
     "no_warnings": True,
     "js_runtimes": {"deno": {}},
     "format": "bestaudio[ext=m4a]/bestaudio/best",
