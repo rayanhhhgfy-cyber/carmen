@@ -1407,12 +1407,18 @@ def _watch_url(video_id: str) -> str:
 # yields a plain audio file.
 STREAM_CLIENTS: tuple[str | None, ...] = (
     None,  # yt-dlp's default selection
+    "mweb",
+    "web_safari",
     "tv_embedded",
     "visionos",
     "chrome",
     "android_music",
     "ios_music",
     "tv_embedded_simply",
+    "web_music",
+    "tv",
+    "tv_android",
+    "android_testsuite",
 )
 
 
