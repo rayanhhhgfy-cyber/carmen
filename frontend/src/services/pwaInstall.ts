@@ -38,6 +38,38 @@ let deferred: InstallPromptEvent | null = null;
 let dismissed = false;
 let installed = false;
 
+/**
+ * Cached snapshot object. `useSyncExternalStore` compares snapshots with
+ * `Object.is`, so `getPwaInstallSnapshot` MUST return the same reference
+ * while nothing changed — building a fresh object literal on every call
+ * made React re-render forever and crashed Settings with
+ * "Minified React error #185" (maximum update depth exceeded).
+ * The snapshot is only replaced when a field actually changes.
+ */
+let snapshot: PwaInstallSnapshot = {
+  installed: false,
+  canInstall: false,
+  dismissed: false,
+  isIos: false,
+};
+
+function refreshSnapshot(): void {
+  const next: PwaInstallSnapshot = {
+    installed,
+    canInstall: deferred !== null && !installed,
+    dismissed,
+    isIos: computeIsIos(),
+  };
+  if (
+    next.installed !== snapshot.installed ||
+    next.canInstall !== snapshot.canInstall ||
+    next.dismissed !== snapshot.dismissed ||
+    next.isIos !== snapshot.isIos
+  ) {
+    snapshot = next;
+  }
+}
+
 function computeInstalled(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -86,12 +118,8 @@ export function subscribePwaInstall(listener: Listener): () => void {
 }
 
 export function getPwaInstallSnapshot(): PwaInstallSnapshot {
-  return {
-    installed,
-    canInstall: deferred !== null && !installed,
-    dismissed,
-    isIos: computeIsIos(),
-  };
+  refreshSnapshot();
+  return snapshot;
 }
 
 /**
