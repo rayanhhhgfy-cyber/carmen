@@ -22,9 +22,11 @@ log = logging.getLogger(__name__)
 ytm: YTMusic = None
 
 
-def init_ytm(browser: str | Path):
+def init_ytm(browser: str | Path | None):
     global ytm
-    ytm = YTMusic(str(browser))
+    # No cookies file (e.g. a fresh free-tier deploy): run unauthenticated.
+    # Public search/browse/stream still work; only library features need auth.
+    ytm = YTMusic() if browser is None else YTMusic(str(browser))
 
     return ytm
 

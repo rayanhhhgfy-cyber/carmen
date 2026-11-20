@@ -60,7 +60,10 @@ async def _audio_cache_janitor():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_ytm(BROWSER_PATH)
+    # No browser.json (e.g. a fresh free-tier deploy): run unauthenticated.
+    # Public search/browse/stream still work; only library features need auth.
+    browser_path = BROWSER_PATH if BROWSER_PATH.is_file() else None
+    init_ytm(browser_path)
     print("YouTube Music's Client Initialized.")
 
     state.rds = redis.Redis()
@@ -79,21 +82,26 @@ async def lifespan(app: FastAPI):
     else:
         print("Telegram credentials not set — skipping TG cache.")
 
-    with open(BROWSER_PATH) as f:  # noqa: ASYNC230
-        data = json.load(f)
+    if BROWSER_PATH.is_file():
+        with open(BROWSER_PATH) as f:  # noqa: ASYNC230
+            data = json.load(f)
 
-    cookie_str = data.get("cookie", "") or data.get("Cookie", "")
-    if not cookie_str:
-        print("No cookie field found in browser.json")
+        cookie_str = data.get("cookie", "") or data.get("Cookie", "")
+        if not cookie_str:
+            print("No cookie field found in browser.json")
 
-    with open("server/cookies.txt", "w+") as out:  # noqa: ASYNC230
-        out.write("# Netscape HTTP Cookie File\n# Generated from browser.json\n\n")
-        for cookie in cookie_str.split("; "):
-            if "=" in cookie:
-                name, value = cookie.split("=", 1)
-                secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
-                out.write(f".youtube.com\tTRUE\t/\t{secure}\t0\t{name}\t{value}\n")
-    print("Successfully created server/cookies.txt!")
+        with open("server/cookies.txt", "w+") as out:  # noqa: ASYNC230
+            out.write("# Netscape HTTP Cookie File\n# Generated from browser.json\n\n")
+            for cookie in cookie_str.split("; "):
+                if "=" in cookie:
+                    name, value = cookie.split("=", 1)
+                    secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
+                    out.write(f".youtube.com\tTRUE\t/\t{secure}\t0\t{name}\t{value}\n")
+        print("Successfully created server/cookies.txt!")
+    else:
+        print("No browser.json — running unauthenticated, writing an empty cookies.txt.")
+        with open("server/cookies.txt", "w+") as out:  # noqa: ASYNC230
+            out.write("# Netscape HTTP Cookie File\n# No cookies configured\n\n")
 
     if debuglog.enabled():
         try:

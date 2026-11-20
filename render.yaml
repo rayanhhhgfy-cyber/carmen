@@ -1,0 +1,22 @@
+# ====================================================================
+# CARMEN API — Render deployment (free tier)
+# ====================================================================
+# Deploy from the repo root on Render (Blueprint). Search, browse and
+# stream run unauthenticated — no browser.json needed; only library /
+# taste-profile features require auth cookies. Deno is installed at
+# build time because yt-dlp decrypts stream signatures through it
+# (js_runtimes in server/core.py); if the install fails the build
+# still succeeds and search keeps working.
+services:
+  - type: web
+    name: carmen-api
+    env: python
+    plan: free
+    buildCommand: >-
+      curl -fsSL https://deno.land/install.sh | DENO_INSTALL=$PWD/.deno sh || echo "deno install failed, continuing without it";
+      pip install -r server/requirements.txt
+    startCommand: export PATH="$PWD/.deno/bin:$PATH" && python -m server
+    healthCheckPath: /openapi.json
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.11

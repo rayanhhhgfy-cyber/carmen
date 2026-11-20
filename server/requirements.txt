@@ -1,4 +1,4 @@
-ytmusicapi
+ytmusicapi==1.12.4
 fastapi
 pydantic
 uvicorn
