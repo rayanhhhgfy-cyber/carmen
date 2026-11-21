@@ -295,7 +295,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!audio || !current) return;
     if (audio.paused) {
       const attempt = audio.play();
-      if (attempt) attempt.catch(() => setError('Playback was blocked by the system'));
+      if (attempt)
+        attempt.catch((playError: DOMException) =>
+          setError(
+            `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+          ),
+        );
     } else {
       audio.pause();
     }
@@ -722,7 +727,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const attempt = audio.play();
       if (attempt) {
         attempt.catch((playError: DOMException) => {
-          if (playError?.name !== 'AbortError') setBuffering(false);
+          if (playError?.name !== 'AbortError') {
+            setBuffering(false);
+            // Surface the rejection reason (NotAllowedError = autoplay /
+            // gesture gate, NotSupportedError = format, AbortError = a new
+            // load interrupted it) instead of swallowing it — the banner
+            // is the only place the cause becomes visible.
+            setError(
+              `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+            );
+          }
         });
       }
     };
