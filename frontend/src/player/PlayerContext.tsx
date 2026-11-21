@@ -956,6 +956,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const audio = audioRef.current;
     const source = sourceRef.current;
     if (!audio || !source) return;
+    // Capture the element's state NOW, synchronously: every retry and
+    // fallback below calls audio.load(), which clears audio.error, so by
+    // the time the probe at the end runs the original code is gone and
+    // the banner can only say "no error". The code that fired this event
+    // is the cause; the probe only tells us whether the server is up.
+    const errorCode = audio.error?.code ?? null;
+    const errorNet = audio.networkState;
+    const errorReady = audio.readyState;
+    const errorSrc = audio.currentSrc;
     // Stale error from a source the player already left: rapid switching
     // tears the old load down (the cleanup empties the `src` attribute) and
     // an error event from that teardown arrives after the new track's
@@ -1061,15 +1070,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       } else {
         void response.body?.cancel().catch(() => {});
         // The server answers fine, so the failure is in the <audio> element
-        // itself. Surface its error code + network state so the cause is
-        // visible instead of a generic banner: 1=aborted, 2=network,
-        // 3=decode, 4=src-not-supported; networkState 0=empty, 1=idle,
-        // 2=loading, 3=no-source.
-        const code = audio.error?.code;
-        const state = audio.networkState;
-        const ready = audio.readyState;
-        if (code !== undefined && code !== null) {
-          message = `${message} (audio error ${code}, net ${state}, ready ${ready})`;
+        // itself. Surface the error code captured synchronously at the top
+        // of this handler (1=aborted, 2=network, 3=decode, 4=src-not-
+        // supported; networkState 0=empty, 1=idle, 2=loading, 3=no-source)
+        // instead of re-reading audio.error, which the retries above
+        // already cleared.
+        if (errorCode !== null) {
+          message = `${message} (audio error ${errorCode}, net ${errorNet}, ready ${errorReady})`;
+        } else if (errorSrc) {
+          message = `${message} (no media error, net ${errorNet}, ready ${errorReady})`;
         }
       }
     } catch {
