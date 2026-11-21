@@ -10,9 +10,8 @@ import uvloop
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pyrogram import Client
-
 from . import debuglog, state
+from .tg_bot import TgBotClient
 from .core import (
     AUDIO_CACHE_DIR,
     AUDIO_CACHE_MAX_BYTES,
@@ -29,9 +28,6 @@ load_dotenv()
 PORT = int(os.environ.get("PORT", "8000"))
 BROWSER_PATH = Path(os.environ.get("BROWSER_PATH", "browser.json"))
 CHAT_ID = os.environ.get("CHAT_ID")
-TG_NAME = os.environ.get("TG_NAME", "ytmusic_cache")
-TG_API_ID = os.environ.get("API_ID")
-TG_API_HASH = os.environ.get("API_HASH")
 TG_BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # DEBUG_LOGS=1 → colored root logger that shows every line the app logs
@@ -71,16 +67,11 @@ async def lifespan(app: FastAPI):
     state.rds = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"))
     print("Redis client ready.")
 
-    # Telegram client for audio caching
-    if TG_API_ID and TG_API_HASH and TG_BOT_TOKEN:
-        state.tg_client = Client(
-            TG_NAME,
-            api_id=int(TG_API_ID),
-            api_hash=TG_API_HASH,
-            bot_token=TG_BOT_TOKEN,
-        )
-        await state.tg_client.start()
-        print("Telegram client initialized.")
+    # Telegram Bot API client for audio caching — needs only the bot token
+    # (no api_id / api_hash: the Bot API replaces the old MTProto client).
+    if TG_BOT_TOKEN and CHAT_ID:
+        state.tg_client = TgBotClient(TG_BOT_TOKEN)
+        print("Telegram Bot API client initialized.")
     else:
         print("Telegram credentials not set — skipping TG cache.")
 
@@ -154,7 +145,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     if state.tg_client:
-        await state.tg_client.stop()
+        await state.tg_client.close()
         print("Telegram client stopped.")
     print("Shutting down the executor")
     state.executor.shutdown(wait=True)

@@ -6,7 +6,8 @@ from redis.asyncio.client import Redis
 executor: ThreadPoolExecutor = ThreadPoolExecutor(8)
 rds: Redis = None
 
-# Pyrogram client (initialized in lifespan)
+# Telegram Bot API client (server/tg_bot.py, initialized in lifespan).
+# Needs only BOT_TOKEN + CHAT_ID — no api_id / api_hash.
 tg_client = None
 
 # Simple upload queue: vidId -> asyncio.Event (set when upload completes)
