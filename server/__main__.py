@@ -66,7 +66,9 @@ async def lifespan(app: FastAPI):
     init_ytm(browser_path)
     print("YouTube Music's Client Initialized.")
 
-    state.rds = redis.Redis()
+    # REDIS_URL (Render: a free external Redis, e.g. Redis Cloud) or the
+    # upstream default localhost:6379 (a VPS running its own Redis).
+    state.rds = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"))
     print("Redis client ready.")
 
     # Telegram client for audio caching

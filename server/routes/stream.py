@@ -152,7 +152,13 @@ def _spawn_play_ensure(vid_id: str) -> None:
 
 async def _get_tg_msg_id(vid_id: str) -> int | None:
     """Return the Telegram message ID for a cached audio, or None."""
-    raw = await state.rds.hget("vids", vid_id)
+    try:
+        raw = await state.rds.hget("vids", vid_id)
+    except Exception as exc:  # noqa: BLE001
+        # No Redis (or it is down) — the Telegram tier degrades quietly and
+        # the relay below answers instead; never crash a play on the index.
+        log.debug("Could not read Telegram mapping for %s: %s", vid_id, exc)
+        return None
     return int(raw) if raw else None
 
 
