@@ -940,7 +940,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // A song plays when it is in EITHER server's cache (the demo's large
       // cache or our own Telegram cache). The guard keeps a failed fallback
       // from looping back onto itself.
+      //
+      // First, retry the SAME primary once: the first attempt can fail
+      // while our server is still fetching the file (Telegram download on
+      // a cold disk), and by the retry the file is on disk and serves fast.
+      // Only if the retry also fails do we fall back to the other server.
       const fallback = streamFallbackUrl(videoId);
+      const retried = sourceRef.current === source && (source as { retried?: boolean }).retried;
+      if (!retried) {
+        try {
+          if (audio) {
+            sourceRef.current = { url: source.url, kind: 'stream', retried: true } as typeof source;
+            setBuffering(true);
+            audio.src = source.url;
+            audio.load();
+            const attempt = audio.play();
+            if (attempt) attempt.catch(() => setBuffering(false));
+            return;
+          }
+        } catch {
+          /* fall through to the demo fallback below */
+        }
+      }
       if (fallback && source.url !== fallback) {
         try {
           if (audio) {
