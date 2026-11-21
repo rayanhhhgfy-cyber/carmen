@@ -999,6 +999,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         message = payload?.detail || message;
       } else {
         void response.body?.cancel().catch(() => {});
+        // The server answers fine, so the failure is in the <audio> element
+        // itself. Surface its error code + network state so the cause is
+        // visible instead of a generic banner: 1=aborted, 2=network,
+        // 3=decode, 4=src-not-supported; networkState 0=empty, 1=idle,
+        // 2=loading, 3=no-source.
+        const code = audio.error?.code;
+        const state = audio.networkState;
+        const ready = audio.readyState;
+        if (code !== undefined && code !== null) {
+          message = `${message} (audio error ${code}, net ${state}, ready ${ready})`;
+        }
       }
     } catch {
       /* keep the generic message */
