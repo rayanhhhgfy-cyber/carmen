@@ -55,11 +55,22 @@ export function usePlaybackPersistence({
     write.current = async () => {
       const state = latest.current;
       if (!state.ready) return;
+      // Never persist a playhead within ~1s of the track's end: when a
+      // track ends with an empty queue the player parks the playhead on
+      // the metadata duration, and restoring that position would seek to
+      // duration-0.5s where the end-of-song watchdog ends it again at
+      // once — the song could never play from a restore. Clamp to 0.
+      const duration = state.current?.durationSeconds ?? 0;
+      const position = positionRef.current;
+      const positionMs =
+        duration > 0 && position >= duration - 1
+          ? 0
+          : Math.round(position * 1000);
       const snapshot: PlaybackSnapshot = {
         queue: state.queue,
         history: state.history,
         currentVideoId: state.current?.videoId ?? null,
-        positionMs: Math.round(positionRef.current * 1000),
+        positionMs,
         shuffle: state.shuffle,
         repeat: state.repeat,
         updatedAt: Date.now(),

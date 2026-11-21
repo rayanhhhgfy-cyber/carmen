@@ -232,8 +232,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (currentTrack) {
             // Seed both refs: the persistence layer never sees a fake "0s"
             // between the restore and the first metadata event.
-            positionRef.current = snapshot.positionMs / 1000;
-            resumeRef.current = positionRef.current;
+            // Ignore a saved playhead within ~1s of the track's end (a
+            // leftover from a track that finished): restoring it would seek
+            // to duration-0.5s where the watchdog ends it again at once.
+            const duration = currentTrack.durationSeconds ?? 0;
+            const saved = snapshot.positionMs / 1000;
+            const position =
+              duration > 0 && saved >= duration - 1 ? 0 : saved;
+            positionRef.current = position;
+            resumeRef.current = position;
             setCurrent(currentTrack);
           }
         }
@@ -448,6 +455,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // ── Queue / track selection ─────────────────────────────────────────────
 
+  /**
+   * Re-point the element at the current song's best source and play — the
+   * sheet's Retry button. It runs through the same offline-first order the
+   * loader uses (downloaded file, then stream) and updates the fallback
+   * chain's record of what the element is playing, so a retry that itself
+   * fails still walks the full chain instead of erroring against a stale
+   * source.
+   */
+  const retry = useCallback(() => {
+    const videoId = current?.videoId;
+    const audio = audioRef.current;
+    if (!videoId || !audio) return;
+    setError(null);
+    const source =
+      localAssetSource(videoId) ??
+      cachedStreamSource(videoId) ??
+      { url: streamUrl(videoId), kind: 'stream' as const };
+    if (source.kind === 'stream') void fillStreamCache(videoId);
+    sourceRef.current = source;
+    setBuffering(true);
+    audio.src = source.url;
+    audio.load();
+    const attempt = audio.play();
+    if (attempt) attempt.catch(() => setBuffering(false));
+  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const playTrack = useCallback(
     (rawTrack: unknown, contextTracks: unknown[] | null = null, options: { openSheet?: boolean } = {}) => {
       const track = normalizeTrack(rawTrack);
@@ -457,7 +490,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         // Pressing the song that is already active toggles it instead of
         // silently restarting it from the beginning.
         if (options.openSheet) setSheetOpen(true);
-        else togglePlay();
+        else {
+          // If the element is sitting in a failed state after the first
+          // attempt (a media error, no source, or nothing loaded), tapping
+          // again must reload it — toggling play() on a dead element just
+          // fails again. Route the dead-element case to retry(), which
+          // re-runs the loader.
+          const audio = audioRef.current;
+          const dead =
+            !!audio &&
+            (!!audio.error ||
+              audio.networkState === 3 ||
+              (audio.readyState === 0 && audio.paused));
+          if (dead) retry();
+          else togglePlay();
+        }
         return;
       }
 
@@ -479,7 +526,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCurrent(track);
       if (options.openSheet) setSheetOpen(true);
     },
-    [current, togglePlay],
+    [current, togglePlay, retry],
   );
 
   const playAll = useCallback(
@@ -1019,31 +1066,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const dismissError = useCallback(() => setError(null), []);
 
-  /**
-   * Re-point the element at the current song's best source and play — the
-   * sheet's Retry button. It runs through the same offline-first order the
-   * loader uses (downloaded file, then stream) and updates the fallback
-   * chain's record of what the element is playing, so a retry that itself
-   * fails still walks the full chain instead of erroring against a stale
-   * source.
-   */
-  const retry = useCallback(() => {
-    const videoId = current?.videoId;
-    const audio = audioRef.current;
-    if (!videoId || !audio) return;
-    setError(null);
-    const source =
-      localAssetSource(videoId) ??
-      cachedStreamSource(videoId) ??
-      { url: streamUrl(videoId), kind: 'stream' as const };
-    if (source.kind === 'stream') void fillStreamCache(videoId);
-    sourceRef.current = source;
-    setBuffering(true);
-    audio.src = source.url;
-    audio.load();
-    const attempt = audio.play();
-    if (attempt) attempt.catch(() => setBuffering(false));
-  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Wait until the server has finished caching *videoId* (see the download
