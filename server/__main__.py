@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 from contextlib import asynccontextmanager
@@ -75,7 +76,25 @@ async def lifespan(app: FastAPI):
     else:
         print("Telegram credentials not set — skipping TG cache.")
 
-    if BROWSER_PATH.is_file():
+    # YT_COOKIES_B64: base64 of a Netscape cookies.txt (Rayyan's YouTube
+    # cookie export, from his desktop browser). When set, the server
+    # extracts fresh streams as an authenticated user, which bypasses
+    # YouTube's datacenter-IP bot-check — so ANY song plays, not just
+    # Telegram-cached ones. Stored as a Render env var, never in the repo.
+    # Takes precedence over browser.json.
+    cookies_written = False
+    yt_cookies_b64 = os.environ.get("YT_COOKIES_B64")
+    if yt_cookies_b64:
+        try:
+            decoded = base64.b64decode(yt_cookies_b64).decode("utf-8")
+            with open("server/cookies.txt", "w+") as out:  # noqa: ASYNC230
+                out.write(decoded)
+            print("Wrote server/cookies.txt from YT_COOKIES_B64.")
+            cookies_written = True
+        except Exception as exc:  # noqa: BLE001
+            print(f"YT_COOKIES_B64 invalid, falling back: {exc}")
+
+    if not cookies_written and BROWSER_PATH.is_file():
         with open(BROWSER_PATH) as f:  # noqa: ASYNC230
             data = json.load(f)
 
@@ -91,7 +110,7 @@ async def lifespan(app: FastAPI):
                     secure = "TRUE" if name.startswith("__Secure-") else "FALSE"
                     out.write(f".youtube.com\tTRUE\t/\t{secure}\t0\t{name}\t{value}\n")
         print("Successfully created server/cookies.txt!")
-    else:
+    elif not cookies_written:
         print("No browser.json — running unauthenticated, writing an empty cookies.txt.")
         with open("server/cookies.txt", "w+") as out:  # noqa: ASYNC230
             out.write("# Netscape HTTP Cookie File\n# No cookies configured\n\n")
