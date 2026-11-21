@@ -793,12 +793,6 @@ def _size_detail(path: Path) -> str:
 # ── Stream endpoint ─────────────────────────────────────────────────────────
 
 
-@router.get(
-    "/stream/status",
-    summary="Audio Cache Status",
-    response_description="Whether the audio of the video is already on disk",
-)
-@sanitized
 async def _demo_relay(
     request: Request, vid_id: str
 ) -> StreamingResponse | Response | None:
@@ -824,6 +818,12 @@ async def _demo_relay(
         return None
 
 
+@router.get(
+    "/stream/status",
+    summary="Audio Cache Status",
+    response_description="Whether the audio of the video is already on disk",
+)
+@sanitized
 async def stream_status(
     vidId: str = Query(..., description="YouTube video ID to check"),
 ):
