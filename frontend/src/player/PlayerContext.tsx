@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from 'react';
 
-import { apiGet, fetchTrackMeta, streamUrl } from '../api';
+import { apiGet, fetchTrackMeta, streamFallbackUrl, streamUrl } from '../api';
 import { loadPlayback } from '../db/repos/playback';
 import {
   isDownloaded,
@@ -932,6 +932,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         /* fall through to the error below */
+      }
+    }
+
+    if (source.kind === 'stream') {
+      // The primary stream failed: try the other server before giving up.
+      // A song plays when it is in EITHER server's cache (the demo's large
+      // cache or our own Telegram cache). The guard keeps a failed fallback
+      // from looping back onto itself.
+      const fallback = streamFallbackUrl(videoId);
+      if (fallback && source.url !== fallback) {
+        try {
+          if (audio) {
+            sourceRef.current = { url: fallback, kind: 'stream' };
+            setBuffering(true);
+            audio.src = fallback;
+            audio.load();
+            const attempt = audio.play();
+            if (attempt) attempt.catch(() => setBuffering(false));
+            return;
+          }
+        } catch {
+          /* fall through to the error below */
+        }
       }
     }
 

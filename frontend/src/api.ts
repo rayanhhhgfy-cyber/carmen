@@ -151,6 +151,28 @@ export function streamUrl(videoId: string): string {
 }
 
 /**
+ * The other stream server, tried when the primary stream fails.
+ *
+ * A track is playable when it is in EITHER server's cache, so the player
+ * falls back to the other one instead of giving up: if the primary stream
+ * is the demo server, the fallback is our own server (its Telegram cache),
+ * and if the primary is our own server (or a custom override), the
+ * fallback is the demo server (its much larger cache). Returns null when
+ * both would be the same server, so there is nothing to fall back to.
+ */
+export function streamFallbackUrl(videoId: string): string | null {
+  const demo = 'https://api-carmen-v1.syr.qzz.io';
+  const primary = streamUrl(videoId);
+  const primaryBase = primary.replace(/\/stream\?.*$/, '');
+  if (primaryBase === trimBase(demo)) {
+    const own = trimBase(apiBase());
+    if (!own || own === trimBase(demo)) return null;
+    return `${own}/stream?vidId=${encodeURIComponent(videoId)}`;
+  }
+  return `${demo}/stream?vidId=${encodeURIComponent(videoId)}`;
+}
+
+/**
  * Session memo of enriched track payloads (metadata **and** lyrics).
  *
  * `/browsing/track` already returns the lyrics alongside the rest of the track
