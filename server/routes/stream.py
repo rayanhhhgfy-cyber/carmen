@@ -32,6 +32,14 @@ log = logging.getLogger(__name__)
 
 CHAT_ID = os.environ.get("CHAT_ID")
 
+# Upstream demo server, used as the last-resort stream relay when this
+# server cannot extract a song itself (its datacenter IP is bot-checked by
+# YouTube). The demo has a much larger Telegram cache and/or a clean IP, so
+# a song missing here usually plays there. Override with DEMO_STREAM_BASE.
+DEMO_STREAM_BASE = os.environ.get(
+    "DEMO_STREAM_BASE", "https://api-carmen-v1.syr.qzz.io"
+).rstrip("/")
+
 # Any URL (googlevideo/videoplayback/...) must never reach the client.
 _URL_PATTERN = re.compile(r"https?://\S+|videoplayback\?\S+", re.IGNORECASE)
 
@@ -791,6 +799,31 @@ def _size_detail(path: Path) -> str:
     response_description="Whether the audio of the video is already on disk",
 )
 @sanitized
+async def _demo_relay(
+    request: Request, vid_id: str
+) -> StreamingResponse | Response | None:
+    """
+    Last-resort stream relay: proxy the upstream demo server's /stream.
+
+    Used when this server cannot extract the song itself (its datacenter IP
+    is bot-checked by YouTube) and the song is not in the local or Telegram
+    cache. The demo has a much larger cache and/or a clean IP, so a song
+    missing here usually plays there. Returns None when the demo also fails,
+    so the caller can raise its own 502.
+    """
+    target = StreamTarget(
+        f"{DEMO_STREAM_BASE}/stream?vidId={vid_id}", {}, "demo"
+    )
+    try:
+        return await _proxy_audio(request, target, vid_id)
+    except _UpstreamRejected as exc:
+        log.warning("Demo relay rejected %s: %s", vid_id, exc)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Demo relay failed for %s: %s", vid_id, exc)
+        return None
+
+
 async def stream_status(
     vidId: str = Query(..., description="YouTube video ID to check"),
 ):
@@ -925,7 +958,12 @@ async def stream_audio(
             if _is_permanent_failure(exc):
                 # Every player client already reported the track itself as
                 # unavailable — the full download path would only repeat the
-                # very same yt-dlp attempts, so fail right away.
+                # very same yt-dlp attempts, so try the demo relay instead.
+                relayed = await _demo_relay(request, vidId)
+                if relayed is not None:
+                    debuglog.tier(vidId, "demo-relay", started, "demo", log)
+                    _spawn_play_ensure(vidId)
+                    return relayed
                 raise HTTPException(
                     status_code=502,
                     detail=f"Failed to download audio: {_safe_detail(exc)}",
@@ -978,12 +1016,26 @@ async def stream_audio(
         ) from exc
     except DownloadError as exc:
         log.warning("yt-dlp failed for %s: %s", vidId, exc)
+        # Last resort: the demo server has a much larger cache and/or a
+        # clean IP, so relay its /stream instead of failing outright.
+        relayed = await _demo_relay(request, vidId)
+        if relayed is not None:
+            debuglog.tier(vidId, "demo-relay", started, "demo", log)
+            _spawn_play_ensure(vidId)
+            return relayed
         raise HTTPException(
             status_code=502,
             detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
     except Exception as exc:
         log.warning("Audio download failed for %s: %s", vidId, exc)
+        # Last resort: the demo server has a much larger cache and/or a
+        # clean IP, so relay its /stream instead of failing outright.
+        relayed = await _demo_relay(request, vidId)
+        if relayed is not None:
+            debuglog.tier(vidId, "demo-relay", started, "demo", log)
+            _spawn_play_ensure(vidId)
+            return relayed
         raise HTTPException(
             status_code=502,
             detail=f"Failed to download audio: {_safe_detail(exc)}",
