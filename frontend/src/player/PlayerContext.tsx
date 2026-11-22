@@ -529,6 +529,36 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setElementDuration(0);
       resumeRef.current = null;
       setCurrent(track);
+      // Prime the element SYNCHRONOUSLY inside the tap gesture. iOS Safari
+      // only allows play() while the gesture is live, and the load effect
+      // runs after render (outside the gesture) — so a play() started only
+      // in the effect is rejected with NotAllowedError on a real iPhone,
+      // even though desktop Chrome lets it through. The effect still runs
+      // afterwards and refines the source (blob swap) without restarting
+      // the primed stream.
+      const audio = audioRef.current;
+      if (audio) {
+        const primed =
+          localAssetSource(track.videoId) ??
+          cachedStreamSource(track.videoId) ??
+          { url: streamUrl(track.videoId), kind: 'stream' as const };
+        sourceRef.current = primed;
+        if (primed.kind === 'stream') void fillStreamCache(track.videoId);
+        setBuffering(true);
+        audio.src = primed.url;
+        audio.load();
+        const attempt = audio.play();
+        if (attempt) {
+          attempt.catch((playError: DOMException) => {
+            if (playError?.name !== 'AbortError') {
+              setBuffering(false);
+              setError(
+                `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+              );
+            }
+          });
+        }
+      }
       if (options.openSheet) setSheetOpen(true);
     },
     [current, togglePlay, retry],
@@ -725,22 +755,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       sourceRef.current = source;
       if (source.kind === 'stream') void fillStreamCache(current.videoId);
-      audio.src = source.url;
-      audio.load();
-      const attempt = audio.play();
-      if (attempt) {
-        attempt.catch((playError: DOMException) => {
-          if (playError?.name !== 'AbortError') {
-            setBuffering(false);
-            // Surface the rejection reason (NotAllowedError = autoplay /
-            // gesture gate, NotSupportedError = format, AbortError = a new
-            // load interrupted it) instead of swallowing it — the banner
-            // is the only place the cause becomes visible.
-            setError(
-              `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
-            );
-          }
-        });
+      // If playTrack already primed this exact source inside the tap
+      // gesture, do NOT re-set src/load/play here — that would restart the
+      // stream and throw away the gesture that iOS Safari requires. Only
+      // (re)load when the element is not already on this source (e.g. an
+      // auto-advance with no tap, or a source change).
+      const alreadyPrimed =
+        audio.currentSrc === source.url && !audio.error;
+      if (!alreadyPrimed) {
+        audio.src = source.url;
+        audio.load();
+        const attempt = audio.play();
+        if (attempt) {
+          attempt.catch((playError: DOMException) => {
+            if (playError?.name !== 'AbortError') {
+              setBuffering(false);
+              // Surface the rejection reason (NotAllowedError = autoplay /
+              // gesture gate, NotSupportedError = format, AbortError = a new
+              // load interrupted it) instead of swallowing it — the banner
+              // is the only place the cause becomes visible.
+              setError(
+                `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+              );
+            }
+          });
+        }
       }
       // Background blob check: only swap to the downloaded copy when the
       // stream has not started yet (still at 0 and not playing), so a
@@ -770,8 +809,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
-      // Detaching on change prevents stale downloads from playing
-      audio.removeAttribute('src');
+      // No removeAttribute('src') here: playTrack primes the element inside
+      // the tap gesture, and this cleanup runs when the effect re-runs for
+      // the new track — detaching would wipe the primed source before it
+      // plays. Setting the new src in the next effect run already stops
+      // the old one; the `!current` branch above handles stopping when
+      // playback ends entirely.
     };
   }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
