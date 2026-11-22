@@ -941,6 +941,18 @@ async def stream_audio(
     # real download attempt: yt-dlp fetches with its own headers).
     extract_failed: set = set()
 
+    # Demo relay FIRST, before any local yt-dlp extraction: this server's
+    # datacenter IP is bot-checked by YouTube, so resolving a stream URL
+    # locally burns 20-40s across player clients before failing — and the
+    # demo (clean IP and/or a big cache) is what answers anyway. Trying it
+    # first makes an uncached song start in seconds instead of a minute.
+    # If the demo also fails, fall through to the local clients below.
+    relayed = await _demo_relay(request, vidId)
+    if relayed is not None:
+        debuglog.tier(vidId, "demo-relay", started, "demo", log)
+        _spawn_play_ensure(vidId)
+        return relayed
+
     # 3) relay through the server
     while len(skip) <= len(STREAM_CLIENTS):
         try:
