@@ -10,7 +10,7 @@ import {
   type RefObject,
 } from 'react';
 
-import { apiGet, fetchTrackMeta, streamUrl } from '../api';
+import { apiGet, fetchTrackMeta, streamFallbackUrl, streamUrl } from '../api';
 import { loadPlayback } from '../db/repos/playback';
 import {
   isDownloaded,
@@ -31,6 +31,18 @@ import type {
 } from '../types/models';
 import { addSuggestions, recordPlay } from '../utils/library';
 import { moveItem } from '../utils/reorder';
+import {
+  advanceSleepTimer,
+  fadeVolumeAt,
+  IDLE_SLEEP_TIMER,
+  onSleepTrackEnded,
+  remainingMs as sleepTimerRemainingMs,
+  SLEEP_TIMER_FADE_DURATION_MS,
+  SLEEP_TIMER_FADE_STEP_MS,
+  startSleepTimer,
+  type SleepTimerOption,
+  type SleepTimerState,
+} from '../utils/sleepTimer';
 import { cachedStreamSource, fillStreamCache } from '../utils/streamCache';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
@@ -106,6 +118,28 @@ export interface PlayheadContextValue {
 
 const PlayheadContext = createContext<PlayheadContextValue | null>(null);
 
+/**
+ * Sleep-timer state — deliberately **not** part of `PlayerContext`, for
+ * the same reason the playhead is separate: the countdown ticks once a
+ * second, and if it lived in the main context every player consumer
+ * would repaint on every tick. Only the player menu (the surface that
+ * shows the remaining time) subscribes here.
+ *
+ * See `utils/sleepTimer.ts` for the machine itself: session-scoped
+ * (in-memory only, gone on reload), wall-clock, minute timers survive
+ * track changes, end-of-track timers are bound to one track.
+ */
+export interface SleepTimerContextValue {
+  /** The timer machine state (`idle` when no timer runs). */
+  timer: SleepTimerState;
+  /** Milliseconds left on a minute timer; null for idle / end-of-track / fading. */
+  remainingMs: number | null;
+  /** Set a timer (`'off'` cancels); changing mid-countdown resets it. */
+  setSleepTimer: (option: SleepTimerOption) => void;
+}
+
+const SleepTimerContext = createContext<SleepTimerContextValue | null>(null);
+
 const HISTORY_LIMIT = 100;
 
 /** Last second of the track the player has already downloaded. */
@@ -140,6 +174,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // early), so the first one to run flips this and the second is a no-op.
   // Reset when a new source loads or the playhead is rewound.
   const trackEndedRef = useRef(false);
+  /**
+   * The next song's background preload (see maybePreloadNext): a second
+   * `<audio>` element that starts fetching the next track once the current
+   * one passes 75%, so the switch at the end is instant. It never plays —
+   * it only warms the browser's HTTP cache (and the connection) for the
+   * URL the main element will load. Dropped whenever the track changes.
+   */
+  const preloadRef = useRef<{ videoId: string; element: HTMLAudioElement } | null>(null);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [meta, setMeta] = useState<TrackMeta | null>(null);
@@ -161,6 +203,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>('off'); // off | all | one
   const [sheetOpen, setSheetOpen] = useState(false);
+  /** Sleep timer (see `utils/sleepTimer.ts`): session-scoped, in-memory. */
+  const [sleepTimer, setSleepTimerState] = useState<SleepTimerState>(IDLE_SLEEP_TIMER);
+  const [sleepRemainingMs, setSleepRemainingMs] = useState<number | null>(null);
   /** True once the startup restore finished — persistence starts then. */
   const [restored, setRestored] = useState(false);
 
@@ -170,9 +215,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // the theme's accent (see theme/adaptiveAccent).
   useAdaptiveAccent(current);
 
-  // A new song re-arms the end-of-song watchdog (see the `<audio>` handlers).
+  // A new song re-arms the end-of-song watchdog (see the `<audio>` handlers)
+  // and drops any preload for the previous song's "next" — the preloaded
+  // bytes stay in the HTTP cache, so the main element still picks them up.
   useEffect(() => {
     trackEndedRef.current = false;
+    const stale = preloadRef.current;
+    if (stale) {
+      stale.element.pause();
+      stale.element.removeAttribute('src');
+      stale.element.load();
+      preloadRef.current = null;
+    }
   }, [current?.videoId]);
 
   // ── Startup restore ─────────────────────────────────────────────────────
@@ -195,8 +249,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (currentTrack) {
             // Seed both refs: the persistence layer never sees a fake "0s"
             // between the restore and the first metadata event.
-            positionRef.current = snapshot.positionMs / 1000;
-            resumeRef.current = positionRef.current;
+            // Ignore a saved playhead within ~1s of the track's end (a
+            // leftover from a track that finished): restoring it would seek
+            // to duration-0.5s where the watchdog ends it again at once.
+            const duration = currentTrack.durationSeconds ?? 0;
+            const saved = snapshot.positionMs / 1000;
+            const position =
+              duration > 0 && saved >= duration - 1 ? 0 : saved;
+            positionRef.current = position;
+            resumeRef.current = position;
             setCurrent(currentTrack);
           }
         }
@@ -251,11 +312,117 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!audio || !current) return;
     if (audio.paused) {
       const attempt = audio.play();
-      if (attempt) attempt.catch(() => setError('Playback was blocked by the system'));
+      if (attempt)
+        attempt.catch((playError: DOMException) =>
+          setError(
+            `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+          ),
+        );
     } else {
       audio.pause();
     }
   }, [current]);
+
+  // ── Sleep timer driver ────────────────────────────────────────────────
+  // The machine lives in `utils/sleepTimer.ts`; this is the thin driver
+  // that translates its events into audio-element writes. Playback itself
+  // is untouched — no volume UI exists, so the element normally plays at
+  // full level and the fade below is the only writer of `audio.volume`,
+  // always restoring the pre-fade value afterwards.
+  const setSleepTimer = useCallback(
+    (option: SleepTimerOption) => {
+      // Replacing the state is what makes change-mid-countdown reset the
+      // countdown (the new deadline is computed from now) and makes
+      // cancel-mid-fade restore the volume (the fade effect's cleanup
+      // runs when the state leaves `fading`).
+      setSleepTimerState(startSleepTimer(option, Date.now(), current?.videoId ?? null));
+    },
+    [current?.videoId],
+  );
+
+  /** Move a counting timer into its fade phase, capturing live volume. */
+  const beginSleepFade = useCallback(() => {
+    setSleepTimerState((previous) => {
+      // Two firing paths, one function: minute timers fire on the clock
+      // (`advanceSleepTimer`) and end-of-track timers fire on track end
+      // (`onSleepTrackEnded` — `advanceSleepTimer` deliberately never
+      // expires those on the clock, so it must not be used for them).
+      const { state, event } =
+        previous.option === 'end-of-track'
+          ? onSleepTrackEnded(previous, Date.now())
+          : advanceSleepTimer(previous, Date.now());
+      if (event !== 'fade') return previous;
+      const audio = audioRef.current;
+      return { ...state, fadeFromVolume: audio ? audio.volume : state.fadeFromVolume };
+    });
+  }, []);
+
+  /** Wall-clock countdown: ticks the displayed remainder, starts the fade. */
+  useEffect(() => {
+    if (sleepTimer.status !== 'counting' || sleepTimer.endsAtMs === null) {
+      setSleepRemainingMs(null);
+      return undefined;
+    }
+    const tick = () => {
+      const ms = sleepTimerRemainingMs(sleepTimer, Date.now());
+      setSleepRemainingMs(ms);
+      if (ms !== null && ms <= 0) beginSleepFade();
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [sleepTimer, beginSleepFade]);
+
+  /** Fade phase: step the volume to 0 over ~10 s, pause, restore volume. */
+  useEffect(() => {
+    if (sleepTimer.status !== 'fading') return undefined;
+    const audio = audioRef.current;
+    if (!audio) {
+      setSleepTimerState(IDLE_SLEEP_TIMER);
+      return undefined;
+    }
+    const from = sleepTimer.fadeFromVolume;
+    const startedAt = sleepTimer.fadeStartedAtMs ?? Date.now();
+    let finished = false;
+    const step = () => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= SLEEP_TIMER_FADE_DURATION_MS) {
+        audio.volume = 0;
+        audio.pause(); // `onPause` flips `isPlaying`; the timer is done
+        // Restore so a later manual resume plays at normal volume, not
+        // silence — the pause, not a muted element, is the sleep action.
+        audio.volume = from;
+        finished = true;
+        setSleepTimerState(IDLE_SLEEP_TIMER);
+        return;
+      }
+      audio.volume = fadeVolumeAt(elapsed, from);
+    };
+    step();
+    const id = window.setInterval(step, SLEEP_TIMER_FADE_STEP_MS);
+    return () => {
+      window.clearInterval(id);
+      // Cancel or change mid-fade (or unmount): the volume the user had
+      // before the fade is put back, and playback continues untouched.
+      if (!finished) audio.volume = from;
+    };
+  }, [sleepTimer]);
+
+  /**
+   * End-of-track timers die with their track: a manual move to a
+   * different track clears one (its track is over by the user's own
+   * action). Minute timers are deliberately NOT cleared here — they
+   * keep running across track changes. A natural track end never reaches
+   * this effect, because `handleTrackEnded` intercepts it into a fade
+   * before the queue advances.
+   */
+  useEffect(() => {
+    if (sleepTimer.status !== 'counting' || sleepTimer.option !== 'end-of-track') return;
+    if (!sleepTimer.trackVideoId || !current?.videoId) return;
+    if (current.videoId !== sleepTimer.trackVideoId) {
+      setSleepTimerState(IDLE_SLEEP_TIMER);
+    }
+  }, [current?.videoId, sleepTimer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
@@ -310,6 +477,32 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // ── Queue / track selection ─────────────────────────────────────────────
 
+  /**
+   * Re-point the element at the current song's best source and play — the
+   * sheet's Retry button. It runs through the same offline-first order the
+   * loader uses (downloaded file, then stream) and updates the fallback
+   * chain's record of what the element is playing, so a retry that itself
+   * fails still walks the full chain instead of erroring against a stale
+   * source.
+   */
+  const retry = useCallback(() => {
+    const videoId = current?.videoId;
+    const audio = audioRef.current;
+    if (!videoId || !audio) return;
+    setError(null);
+    const source =
+      localAssetSource(videoId) ??
+      cachedStreamSource(videoId) ??
+      { url: streamUrl(videoId), kind: 'stream' as const };
+    if (source.kind === 'stream') void fillStreamCache(videoId);
+    sourceRef.current = source;
+    setBuffering(true);
+    audio.src = source.url;
+    audio.load();
+    const attempt = audio.play();
+    if (attempt) attempt.catch(() => setBuffering(false));
+  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const playTrack = useCallback(
     (rawTrack: unknown, contextTracks: unknown[] | null = null, options: { openSheet?: boolean } = {}) => {
       const track = normalizeTrack(rawTrack);
@@ -319,7 +512,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         // Pressing the song that is already active toggles it instead of
         // silently restarting it from the beginning.
         if (options.openSheet) setSheetOpen(true);
-        else togglePlay();
+        else {
+          // If the element is sitting in a failed state after the first
+          // attempt (a media error, no source, or nothing loaded), tapping
+          // again must reload it — toggling play() on a dead element just
+          // fails again. Route the dead-element case to retry(), which
+          // re-runs the loader.
+          const audio = audioRef.current;
+          const dead =
+            !!audio &&
+            (!!audio.error ||
+              audio.networkState === 3 ||
+              (audio.readyState === 0 && audio.paused));
+          if (dead) retry();
+          else togglePlay();
+        }
         return;
       }
 
@@ -339,9 +546,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setElementDuration(0);
       resumeRef.current = null;
       setCurrent(track);
+      // Prime the element SYNCHRONOUSLY inside the tap gesture. iOS Safari
+      // only allows play() while the gesture is live, and the load effect
+      // runs after render (outside the gesture) — so a play() started only
+      // in the effect is rejected with NotAllowedError on a real iPhone,
+      // even though desktop Chrome lets it through. The effect still runs
+      // afterwards and refines the source (blob swap) without restarting
+      // the primed stream.
+      const audio = audioRef.current;
+      if (audio) {
+        const primed =
+          localAssetSource(track.videoId) ??
+          cachedStreamSource(track.videoId) ??
+          { url: streamUrl(track.videoId), kind: 'stream' as const };
+        sourceRef.current = primed;
+        if (primed.kind === 'stream') void fillStreamCache(track.videoId);
+        setBuffering(true);
+        audio.src = primed.url;
+        audio.load();
+        const attempt = audio.play();
+        if (attempt) {
+          attempt.catch((playError: DOMException) => {
+            if (playError?.name !== 'AbortError') {
+              setBuffering(false);
+              setError(
+                `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+              );
+            }
+          });
+        }
+      }
       if (options.openSheet) setSheetOpen(true);
     },
-    [current, togglePlay],
+    [current, togglePlay, retry],
   );
 
   const playAll = useCallback(
@@ -454,6 +691,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [buildNext, current, meta, playTrack, repeat, seek],
   );
 
+  /**
+   * Start loading the next track in the background once the current song
+   * is 75% through, so it plays instantly when the current one ends.
+   *
+   * One preload per song: shuffle picks a random next track, so re-rolling
+   * on every tick would churn the preload and never finish one. Repeat-one
+   * replays the current song, so there is nothing to warm. Songs already on
+   * the device (downloaded, or parked in the Tauri stream cache) need no
+   * warming — the element plays them locally. Best-effort throughout: a
+   * failed or partial preload just means the next song streams live, as
+   * today. The preload never calls play() — it only fetches.
+   */
+  const maybePreloadNext = useCallback(() => {
+    if (preloadRef.current || repeat === 'one') return;
+    const { track } = buildNext();
+    if (!track) return;
+    if (localAssetSource(track.videoId) ?? cachedStreamSource(track.videoId)) return;
+    const element = new Audio();
+    element.preload = 'auto';
+    element.src = streamUrl(track.videoId);
+    element.load();
+    preloadRef.current = { videoId: track.videoId, element };
+  }, [buildNext, repeat]);
+
   const previous = useCallback(() => {
     const audio = audioRef.current;
     if (audio && audio.currentTime > 3) {
@@ -518,35 +779,83 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // live stream only when the song is not on the device at all. Between
       // the download and the network sits the stream cache (Tauri only): a
       // copy parked in `<app data>/.cache` by an earlier play.
+      //
+      // The live stream starts SYNCHRONOUSLY (no await before play()): the
+      // IndexedDB blob lookup is async, and awaiting it first lets the
+      // tap's user gesture expire, so the browser rejects play() with
+      // NotAllowedError ("Playback was blocked by the system"). The blob is
+      // still checked in the background — if one is found and the stream
+      // has not started yet, the element swaps to it.
       let local = localAssetSource(current.videoId);
       if (!local) local = cachedStreamSource(current.videoId);
-      if (!local && !isTauri) {
-        try {
-          local = await localBlobSource(current.videoId);
-        } catch {
-          local = null;
-        }
-        if (cancelled) return;
-      }
-      const source: AudioSource = local ?? { url: streamUrl(current.videoId), kind: 'stream' };
+      const streamSource: AudioSource = {
+        url: streamUrl(current.videoId),
+        kind: 'stream',
+      };
+      const source: AudioSource = local ?? streamSource;
       if (cancelled) return;
       sourceRef.current = source;
       if (source.kind === 'stream') void fillStreamCache(current.videoId);
-      audio.src = source.url;
-      audio.load();
-      const attempt = audio.play();
-      if (attempt) {
-        attempt.catch((playError: DOMException) => {
-          if (playError?.name !== 'AbortError') setBuffering(false);
-        });
+      // If playTrack already primed this exact source inside the tap
+      // gesture, do NOT re-set src/load/play here — that would restart the
+      // stream and throw away the gesture that iOS Safari requires. Only
+      // (re)load when the element is not already on this source (e.g. an
+      // auto-advance with no tap, or a source change).
+      const alreadyPrimed =
+        audio.currentSrc === source.url && !audio.error;
+      if (!alreadyPrimed) {
+        audio.src = source.url;
+        audio.load();
+        const attempt = audio.play();
+        if (attempt) {
+          attempt.catch((playError: DOMException) => {
+            if (playError?.name !== 'AbortError') {
+              setBuffering(false);
+              // Surface the rejection reason (NotAllowedError = autoplay /
+              // gesture gate, NotSupportedError = format, AbortError = a new
+              // load interrupted it) instead of swallowing it — the banner
+              // is the only place the cause becomes visible.
+              setError(
+                `Playback was blocked by the system (${playError?.name ?? 'unknown'})`,
+              );
+            }
+          });
+        }
+      }
+      // Background blob check: only swap to the downloaded copy when the
+      // stream has not started yet (still at 0 and not playing), so a
+      // playing stream is never interrupted.
+      if (!local && !isTauri) {
+        try {
+          const blob = await localBlobSource(current.videoId);
+          if (
+            blob &&
+            !cancelled &&
+            sourceRef.current === source &&
+            audio.paused &&
+            audio.currentTime === 0
+          ) {
+            sourceRef.current = blob;
+            audio.src = blob.url;
+            audio.load();
+            const blobAttempt = audio.play();
+            if (blobAttempt) blobAttempt.catch(() => setBuffering(false));
+          }
+        } catch {
+          /* stream keeps playing — the blob was only an offline bonus */
+        }
       }
     };
     void load();
 
     return () => {
       cancelled = true;
-      // Detaching on change prevents stale downloads from playing
-      audio.removeAttribute('src');
+      // No removeAttribute('src') here: playTrack primes the element inside
+      // the tap gesture, and this cleanup runs when the effect re-runs for
+      // the new track — detaching would wipe the primed source before it
+      // plays. Setting the new src in the next effect run already stops
+      // the old one; the `!current` branch above handles stopping when
+      // playback ends entirely.
     };
   }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -725,6 +1034,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const handleTrackEnded = useCallback(() => {
     if (trackEndedRef.current) return;
     trackEndedRef.current = true;
+    // Sleep timer, end-of-track mode: this is the ONLY end-of-track
+    // detection — the shared entry point for the element's `ended` event
+    // and the `timeupdate` watchdog (see `utils/sleepTimer.ts`,
+    // `onSleepTrackEnded`). It runs before repeat / queue logic, so the
+    // fade-and-pause replaces advancing (and beats repeat-one).
+    if (sleepTimer.status === 'counting' && sleepTimer.option === 'end-of-track') {
+      const { event } = onSleepTrackEnded(sleepTimer, Date.now());
+      if (event === 'fade') beginSleepFade();
+      return;
+    }
     if (repeat === 'one') {
       seek(0); // rewinds and re-arms the watchdog for the replayed song
       const attempt = audioRef.current?.play();
@@ -732,7 +1051,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     next(true);
-  }, [next, repeat, seek]);
+  }, [next, repeat, seek, sleepTimer, beginSleepFade]);
 
   /**
    * Source fallback chain: local file (asset) → local file (blob) → stream.
@@ -747,6 +1066,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const audio = audioRef.current;
     const source = sourceRef.current;
     if (!audio || !source) return;
+    // Capture the element's state NOW, synchronously: every retry and
+    // fallback below calls audio.load(), which clears audio.error, so by
+    // the time the probe at the end runs the original code is gone and
+    // the banner can only say "no error". The code that fired this event
+    // is the cause; the probe only tells us whether the server is up.
+    const errorCode = audio.error?.code ?? null;
+    const errorNet = audio.networkState;
+    const errorReady = audio.readyState;
+    const errorSrc = audio.currentSrc;
     // Stale error from a source the player already left: rapid switching
     // tears the old load down (the cleanup empties the `src` attribute) and
     // an error event from that teardown arrives after the new track's
@@ -787,6 +1115,50 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    if (source.kind === 'stream') {
+      // The primary stream failed: try the other server before giving up.
+      // A song plays when it is in EITHER server's cache (the demo's large
+      // cache or our own Telegram cache). The guard keeps a failed fallback
+      // from looping back onto itself.
+      //
+      // First, retry the SAME primary once: the first attempt can fail
+      // while our server is still fetching the file (Telegram download on
+      // a cold disk), and by the retry the file is on disk and serves fast.
+      // Only if the retry also fails do we fall back to the other server.
+      const fallback = streamFallbackUrl(videoId);
+      const retried = sourceRef.current === source && (source as { retried?: boolean }).retried;
+      if (!retried) {
+        try {
+          if (audio) {
+            sourceRef.current = { url: source.url, kind: 'stream', retried: true } as typeof source;
+            setBuffering(true);
+            audio.src = source.url;
+            audio.load();
+            const attempt = audio.play();
+            if (attempt) attempt.catch(() => setBuffering(false));
+            return;
+          }
+        } catch {
+          /* fall through to the demo fallback below */
+        }
+      }
+      if (fallback && source.url !== fallback) {
+        try {
+          if (audio) {
+            sourceRef.current = { url: fallback, kind: 'stream' };
+            setBuffering(true);
+            audio.src = fallback;
+            audio.load();
+            const attempt = audio.play();
+            if (attempt) attempt.catch(() => setBuffering(false));
+            return;
+          }
+        } catch {
+          /* fall through to the error below */
+        }
+      }
+    }
+
     setBuffering(false);
     setIsPlaying(false);
 
@@ -807,6 +1179,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         message = payload?.detail || message;
       } else {
         void response.body?.cancel().catch(() => {});
+        // The server answers fine, so the failure is in the <audio> element
+        // itself. Surface the error code captured synchronously at the top
+        // of this handler (1=aborted, 2=network, 3=decode, 4=src-not-
+        // supported; networkState 0=empty, 1=idle, 2=loading, 3=no-source)
+        // instead of re-reading audio.error, which the retries above
+        // already cleared.
+        if (errorCode !== null) {
+          message = `${message} (audio error ${errorCode}, net ${errorNet}, ready ${errorReady})`;
+        } else if (errorSrc) {
+          message = `${message} (no media error, net ${errorNet}, ready ${errorReady})`;
+        }
       }
     } catch {
       /* keep the generic message */
@@ -816,31 +1199,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const dismissError = useCallback(() => setError(null), []);
 
-  /**
-   * Re-point the element at the current song's best source and play — the
-   * sheet's Retry button. It runs through the same offline-first order the
-   * loader uses (downloaded file, then stream) and updates the fallback
-   * chain's record of what the element is playing, so a retry that itself
-   * fails still walks the full chain instead of erroring against a stale
-   * source.
-   */
-  const retry = useCallback(() => {
-    const videoId = current?.videoId;
-    const audio = audioRef.current;
-    if (!videoId || !audio) return;
-    setError(null);
-    const source =
-      localAssetSource(videoId) ??
-      cachedStreamSource(videoId) ??
-      { url: streamUrl(videoId), kind: 'stream' as const };
-    if (source.kind === 'stream') void fillStreamCache(videoId);
-    sourceRef.current = source;
-    setBuffering(true);
-    audio.src = source.url;
-    audio.load();
-    const attempt = audio.play();
-    if (attempt) attempt.catch(() => setBuffering(false));
-  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Wait until the server has finished caching *videoId* (see the download
@@ -975,13 +1333,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [currentTime, duration, buffered],
   );
 
+  /** Sleep-timer value: ticks once a second, subscribed to only by the menu. */
+  const sleepTimerValue = useMemo<SleepTimerContextValue>(
+    () => ({ timer: sleepTimer, remainingMs: sleepRemainingMs, setSleepTimer }),
+    [sleepTimer, sleepRemainingMs, setSleepTimer],
+  );
+
   return (
     <PlayerContext.Provider value={value}>
       <PlayheadContext.Provider value={playhead}>
-        {children}
+        <SleepTimerContext.Provider value={sleepTimerValue}>
+          {children}
+        </SleepTimerContext.Provider>
       </PlayheadContext.Provider>
-      {/* No volume control: the element plays at full level and the OS mixer
-          owns loudness, so the player keeps no volume state at all. */}
+      {/* No volume control UI: the element plays at full level and the OS
+          mixer owns loudness. The sleep-timer fade is the only writer of
+          `audio.volume`, and it always restores the pre-fade value — so
+          the player still keeps no volume state of its own. */}
       <audio
         ref={audioRef}
         preload="auto"
@@ -1011,6 +1379,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               handleTrackEnded();
             } else if (element.currentTime < real - 1) {
               trackEndedRef.current = false;
+            }
+            // 75% through: warm the next track so the switch is instant.
+            if (element.currentTime >= real * 0.75) {
+              maybePreloadNext();
             }
           }
         }}
@@ -1055,5 +1427,16 @@ export function usePlayer(): PlayerContextValue {
 export function usePlayhead(): PlayheadContextValue {
   const context = useContext(PlayheadContext);
   if (!context) throw new Error('usePlayhead must be used inside PlayerProvider');
+  return context;
+}
+
+/**
+ * Sleep-timer state (see `SleepTimerContextValue`). Subscribe here — not
+ * through `usePlayer` — when a component shows the timer, so the 1 Hz
+ * countdown ticks repaint just that component.
+ */
+export function useSleepTimer(): SleepTimerContextValue {
+  const context = useContext(SleepTimerContext);
+  if (!context) throw new Error('useSleepTimer must be used inside PlayerProvider');
   return context;
 }
