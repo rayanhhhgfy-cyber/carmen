@@ -708,17 +708,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // live stream only when the song is not on the device at all. Between
       // the download and the network sits the stream cache (Tauri only): a
       // copy parked in `<app data>/.cache` by an earlier play.
+      //
+      // The live stream starts SYNCHRONOUSLY (no await before play()): the
+      // IndexedDB blob lookup is async, and awaiting it first lets the
+      // tap's user gesture expire, so the browser rejects play() with
+      // NotAllowedError ("Playback was blocked by the system"). The blob is
+      // still checked in the background — if one is found and the stream
+      // has not started yet, the element swaps to it.
       let local = localAssetSource(current.videoId);
       if (!local) local = cachedStreamSource(current.videoId);
-      if (!local && !isTauri) {
-        try {
-          local = await localBlobSource(current.videoId);
-        } catch {
-          local = null;
-        }
-        if (cancelled) return;
-      }
-      const source: AudioSource = local ?? { url: streamUrl(current.videoId), kind: 'stream' };
+      const streamSource: AudioSource = {
+        url: streamUrl(current.videoId),
+        kind: 'stream',
+      };
+      const source: AudioSource = local ?? streamSource;
       if (cancelled) return;
       sourceRef.current = source;
       if (source.kind === 'stream') void fillStreamCache(current.videoId);
@@ -738,6 +741,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             );
           }
         });
+      }
+      // Background blob check: only swap to the downloaded copy when the
+      // stream has not started yet (still at 0 and not playing), so a
+      // playing stream is never interrupted.
+      if (!local && !isTauri) {
+        try {
+          const blob = await localBlobSource(current.videoId);
+          if (
+            blob &&
+            !cancelled &&
+            sourceRef.current === source &&
+            audio.paused &&
+            audio.currentTime === 0
+          ) {
+            sourceRef.current = blob;
+            audio.src = blob.url;
+            audio.load();
+            const blobAttempt = audio.play();
+            if (blobAttempt) blobAttempt.catch(() => setBuffering(false));
+          }
+        } catch {
+          /* stream keeps playing — the blob was only an offline bonus */
+        }
       }
     };
     void load();
