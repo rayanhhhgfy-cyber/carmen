@@ -137,7 +137,39 @@ export async function apiPostJson(path: string, body: unknown, signal?: AbortSig
 
 /** Absolute URL of the proxied audio stream for a video. */
 export function streamUrl(videoId: string): string {
-  return `${apiBase()}/stream?vidId=${encodeURIComponent(videoId)}`;
+  // Streams deliberately do NOT follow apiBase() by default: our own Render
+  // server's IP is bot-checked by YouTube, so its /stream fails for every
+  // player client, while the demo server's streams still work (verified
+  // 2026-11-20). Search/browse keep using apiBase(). Set VITE_STREAM_BASE
+  // to your own server once it has YouTube cookies, and the Settings
+  // "Server URL" override still wins over both when it is set.
+  const streamBase =
+    import.meta.env.VITE_STREAM_BASE || 'https://api-carmen-v1.syr.qzz.io';
+  const override = getSettingsSnapshot().apiBase;
+  const base = trimBase(override) || trimBase(streamBase);
+  return `${base}/stream?vidId=${encodeURIComponent(videoId)}`;
+}
+
+/**
+ * The other stream server, tried when the primary stream fails.
+ *
+ * A track is playable when it is in EITHER server's cache, so the player
+ * falls back to the other one instead of giving up: if the primary stream
+ * is the demo server, the fallback is our own server (its Telegram cache),
+ * and if the primary is our own server (or a custom override), the
+ * fallback is the demo server (its much larger cache). Returns null when
+ * both would be the same server, so there is nothing to fall back to.
+ */
+export function streamFallbackUrl(videoId: string): string | null {
+  const demo = 'https://api-carmen-v1.syr.qzz.io';
+  const primary = streamUrl(videoId);
+  const primaryBase = primary.replace(/\/stream\?.*$/, '');
+  if (primaryBase === trimBase(demo)) {
+    const own = trimBase(apiBase());
+    if (!own || own === trimBase(demo)) return null;
+    return `${own}/stream?vidId=${encodeURIComponent(videoId)}`;
+  }
+  return `${demo}/stream?vidId=${encodeURIComponent(videoId)}`;
 }
 
 /**
