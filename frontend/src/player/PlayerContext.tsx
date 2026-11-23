@@ -174,6 +174,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // early), so the first one to run flips this and the second is a no-op.
   // Reset when a new source loads or the playhead is rewound.
   const trackEndedRef = useRef(false);
+  /**
+   * The next song's background preload (see maybePreloadNext): a second
+   * `<audio>` element that starts fetching the next track once the current
+   * one passes 75%, so the switch at the end is instant. It never plays —
+   * it only warms the browser's HTTP cache (and the connection) for the
+   * URL the main element will load. Dropped whenever the track changes.
+   */
+  const preloadRef = useRef<{ videoId: string; element: HTMLAudioElement } | null>(null);
 
   const [current, setCurrent] = useState<Track | null>(null);
   const [meta, setMeta] = useState<TrackMeta | null>(null);
@@ -207,9 +215,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // the theme's accent (see theme/adaptiveAccent).
   useAdaptiveAccent(current);
 
-  // A new song re-arms the end-of-song watchdog (see the `<audio>` handlers).
+  // A new song re-arms the end-of-song watchdog (see the `<audio>` handlers)
+  // and drops any preload for the previous song's "next" — the preloaded
+  // bytes stay in the HTTP cache, so the main element still picks them up.
   useEffect(() => {
     trackEndedRef.current = false;
+    const stale = preloadRef.current;
+    if (stale) {
+      stale.element.pause();
+      stale.element.removeAttribute('src');
+      stale.element.load();
+      preloadRef.current = null;
+    }
   }, [current?.videoId]);
 
   // ── Startup restore ─────────────────────────────────────────────────────
@@ -673,6 +690,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     },
     [buildNext, current, meta, playTrack, repeat, seek],
   );
+
+  /**
+   * Start loading the next track in the background once the current song
+   * is 75% through, so it plays instantly when the current one ends.
+   *
+   * One preload per song: shuffle picks a random next track, so re-rolling
+   * on every tick would churn the preload and never finish one. Repeat-one
+   * replays the current song, so there is nothing to warm. Songs already on
+   * the device (downloaded, or parked in the Tauri stream cache) need no
+   * warming — the element plays them locally. Best-effort throughout: a
+   * failed or partial preload just means the next song streams live, as
+   * today. The preload never calls play() — it only fetches.
+   */
+  const maybePreloadNext = useCallback(() => {
+    if (preloadRef.current || repeat === 'one') return;
+    const { track } = buildNext();
+    if (!track) return;
+    if (localAssetSource(track.videoId) ?? cachedStreamSource(track.videoId)) return;
+    const element = new Audio();
+    element.preload = 'auto';
+    element.src = streamUrl(track.videoId);
+    element.load();
+    preloadRef.current = { videoId: track.videoId, element };
+  }, [buildNext, repeat]);
 
   const previous = useCallback(() => {
     const audio = audioRef.current;
@@ -1338,6 +1379,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               handleTrackEnded();
             } else if (element.currentTime < real - 1) {
               trackEndedRef.current = false;
+            }
+            // 75% through: warm the next track so the switch is instant.
+            if (element.currentTime >= real * 0.75) {
+              maybePreloadNext();
             }
           }
         }}
