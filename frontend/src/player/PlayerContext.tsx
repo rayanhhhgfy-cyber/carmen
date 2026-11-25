@@ -48,6 +48,7 @@ import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
 import { useMediaSession } from '../services/mediaSession';
 import { resolveExternalStream } from '../services/spotifySources';
+import { playbackSourceForAudioSource, type PlaybackSourceId } from './sourceLabel';
 import { useAdaptiveAccent } from '../theme/adaptiveAccent';
 
 /**
@@ -72,6 +73,15 @@ export interface PlayerContextValue {
   relatedFor: string | null;
   isPlaying: boolean;
   buffering: boolean;
+  /**
+   * Which source the current song is actually playing from
+   * (`'downloaded'` | `'carmen'` | `'relay'` | `'audius'` | `'itunes'`),
+   * or null when nothing is playing. The player indicator reads this —
+   * the single source of truth, set everywhere `sourceRef` is set — so
+   * the badge always names the source the element is on, including
+   * after a fallback switch.
+   */
+  playbackSource: PlaybackSourceId | null;
   error: string | null;
   dismissError: () => void;
   retry: () => void;
@@ -193,6 +203,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [buffering, setBuffering] = useState(false);
+  /** Which source is actually playing right now (see the context value). */
+  const [playbackSource, setPlaybackSource] = useState<PlaybackSourceId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   // What the `<audio>` element reports for the container — untrustworthy on
@@ -497,6 +509,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       { url: streamUrl(videoId), kind: 'stream' as const };
     if (source.kind === 'stream') void fillStreamCache(videoId);
     sourceRef.current = source;
+    setPlaybackSource(playbackSourceForAudioSource(source));
     setBuffering(true);
     audio.src = source.url;
     audio.load();
@@ -561,6 +574,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           cachedStreamSource(track.videoId) ??
           { url: streamUrl(track.videoId), kind: 'stream' as const };
         sourceRef.current = primed;
+        setPlaybackSource(playbackSourceForAudioSource(primed));
         if (primed.kind === 'stream') void fillStreamCache(track.videoId);
         setBuffering(true);
         audio.src = primed.url;
@@ -767,6 +781,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeAttribute('src');
       audio.load();
       setIsPlaying(false);
+      setPlaybackSource(null);
       return undefined;
     }
 
@@ -796,6 +811,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const source: AudioSource = local ?? streamSource;
       if (cancelled) return;
       sourceRef.current = source;
+      setPlaybackSource(playbackSourceForAudioSource(source));
       if (source.kind === 'stream') void fillStreamCache(current.videoId);
       // If playTrack already primed this exact source inside the tap
       // gesture, do NOT re-set src/load/play here — that would restart the
@@ -837,6 +853,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             audio.currentTime === 0
           ) {
             sourceRef.current = blob;
+            setPlaybackSource(playbackSourceForAudioSource(blob));
             audio.src = blob.url;
             audio.load();
             const blobAttempt = audio.play();
@@ -1089,6 +1106,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const blob = await localBlobSource(videoId);
         if (blob && audio) {
           sourceRef.current = blob;
+          setPlaybackSource(playbackSourceForAudioSource(blob));
           setBuffering(true);
           audio.src = blob.url;
           audio.load();
@@ -1109,7 +1127,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       try {
         const url = streamUrl(videoId);
         if (audio) {
-          sourceRef.current = { url, kind: 'stream' };
+          const streamSource: AudioSource = { url, kind: 'stream' };
+          sourceRef.current = streamSource;
+          setPlaybackSource(playbackSourceForAudioSource(streamSource));
           setBuffering(true);
           audio.src = url;
           audio.load();
@@ -1138,6 +1158,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         try {
           if (audio) {
             sourceRef.current = { url: source.url, kind: 'stream', retried: true } as typeof source;
+            // Same server, same label — re-assert it so a retry can never
+            // leave the badge on a source the element already left.
+            setPlaybackSource(playbackSourceForAudioSource(source));
             setBuffering(true);
             audio.src = source.url;
             audio.load();
@@ -1152,7 +1175,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (fallback && source.url !== fallback) {
         try {
           if (audio) {
-            sourceRef.current = { url: fallback, kind: 'stream' };
+            const fallbackSource: AudioSource = { url: fallback, kind: 'stream' };
+            sourceRef.current = fallbackSource;
+            setPlaybackSource(playbackSourceForAudioSource(fallbackSource));
             setBuffering(true);
             audio.src = fallback;
             audio.load();
@@ -1181,7 +1206,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             current.videoId === videoId &&
             triedUrls.has(audio.getAttribute('src') ?? '')
           ) {
-            sourceRef.current = { url: external.audioUrl, kind: 'external' };
+            const externalSource: AudioSource = {
+              url: external.audioUrl,
+              kind: 'external',
+              externalSource: external.source,
+            };
+            sourceRef.current = externalSource;
+            setPlaybackSource(playbackSourceForAudioSource(externalSource));
             setBuffering(true);
             audio.src = external.audioUrl;
             audio.load();
@@ -1299,6 +1330,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       relatedFor,
       isPlaying,
       buffering,
+      playbackSource,
       error,
       dismissError,
       retry,
@@ -1330,6 +1362,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       relatedFor,
       isPlaying,
       buffering,
+      playbackSource,
       error,
       dismissError,
       retry,

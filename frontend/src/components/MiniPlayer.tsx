@@ -6,6 +6,7 @@ import { alpha } from '../utils/color';
 import { cn } from '../utils/cn';
 import Artwork from './Artwork';
 import MarqueeText from './MarqueeText';
+import SourceBadge from './SourceBadge';
 import { ExpandLessIcon, PauseIcon, PlayArrowIcon, SkipNextIcon } from './icons';
 
 /** Props for the docked mini player. */
@@ -117,9 +118,14 @@ export default function MiniPlayer({ bottomOffset }: MiniPlayerProps) {
             variant="body2"
             sx={{ fontWeight: 600, lineHeight: 1.2 }}
           />
-          <span className="block truncate text-xs leading-[1.4] text-muted">
-            {track.artist}
-          </span>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-xs leading-[1.4] text-muted">
+              {track.artist}
+            </span>
+            {/* Playing-from badge: names the server/source the song is
+                actually on right now, and follows every fallback switch. */}
+            <SourceBadge source={player.playbackSource} />
+          </div>
         </div>
 
         <IconButton

@@ -1,5 +1,6 @@
 import Artwork from "./Artwork";
 import DownloadButton from "./DownloadButton";
+import SourceBadge from "./SourceBadge";
 import LyricsView from "./LyricsView";
 import MarqueeText from "./MarqueeText";
 import NPControls from "./NPControls";
@@ -604,6 +605,14 @@ export default function PlayerSheet() {
         <span className="mt-[2px] block truncate text-xs leading-[1.4] text-disabled">
           {track.albumName}
         </span>
+      )}
+      {/* Playing-from badge: names the server/source the song is actually
+          on right now, and follows every fallback switch. Hidden when
+          nothing is playing, so it can never show a stale server. */}
+      {player.playbackSource && (
+        <div className="mt-1.5 flex justify-center md:justify-start">
+          <SourceBadge source={player.playbackSource} />
+        </div>
       )}
     </>
   );
