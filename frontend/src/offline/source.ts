@@ -7,7 +7,12 @@
  *   1. the downloaded file inside the sandbox (asset protocol),
  *   2. the same file as a blob URL (fallback when a WebView refuses the
  *      asset protocol),
- *   3. the live server stream.
+ *   3. the live server stream,
+ *   4. the Spotify repo's legal sources (Audius full streams, then an
+ *      iTunes 30s preview) — only after both servers fail; see
+ *      `services/spotifySources.ts` and `PlayerContext.handleError`.
+ *      Kind `'external'` marks a source from step 4: it is terminal, the
+ *      chain never loops back from it to the stream.
  */
 import { convertFileSrc } from '@tauri-apps/api/core';
 
@@ -63,7 +68,7 @@ export function localLyricsPath(videoId: string | null | undefined): string | nu
   return getLocalRecord(videoId)?.lyricsPath ?? null;
 }
 
-export type AudioSourceKind = 'asset' | 'blob' | 'stream';
+export type AudioSourceKind = 'asset' | 'blob' | 'stream' | 'external';
 
 export interface AudioSource {
   url: string;

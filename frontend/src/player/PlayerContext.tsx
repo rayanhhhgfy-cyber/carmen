@@ -47,6 +47,7 @@ import { cachedStreamSource, fillStreamCache } from '../utils/streamCache';
 import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
 import { useMediaSession } from '../services/mediaSession';
+import { resolveExternalStream } from '../services/spotifySources';
 import { useAdaptiveAccent } from '../theme/adaptiveAccent';
 
 /**
@@ -1054,7 +1055,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [next, repeat, seek, sleepTimer, beginSleepFade]);
 
   /**
-   * Source fallback chain: local file (asset) → local file (blob) → stream.
+   * Source fallback chain: local file (asset) → local file (blob) → stream
+   * → other server's stream → Spotify-repo legal sources (Audius, then an
+   * iTunes preview).
    *
    * Only when every step failed does the error become visible — a WebView
    * that refuses the asset protocol simply plays the blob instead, and a
@@ -1098,7 +1101,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (source.kind !== 'stream') {
+    // An 'external' source (Audius / iTunes, see the stream block below)
+    // is terminal: if it failed, going back to the stream would just
+    // re-walk the whole chain and loop. Only asset/blob fall back to the
+    // stream here.
+    if (source.kind === 'asset' || source.kind === 'blob') {
       try {
         const url = streamUrl(videoId);
         if (audio) {
@@ -1148,6 +1155,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             sourceRef.current = { url: fallback, kind: 'stream' };
             setBuffering(true);
             audio.src = fallback;
+            audio.load();
+            const attempt = audio.play();
+            if (attempt) attempt.catch(() => setBuffering(false));
+            return;
+          }
+        } catch {
+          /* fall through to the external fallback below */
+        }
+      }
+      // Both Carmen servers failed: last resort is the Spotify repo's
+      // legal sources — Audius full streams first, then an iTunes 30s
+      // preview (see services/spotifySources.ts). It runs only here,
+      // after every Carmen source, and never replaces the primary path.
+      // The resolve is async, so the element must still be on one of
+      // the stream URLs this handler tried — if the user already moved
+      // to another song, the answer belongs to the past and is dropped.
+      if (current) {
+        try {
+          const triedUrls = new Set([source.url, fallback].filter(Boolean));
+          const external = await resolveExternalStream(current.title, current.artist);
+          if (
+            external &&
+            audio &&
+            current.videoId === videoId &&
+            triedUrls.has(audio.getAttribute('src') ?? '')
+          ) {
+            sourceRef.current = { url: external.audioUrl, kind: 'external' };
+            setBuffering(true);
+            audio.src = external.audioUrl;
             audio.load();
             const attempt = audio.play();
             if (attempt) attempt.catch(() => setBuffering(false));
