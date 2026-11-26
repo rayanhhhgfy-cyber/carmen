@@ -174,11 +174,44 @@ function shuffled<T>(list: T[]): T[] {
   return copy;
 }
 
+/**
+ * A tap-gesture prime: the exact track + URL `playTrack` pointed the
+ * `<audio>` element at, recorded synchronously inside the tap.
+ */
+export interface TapPrime {
+  videoId: string;
+  url: string;
+}
+
+/**
+ * Did `playTrack` already prime this exact track + URL inside the tap
+ * gesture? Deliberately does NOT read `audio.currentSrc`: Safari updates
+ * `currentSrc` asynchronously after `load()`, so on a real iPhone it can
+ * still read `""` (or the previous song) when the load effect runs — and
+ * the old `currentSrc` guard then re-set `src`/`load()` and called
+ * `play()` outside the gesture, which iOS rejects with NotAllowedError
+ * ("Playback was blocked by the system"), aborting the primed play so
+ * the song never starts. The ref is written synchronously in the gesture,
+ * so this check is deterministic and immune to that timing.
+ */
+export function matchesTapPrime(
+  prime: TapPrime | null,
+  videoId: string,
+  url: string,
+): boolean {
+  return prime !== null && prime.videoId === videoId && prime.url === url;
+}
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const positionRef = useRef(0);
   const resumeRef = useRef<number | null>(null);
   const sourceRef = useRef<AudioSource | null>(null);
+  // The tap-gesture prime (see matchesTapPrime): set synchronously in
+  // playTrack next to sourceRef, consumed by the load effect. It is the
+  // only record the effect trusts for "already primed" — never
+  // audio.currentSrc, whose update timing Safari does not guarantee.
+  const tapPrimeRef = useRef<TapPrime | null>(null);
   // Guards the end-of-song logic: the `timeupdate` watchdog and the element's
   // own `ended` can both arrive for one song (the watchdog fires slightly
   // early), so the first one to run flips this and the second is a no-op.
@@ -573,6 +606,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           cachedStreamSource(track.videoId) ??
           { url: streamUrl(track.videoId), kind: 'stream' as const };
         sourceRef.current = primed;
+        tapPrimeRef.current = { videoId: track.videoId, url: primed.url };
         setPlaybackSource(playbackSourceForAudioSource(primed));
         if (primed.kind === 'stream') void fillStreamCache(track.videoId);
         setBuffering(true);
@@ -781,6 +815,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.load();
       setIsPlaying(false);
       setPlaybackSource(null);
+      tapPrimeRef.current = null;
       return undefined;
     }
 
@@ -817,8 +852,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // stream and throw away the gesture that iOS Safari requires. Only
       // (re)load when the element is not already on this source (e.g. an
       // auto-advance with no tap, or a source change).
-      const alreadyPrimed =
-        audio.currentSrc === source.url && !audio.error;
+      // The check is the tap-prime ref, NOT audio.currentSrc: Safari
+      // updates currentSrc asynchronously after load(), so it can still
+      // read "" (or the previous song) when this effect runs — and the
+      // old currentSrc guard then re-played OUTSIDE the gesture, which
+      // iOS rejects with NotAllowedError ("Playback was blocked by the
+      // system") and aborts the primed play. The ref is consumed on a
+      // match so one prime covers exactly one effect run.
+      const primedByTap =
+        matchesTapPrime(tapPrimeRef.current, current.videoId, source.url) &&
+        !audio.error;
+      if (primedByTap) tapPrimeRef.current = null;
+      const alreadyPrimed = primedByTap;
       if (!alreadyPrimed) {
         audio.src = source.url;
         audio.load();
@@ -840,8 +885,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       // Background blob check: only swap to the downloaded copy when the
       // stream has not started yet (still at 0 and not playing), so a
-      // playing stream is never interrupted.
-      if (!local && !isTauri) {
+      // playing stream is never interrupted. Never swap while a tap-prime
+      // is in flight for this track: the swap awaits IndexedDB, then
+      // re-sets src/load and calls play() outside the gesture — which
+      // would abort the primed stream and strand the song paused.
+      if (!local && !isTauri && !primedByTap) {
         try {
           const blob = await localBlobSource(current.videoId);
           if (
