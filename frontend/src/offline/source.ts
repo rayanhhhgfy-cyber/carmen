@@ -7,18 +7,12 @@
  *   1. the downloaded file inside the sandbox (asset protocol),
  *   2. the same file as a blob URL (fallback when a WebView refuses the
  *      asset protocol),
- *   3. the live server stream,
- *   4. the Spotify repo's legal sources (Audius full streams, then an
- *      iTunes 30s preview) — only after both servers fail; see
- *      `services/spotifySources.ts` and `PlayerContext.handleError`.
- *      Kind `'external'` marks a source from step 4: it is terminal, the
- *      chain never loops back from it to the stream.
+ *   3. the live server stream (primary server, then the other server).
  */
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 import { allDownloadRecords, type DownloadRecord } from '../db/repos/downloads';
 import { isTauri } from '../platform/env';
-import type { ExternalStreamSource } from '../services/spotifySources';
 import type { TrackLyrics, TrackMeta } from '../types/models';
 import { parseLrc, plainLyrics, syncedLines } from '../utils/lyrics';
 import { readBinary, readText, songFolderPath, toBase64 } from './storage';
@@ -69,19 +63,11 @@ export function localLyricsPath(videoId: string | null | undefined): string | nu
   return getLocalRecord(videoId)?.lyricsPath ?? null;
 }
 
-export type AudioSourceKind = 'asset' | 'blob' | 'stream' | 'external';
+export type AudioSourceKind = 'asset' | 'blob' | 'stream';
 
 export interface AudioSource {
   url: string;
   kind: AudioSourceKind;
-  /**
-   * Which legal source supplied an `'external'` source (Audius full
-   * stream or iTunes preview) — set by `PlayerContext.handleError` when
-   * it resolves one. Only meaningful when `kind === 'external'`; it lets
-   * the player indicator name the source without re-deriving it from
-   * the URL.
-   */
-  externalSource?: ExternalStreamSource;
 }
 
 const MIME_BY_EXT: Record<string, string> = {

@@ -2,9 +2,9 @@
  * Tests for the playing-from indicator mapping (`sourceLabel.ts`):
  * every source the player can be on maps to exactly one badge label,
  * the two `/stream` servers are told apart by host, and a full
- * fallback walk — primary server → retry → other server → Audius →
- * iTunes — produces the labels in that order. Pure mapping only; no
- * network, no audio element.
+ * fallback walk — primary server → retry → other server — produces
+ * the labels in that order. Pure mapping only; no network, no audio
+ * element.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -60,79 +60,29 @@ describe('playbackSourceForAudioSource', () => {
     expect(playbackSourceForAudioSource(RELAY_STREAM)).toBe('relay');
   });
 
-  it('maps external sources by their resolved source', () => {
-    expect(
-      playbackSourceForAudioSource({
-        url: 'https://audius.example/stream',
-        kind: 'external',
-        externalSource: 'audius',
-      }),
-    ).toBe('audius');
-    expect(
-      playbackSourceForAudioSource({
-        url: 'https://audio.itunes.apple.com/preview.m4a',
-        kind: 'external',
-        externalSource: 'itunes',
-      }),
-    ).toBe('itunes');
-  });
-
-  it('derives an external source from its URL when the field is missing', () => {
-    expect(
-      playbackSourceForAudioSource({
-        url: 'https://api.audius.co/v1/tracks/1/stream?app_name=X',
-        kind: 'external',
-      }),
-    ).toBe('audius');
-    expect(
-      playbackSourceForAudioSource({
-        url: 'https://audio.itunes.apple.com/preview.m4a',
-        kind: 'external',
-      }),
-    ).toBe('itunes');
-  });
-
   it('returns null when there is no source', () => {
     expect(playbackSourceForAudioSource(null)).toBeNull();
   });
 
   it('walks the full fallback chain in order', () => {
-    // Primary server → retry on the same server → other server →
-    // Audius full stream → iTunes 30s preview (see PlayerContext).
+    // Primary server → retry on the same server → other server
+    // (see PlayerContext).
     const chain: AudioSource[] = [
       CARMEN_STREAM,
       { ...CARMEN_STREAM },
       RELAY_STREAM,
-      {
-        url: 'https://audius.example/stream',
-        kind: 'external',
-        externalSource: 'audius',
-      },
-      {
-        url: 'https://audio.itunes.apple.com/preview.m4a',
-        kind: 'external',
-        externalSource: 'itunes',
-      },
     ];
     expect(chain.map(playbackSourceForAudioSource)).toEqual([
       'carmen',
       'carmen',
       'relay',
-      'audius',
-      'itunes',
     ]);
   });
 });
 
 describe('PLAYBACK_SOURCE_LABELS', () => {
   it('gives every source a short, non-empty label', () => {
-    const ids: PlaybackSourceId[] = [
-      'downloaded',
-      'carmen',
-      'relay',
-      'audius',
-      'itunes',
-    ];
+    const ids: PlaybackSourceId[] = ['downloaded', 'carmen', 'relay'];
     for (const id of ids) {
       expect(PLAYBACK_SOURCE_LABELS[id]).toBeTruthy();
     }
@@ -140,8 +90,6 @@ describe('PLAYBACK_SOURCE_LABELS', () => {
       downloaded: 'Downloaded',
       carmen: 'Carmen Server',
       relay: 'Relay Server',
-      audius: 'Audius',
-      itunes: 'iTunes Preview',
     });
   });
 });

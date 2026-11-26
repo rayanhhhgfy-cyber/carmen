@@ -7,9 +7,8 @@ import {
 /**
  * The "playing from" badge: a small dot + the friendly name of the
  * source the current song is actually playing from
- * (`Downloaded` / `Carmen Server` / `Relay Server` / `Audius` /
- * `iTunes Preview`). Renders nothing when no song is playing, so it can
- * never show a stale server.
+ * (`Downloaded` / `Carmen Server` / `Relay Server`). Renders nothing
+ * when no song is playing, so it can never show a stale server.
  *
  * It reads the id from the player context's `playbackSource` — the
  * single source of truth, set everywhere the audio source changes —
