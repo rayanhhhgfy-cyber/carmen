@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -19,6 +20,7 @@ from ..core import (
     StreamTarget,
     _is_permanent_failure,
     _prune_audio_cache,
+    _remember_stream_failure,
     download_audio,
     find_cached_audio,
     forget_stream_url,
@@ -39,6 +41,19 @@ CHAT_ID = os.environ.get("CHAT_ID")
 DEMO_STREAM_BASE = os.environ.get(
     "DEMO_STREAM_BASE", "https://api-carmen-v1.syr.qzz.io"
 ).rstrip("/")
+
+# How long the demo relay may take to answer with response headers before
+# this server gives up on it and extracts locally instead. The demo answers
+# a cache hit in ~1-3s; when it has to extract (or relays to itself) it
+# grinds past the ~60s edge timeout, so waiting longer only eats the
+# budget the local ladder needs.
+_DEMO_RELAY_FIRST_BYTE_TIMEOUT = 12.0
+
+# Whole-request budget for /stream once the disk cache has missed: the
+# hosting edge kills the request at ~60s, so the chain must answer with a
+# JSON 502 before then instead of dying as a 504 HTML page (which the
+# player can only report as NotSupportedError).
+_STREAM_DEADLINE = 50.0
 
 # Any URL (googlevideo/videoplayback/...) must never reach the client.
 _URL_PATTERN = re.compile(r"https?://\S+|videoplayback\?\S+", re.IGNORECASE)
@@ -570,7 +585,10 @@ def _is_whole_body(status_code: int, range_header: str | None, headers) -> bool:
 
 
 async def _proxy_audio(
-    request: Request, target: StreamTarget, vid_id: str
+    request: Request,
+    target: StreamTarget,
+    vid_id: str,
+    first_byte_timeout: float | None = None,
 ) -> StreamingResponse | Response:
     """
     Relay the CDN response to the browser, range requests included.
@@ -581,6 +599,13 @@ async def _proxy_audio(
 
     While a *complete* body passes through it is also written into the audio
     cache, so the next play of that track is served from disk.
+
+    ``first_byte_timeout`` bounds only the wait for response headers: a
+    relay that has not answered by then is grinding (extracting, or
+    relaying onwards) and the caller should try the next tier instead of
+    letting the hosting edge kill the whole request at ~60s. The body
+    keeps the long read timeout — a slow network must not abort a song
+    that is already streaming.
 
     A ``416`` from the CDN is not passed back to the player.  Some resolved
     URLs (formats whose own ``range=`` query parameter collides with the
@@ -602,10 +627,22 @@ async def _proxy_audio(
         follow_redirects=True,
         timeout=httpx.Timeout(20.0, read=120.0),
     )
-    upstream = await client.send(
-        client.build_request("GET", target.url, headers=upstream_headers),
-        stream=True,
-    )
+
+    async def _send_headers() -> httpx.Response:
+        """Response headers for the current upstream_headers, bounded."""
+        coro = client.send(
+            client.build_request("GET", target.url, headers=upstream_headers),
+            stream=True,
+        )
+        if first_byte_timeout is None:
+            return await coro
+        try:
+            return await asyncio.wait_for(coro, timeout=first_byte_timeout)
+        except TimeoutError:
+            await client.aclose()
+            raise
+
+    upstream = await _send_headers()
 
     # Try to rescue a CDN 416 by fetching the body without a Range header
     # and skipping to the requested offset while streaming.  A first-byte
@@ -618,10 +655,7 @@ async def _proxy_audio(
             slice_start = int(match.group(1))
             await upstream.aclose()
             upstream_headers.pop("Range", None)
-            upstream = await client.send(
-                client.build_request("GET", target.url, headers=upstream_headers),
-                stream=True,
-            )
+            upstream = await _send_headers()
             log.info(
                 "CDN answered 416 for %s (range=%s, client=%s) — refetching without it",
                 vid_id,
@@ -804,14 +838,39 @@ async def _demo_relay(
     cache. The demo has a much larger cache and/or a clean IP, so a song
     missing here usually plays there. Returns None when the demo also fails,
     so the caller can raise its own 502.
+
+    The relay is bounded to answering with headers quickly: a cache hit
+    comes back in ~1-3s, and a demo that has to extract (or relays to
+    itself — see below) grinds past the ~60s edge timeout, so waiting
+    longer only eats the budget the local ladder needs.
     """
+    # Never relay to yourself: DEMO_STREAM_BASE defaults to the demo host,
+    # so a deployment running on that host would call its own /stream,
+    # which relays again — unbounded nesting that never reaches extraction.
+    demo_host = (urlparse(DEMO_STREAM_BASE).hostname or "").lower()
+    own_host = (request.headers.get("host") or "").split(":")[0].lower()
+    if demo_host and demo_host == own_host:
+        log.warning(
+            "Skipping demo relay for %s: it points at this server", vid_id
+        )
+        return None
     target = StreamTarget(
         f"{DEMO_STREAM_BASE}/stream?vidId={vid_id}", {}, "demo"
     )
     try:
-        return await _proxy_audio(request, target, vid_id)
+        return await _proxy_audio(
+            request, target, vid_id,
+            first_byte_timeout=_DEMO_RELAY_FIRST_BYTE_TIMEOUT,
+        )
     except _UpstreamRejected as exc:
         log.warning("Demo relay rejected %s: %s", vid_id, exc)
+        return None
+    except TimeoutError:
+        log.warning(
+            "Demo relay timed out for %s after %ss",
+            vid_id,
+            _DEMO_RELAY_FIRST_BYTE_TIMEOUT,
+        )
         return None
     except Exception as exc:  # noqa: BLE001
         log.warning("Demo relay failed for %s: %s", vid_id, exc)
@@ -897,6 +956,38 @@ async def stream_audio(
             debuglog.tier(vidId, "disk-cache", started, _size_detail(cached), log)
             return response
 
+    # Everything below the disk cache must answer inside the edge's ~60s
+    # kill: a chain that grinds longer dies as a 504 HTML page, which the
+    # player can only report as NotSupportedError. Answer with a JSON 502
+    # instead, and memoize the timeout so retries answer fast instead of
+    # re-grinding the whole chain.
+    try:
+        return await asyncio.wait_for(
+            _stream_uncached(request, vidId, started),
+            timeout=_STREAM_DEADLINE,
+        )
+    except TimeoutError:
+        _remember_stream_failure(
+            vidId, TimeoutError("stream timed out before any tier answered")
+        )
+        log.warning(
+            "Stream for %s exceeded the %ss budget", vidId, _STREAM_DEADLINE
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Stream timed out: the song could not be fetched in time",
+        ) from None
+
+
+async def _stream_uncached(
+    request: Request, vid_id: str, started: float
+) -> StreamingResponse | Response:
+    """
+    Tiers 2-4 of /stream, after the disk cache has missed: Telegram
+    channel, demo relay, local yt-dlp relay, full download. Kept
+    separate from stream_audio so the whole chain can run under one
+    deadline — see _STREAM_DEADLINE.
+    """
     # Every play counts: a song that is skipped away never completes a relay
     # pass, so it is cached in the background.  The task is spawned once the
     # tier that answers is known (below), *after* that tier announced its own
@@ -906,29 +997,29 @@ async def stream_audio(
     # 2) Telegram channel — the `vids` hash maps this id to a Bot API file_id
     if state.tg_client and CHAT_ID:
         try:
-            tg_file_id = await _get_tg_file_id(vidId)
+            tg_file_id = await _get_tg_file_id(vid_id)
         except Exception as exc:  # noqa: BLE001
             # Redis trouble must never break playback — skip the TG tier.
-            log.warning("Telegram lookup failed for %s: %s", vidId, exc)
+            log.warning("Telegram lookup failed for %s: %s", vid_id, exc)
             tg_file_id = None
         if tg_file_id:
             try:
-                tg_response = await _tg_media_response(request, vidId, tg_file_id)
+                tg_response = await _tg_media_response(request, vid_id, tg_file_id)
             except Exception as exc:  # noqa: BLE001
                 # Transient failure (network, FloodWait) — keep the mapping,
                 # the next request may well succeed.
                 log.warning(
                     "Telegram stream failed for %s (file %s): %s",
-                    vidId,
+                    vid_id,
                     tg_file_id,
                     exc,
                 )
             else:
                 if tg_response is not None:
                     debuglog.tier(
-                        vidId, "telegram", started, f"file {tg_file_id}", log
+                        vid_id, "telegram", started, f"file {tg_file_id}", log
                     )
-                    _spawn_play_ensure(vidId)
+                    _spawn_play_ensure(vid_id)
                     return tg_response
                 # Unusable mapping — `_tg_media_response` already forgot it;
                 # the relay below answers with the good bytes.
@@ -947,34 +1038,34 @@ async def stream_audio(
     # demo (clean IP and/or a big cache) is what answers anyway. Trying it
     # first makes an uncached song start in seconds instead of a minute.
     # If the demo also fails, fall through to the local clients below.
-    relayed = await _demo_relay(request, vidId)
+    relayed = await _demo_relay(request, vid_id)
     if relayed is not None:
-        debuglog.tier(vidId, "demo-relay", started, "demo", log)
-        _spawn_play_ensure(vidId)
+        debuglog.tier(vid_id, "demo-relay", started, "demo", log)
+        _spawn_play_ensure(vid_id)
         return relayed
 
     # 3) relay through the server
     while len(skip) <= len(STREAM_CLIENTS):
         try:
-            with debuglog.timed(f"resolve_stream_url {vidId}", log):
+            with debuglog.timed(f"resolve_stream_url {vid_id}", log):
                 target = await loop.run_in_executor(
                     state.executor,
                     functools.partial(
-                        resolve_stream_url, vidId, skip, extract_failed
+                        resolve_stream_url, vid_id, skip, extract_failed
                     ),
                 )
         except DurationLimitExceeded as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
-            log.warning("Stream resolution failed for %s: %s", vidId, exc)
+            log.warning("Stream resolution failed for %s: %s", vid_id, exc)
             if _is_permanent_failure(exc):
                 # Every player client already reported the track itself as
                 # unavailable — the full download path would only repeat the
                 # very same yt-dlp attempts, so try the demo relay instead.
-                relayed = await _demo_relay(request, vidId)
+                relayed = await _demo_relay(request, vid_id)
                 if relayed is not None:
-                    debuglog.tier(vidId, "demo-relay", started, "demo", log)
-                    _spawn_play_ensure(vidId)
+                    debuglog.tier(vid_id, "demo-relay", started, "demo", log)
+                    _spawn_play_ensure(vid_id)
                     return relayed
                 raise HTTPException(
                     status_code=502,
@@ -983,20 +1074,20 @@ async def stream_audio(
             break
 
         try:
-            response = await _proxy_audio(request, target, vidId)
+            response = await _proxy_audio(request, target, vid_id)
             debuglog.tier(
-                vidId, "relay", started, f"client {target.client or 'default'}", log
+                vid_id, "relay", started, f"client {target.client or 'default'}", log
             )
-            _spawn_play_ensure(vidId)
+            _spawn_play_ensure(vid_id)
             return response
         except _UpstreamRejected as exc:
             log.warning(
                 "CDN rejected the %s stream for %s: %s",
                 target.client,
-                vidId,
+                vid_id,
                 exc,
             )
-            forget_stream_url(vidId)
+            forget_stream_url(vid_id)
             skip.add(target.client)
         except Exception as exc:  # noqa: BLE001
             # The connection to the CDN died before a single byte was sent
@@ -1007,7 +1098,7 @@ async def stream_audio(
             # which it reported as a CORS error.
             log.warning(
                 "Relay failed for %s via %s: %s",
-                vidId,
+                vid_id,
                 target.client,
                 exc,
             )
@@ -1017,7 +1108,7 @@ async def stream_audio(
     try:
         path = await loop.run_in_executor(
             state.executor,
-            functools.partial(download_audio, vidId, extract_failed),
+            functools.partial(download_audio, vid_id, extract_failed),
         )
     except DurationLimitExceeded as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1027,39 +1118,39 @@ async def stream_audio(
             detail="yt-dlp is not installed or not found on PATH",
         ) from exc
     except DownloadError as exc:
-        log.warning("yt-dlp failed for %s: %s", vidId, exc)
+        log.warning("yt-dlp failed for %s: %s", vid_id, exc)
         # Last resort: the demo server has a much larger cache and/or a
         # clean IP, so relay its /stream instead of failing outright.
-        relayed = await _demo_relay(request, vidId)
+        relayed = await _demo_relay(request, vid_id)
         if relayed is not None:
-            debuglog.tier(vidId, "demo-relay", started, "demo", log)
-            _spawn_play_ensure(vidId)
+            debuglog.tier(vid_id, "demo-relay", started, "demo", log)
+            _spawn_play_ensure(vid_id)
             return relayed
         raise HTTPException(
             status_code=502,
             detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
     except Exception as exc:
-        log.warning("Audio download failed for %s: %s", vidId, exc)
+        log.warning("Audio download failed for %s: %s", vid_id, exc)
         # Last resort: the demo server has a much larger cache and/or a
         # clean IP, so relay its /stream instead of failing outright.
-        relayed = await _demo_relay(request, vidId)
+        relayed = await _demo_relay(request, vid_id)
         if relayed is not None:
-            debuglog.tier(vidId, "demo-relay", started, "demo", log)
-            _spawn_play_ensure(vidId)
+            debuglog.tier(vid_id, "demo-relay", started, "demo", log)
+            _spawn_play_ensure(vid_id)
             return relayed
         raise HTTPException(
             status_code=502,
             detail=f"Failed to download audio: {_safe_detail(exc)}",
         ) from exc
 
-    debuglog.tier(vidId, "download", started, _size_detail(Path(path)), log)
+    debuglog.tier(vid_id, "download", started, _size_detail(Path(path)), log)
 
     # Background: keep a Telegram copy of the freshly downloaded audio
-    asyncio.create_task(_ensure_tg_copy(vidId, path))
+    asyncio.create_task(_ensure_tg_copy(vid_id, path))
 
     try:
-        return _audio_response(path, vidId)
+        return _audio_response(path, vid_id)
     except OSError as exc:
         raise HTTPException(
             status_code=502,

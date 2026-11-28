@@ -48,6 +48,7 @@ import { normalizeList, normalizeTrack } from '../utils/track';
 import { usePlaybackPersistence } from './persistence';
 import { useMediaSession } from '../services/mediaSession';
 import { playbackSourceForAudioSource, type PlaybackSourceId } from './sourceLabel';
+import { STALL_WATCHDOG_MS, isStalledLoad } from './stallWatchdog';
 import { useAdaptiveAccent } from '../theme/adaptiveAccent';
 
 /**
@@ -512,13 +513,55 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (stallTimer.current !== null) return;
     stallTimer.current = window.setTimeout(() => setBuffering(true), 250);
   }, []);
+
+  // Stall watchdog: a stream that never delivers a first byte fires no
+  // `error` event, so without this the player would spin until the
+  // hosting edge kills the request (~60s) and only then surface
+  // NotSupportedError. The timer is armed whenever a stream source is
+  // set and disarmed the moment the element plays or can play; if it
+  // fires, the source is dead and the existing fallback chain runs.
+  // The callback goes through a ref because the timer outlives the
+  // render that armed it — it must call the latest handleError, not a
+  // stale closure over a previous track.
+  const watchdogTimer = useRef<number | null>(null);
+  const handleErrorRef = useRef<() => void>(() => {});
+  const clearWatchdog = useCallback(() => {
+    if (watchdogTimer.current !== null) {
+      window.clearTimeout(watchdogTimer.current);
+      watchdogTimer.current = null;
+    }
+  }, []);
+  const armWatchdog = useCallback(
+    (source: AudioSource) => {
+      clearWatchdog();
+      watchdogTimer.current = window.setTimeout(() => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        // The track (or source) changed since arming: this timer is stale.
+        if (sourceRef.current !== source) return;
+        if (
+          isStalledLoad({
+            readyState: audio.readyState,
+            currentTime: audio.currentTime,
+            paused: audio.paused,
+            error: !!audio.error,
+          })
+        ) {
+          void handleErrorRef.current();
+        }
+      }, STALL_WATCHDOG_MS);
+    },
+    [clearWatchdog],
+  );
+
   const clearStall = useCallback(() => {
     if (stallTimer.current !== null) {
       window.clearTimeout(stallTimer.current);
       stallTimer.current = null;
     }
     setBuffering(false);
-  }, []);
+    clearWatchdog();
+  }, [clearWatchdog]);
 
   // ── Queue / track selection ─────────────────────────────────────────────
 
@@ -547,7 +590,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     audio.load();
     const attempt = audio.play();
     if (attempt) attempt.catch(() => setBuffering(false));
-  }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (source.kind === 'stream') armWatchdog(source);
+  }, [current?.videoId, armWatchdog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playTrack = useCallback(
     (rawTrack: unknown, contextTracks: unknown[] | null = null, options: { openSheet?: boolean } = {}) => {
@@ -623,10 +667,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             }
           });
         }
+        if (primed.kind === 'stream') armWatchdog(primed);
       }
       if (options.openSheet) setSheetOpen(true);
     },
-    [current, togglePlay, retry],
+    [current, togglePlay, retry, armWatchdog],
   );
 
   const playAll = useCallback(
@@ -882,6 +927,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             }
           });
         }
+        if (source.kind === 'stream') armWatchdog(source);
       }
       // Background blob check: only swap to the downloaded copy when the
       // stream has not started yet (still at 0 and not playing), so a
@@ -915,6 +961,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      clearWatchdog();
       // No removeAttribute('src') here: playTrack primes the element inside
       // the tap gesture, and this cleanup runs when the effect re-runs for
       // the new track — detaching would wipe the primed source before it
@@ -1147,6 +1194,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // source was set — it belongs to the past and must not touch this song.
     if (audio.getAttribute('src') !== source.url) return;
 
+    // The timer for this source is stale now that it errored; each branch
+    // below re-arms it for the source it sets.
+    clearWatchdog();
+
     if (source.kind === 'asset') {
       try {
         const blob = await localBlobSource(videoId);
@@ -1178,6 +1229,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           audio.load();
           const attempt = audio.play();
           if (attempt) attempt.catch(() => setBuffering(false));
+          armWatchdog(streamSource);
           return;
         }
       } catch {
@@ -1209,6 +1261,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             audio.load();
             const attempt = audio.play();
             if (attempt) attempt.catch(() => setBuffering(false));
+            if (sourceRef.current) armWatchdog(sourceRef.current);
             return;
           }
         } catch {
@@ -1226,6 +1279,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             audio.load();
             const attempt = audio.play();
             if (attempt) attempt.catch(() => setBuffering(false));
+            armWatchdog(fallbackSource);
             return;
           }
         } catch {
@@ -1271,6 +1325,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     setError(message);
   }, [current?.videoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The stall watchdog fires long after render, so it calls the latest
+  // handleError through a ref instead of closing over a stale one.
+  useEffect(() => {
+    handleErrorRef.current = handleError;
+  });
 
   const dismissError = useCallback(() => setError(null), []);
 

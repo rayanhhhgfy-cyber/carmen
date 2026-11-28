@@ -1714,8 +1714,18 @@ def get_stream_details(video_id: str, client: str | None = None) -> tuple[str, d
     :raises ValueError: if yt-dlp did not return a URL
     """
     options = dict(streaming_options)
+    # The relay path needs the same PO-token args as the download path
+    # (_client_options): without them yt-dlp extracts token-less, and on a
+    # bot-checked datacenter IP every player client fails with "Sign in to
+    # confirm you're not a bot" — the whole 13-client ladder burns 60s+
+    # and the request dies at the edge before any tier can answer. When
+    # bgutil is not installed _pot_extractor_args() returns {}, so this is
+    # a no-op on a local checkout.
+    extractor_args = _pot_extractor_args()
     if client:
-        options["extractor_args"] = {"youtube": {"player_client": [client]}}
+        extractor_args["youtube"] = {"player_client": [client]}
+    if extractor_args:
+        options["extractor_args"] = extractor_args
 
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(_watch_url(video_id), download=False)
