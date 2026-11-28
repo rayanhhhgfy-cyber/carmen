@@ -85,7 +85,13 @@ _PASSTHROUGH = (
 
 # Upstream answers another player client may still fix (403 = CDN rejected the
 # signed URL for this IP, 404 = this client's format is gone, ...).
-_REJECTED_STATUS = {400, 401, 403, 404, 410, 429}
+# An upstream error page must never be served as audio: a 5xx from the demo
+# (or a CDN) means that tier failed, so the caller must try the next tier
+# instead of handing the player an HTML error page it can only report as a
+# source error. 5xx was missing here, so a down demo short-circuited the
+# whole chain: Render relayed the demo's Cloudflare 502 page as the "song"
+# in under a second and the local ladder never ran (proven live 2026-11-28).
+_REJECTED_STATUS = {400, 401, 403, 404, 410, 429, 500, 502, 503, 504}
 
 _CHUNK = 64 * 1024
 
